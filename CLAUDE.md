@@ -72,12 +72,12 @@ lib/
       formatters.dart
       responsive.dart   # isMobile (<650px), isDesktop extension on BuildContext
     supabase/      # SupabaseConfig, supabaseClientProvider
-  app/             # Router, AppScaffold (web: sidebar; mobil: Drawer + BottomNav)
+  app/             # Router, AppScaffold (web: sidebar + canlı saat; mobil: Drawer + BottomNav)
   features/
     auth/          # Login, ConfigMissingScreen
-    home/          # Anasayfa — responsive kart grid (LayoutBuilder)
+    home/          # Anasayfa — kısayol kart grid + Dashboard (stat kartları + grafikler)
     products/      # Ürünler, Ürün Grupları
-    customers/     # Müşteri listesi, detay, ödeme
+    customers/     # Müşteri listesi, detay (geçmiş işlem yönetimi), ödeme
     sales/         # Satış ekranı — 5 sekme, sepet, ödeme paneli, hızlı ürünler
     reports/       # Günlük / Tarihsel / Ürün raporları (3 sekme)
 ```
@@ -89,7 +89,7 @@ Breakpoint: `lib/core/utils/responsive.dart`
 - `context.isDesktop` → genişlik ≥ 650px
 
 **AppScaffold:**
-- Desktop: daraltılabilir sol sidebar (220px / 56px)
+- Desktop: daraltılabilir sol sidebar (220px / 56px) + üst bar'da **canlı tarih+saat** (`_LiveClock`, her saniye `Timer.periodic`; eski arama kutusunun yerinde) · e-posta · Çıkış
 - Mobil: AppBar + `Drawer` (tüm nav) + `BottomNavigationBar` (4 ana sekme)
 
 ### Tasarım Sistemi
@@ -111,6 +111,10 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` annotation ile üre
 | `productColumnsProvider` | `keepAlive Notifier` | Ürün tablosu görünür kolonlar |
 | `reportRepositoryProvider` | `keepAlive` | Rapor repository |
 | `dailyReportProvider` | `autoDispose family` | Günlük rapor |
+| `dashboardRepositoryProvider` | `autoDispose` | Dashboard repository |
+| `todaySummaryProvider` / `yesterdaySummaryProvider` / `monthSummaryProvider` / `lastMonthRevenueProvider` | `autoDispose` | Dashboard stat kartları |
+| `dailySalesProvider(days)` / `monthlySalesProvider(months)` | `autoDispose family` | Dashboard grafikleri (seçilebilir aralık) |
+| `customerSalesProvider(query)` / `customerPaymentsProvider(id)` | `autoDispose family` | Müşteri geçmiş işlemleri |
 
 ### Satış Akışı
 
@@ -123,14 +127,30 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` annotation ile üre
 - `Ödeme Al` butonu → `DraggableScrollableSheet` içinde `PaymentPanel`
 - Müşteri sekmeleri: `SingleChildScrollView(horizontal)` ile kaydırılabilir
 
-**Sepet kart layout (mobil):**
-- %15 sol: adet (dokunarak düzenle — `dialogContext` ile pop, state sonra güncellenir)
-- %65 orta: ürün adı (üst) + barkod sol · birim fiyat sağ (alt)
-- %20 sağ: satır tutarı
+**Sepet miktar kontrolü (`cart_table.dart`):** Miktar kutusunun solunda kırmızı `−`, sağında lacivert `+` butonu (−1/+1, min 1). Kutuya yazılan değer her tuş vuruşunda satır tutarını **anında** günceller (ondalık destekli, ör. 2.50). Masaüstü: satır içi; mobil: adet kutusuna dokun → dialog (içinde canlı toplam + −/+).
 
-İskonto: `DiscountType.percent` veya `DiscountType.tl`, hem satır hem sepet bazında.
+İskonto: `DiscountType.percent` veya `DiscountType.tl` (enum `cart_item.dart`), hem satır hem sepet bazında.
 
-Ödeme tamamlama: `SalesRepository.completeSale()` → RPC → sales + sale_items insert → stok düşür → borç hareketi.
+Ödeme tamamlama: `SalesRepository.completeSale()` → RPC → sales + sale_items insert → stok düşür → borç hareketi. `sales` kaydına `discount_percent`, `discount_amount` (kesin TL) ve `discount_type` yazılır.
+
+### Satış Düzenleme & Silme (`SaleEditScreen`)
+
+Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir satışa tıklayınca açılır; kalemleri + iskontoyu düzenler.
+- **İskonto:** TL (₺) / yüzde (%) `SegmentedButton` ile düzenlenir; **Ara Toplam + İskonto + İndirimli Toplam** birlikte gösterilir. İskonto **birebir** saklanır (bkz. Veritabanı notu).
+- **Satışı Sil:** `SalesRepository.deleteSale()` → stok iadesi (`increment_product_stock` RPC) + satışa bağlı `customer_payments` (borç) silme + sale_items/sales silme. Çağıran ekran `updated == true` ile listeyi yeniler.
+
+### Dashboard (Anasayfa)
+
+`lib/features/home/.../widgets/dashboard_section.dart` — kısayol kartlarının altında:
+- **4 stat kartı:** Toplam Satış / Net Kazanç (Bugün · Bu Ay) + önceki döneme göre % değişim rozeti
+- **2 çizgi grafik** (`fl_chart`): Günlük Satış (seçilebilir gün) ve Aylık Satış (seçilebilir ay) — `dailySalesProvider(days)` / `monthlySalesProvider(months)`
+
+### Müşteri Detayı — Geçmiş İşlem Yönetimi
+
+`customer_detail_screen.dart`:
+- **Alışverişler** ve **Ödeme/Borç Hareketleri** listelerinde her satırda kırmızı **tekil silme** + bölüm başlığında **"Tümünü Sil"** (toplu)
+- Geçmiş satışa tıkla → `SaleEditScreen` (düzenle)
+- `CustomerRepository.deletePayment(id)`; silme/düzenleme sonrası `_invalidateHistory()` ile satış/ödeme/bakiye provider'ları yenilenir
 
 ### Ürünler Sayfası
 
@@ -157,12 +177,21 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
 2. **Tarihsel Rapor** — iki tarih arası ciro
 3. **Ürün Raporları** — ürün arama, zamana göre fiyat ve satış geçmişi
 
+### Veritabanı (Supabase)
+
+Şema migration'ları: `supabase/migrations/` (DDL anon key ile çalıştırılamaz → Supabase SQL Editor'da uygulanır).
+- `sales` tablosu iskontoyu **birebir** saklar: `discount_percent` (geriye dönük uyumluluk) + `discount_amount` (kesin TL) + `discount_type` (`'percent'` | `'tl'`). Bkz. `0008_discount_amount.sql`. `SaleEditScreen` kaydedilen tür/değerle açılır → yuvarlama farkı olmaz.
+- `customer_balances` görünümü borcu `customer_payments` hareketlerinden hesaplar; bu yüzden bir hareketi/satışı silmek borcu doğrudan günceller.
+- RPC'ler: `generate_sale_code`, `increment_product_stock` (stok iadesi), stok düşürme.
+
 ### Deploy — GitHub Pages
 
 Site: `https://ercinnn.github.io/nicepos`
 Repo: `https://github.com/ercinnn/nicepos`
 - Branch: `master`, Folder: `/docs`
 - `docs/main.dart.js` build'den sonra mutlaka güncellenmelidir (kod değişikliği sonrası rebuild zorunlu)
+- `.gitignore` `/build/*` yoksayar ama `!/build/web` izler → repo HEM `build/web` HEM `docs` tutar; deploy'da ikisi de güncellenir.
+- **Bağımlılık uyarısı:** `supabase_flutter` 2.15.x web'de açılış hatası veriyordu (`passkeys_web`/`ua_client_hints` → `dart:html`). Çalışan sürüm **2.14.2**; `pubspec.lock` bu sürümde tutulmalı.
 
 ## Önemli Konvansiyonlar
 
