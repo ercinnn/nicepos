@@ -71,6 +71,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                         }
                       },
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline,
+                          size: 18, color: AppColors.danger),
+                      tooltip: 'Müşteriyi sil',
+                      onPressed: () => _confirmAndDelete(context, customer.name),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -119,6 +125,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                           ref.invalidate(customersProvider);
                         }
                       },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline,
+                          size: 18, color: AppColors.danger),
+                      tooltip: 'Müşteriyi sil',
+                      onPressed: () => _confirmAndDelete(context, customer.name),
                     ),
                     const Spacer(),
                     OutlinedButton.icon(
@@ -332,6 +344,55 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Hata: $e')),
     );
+  }
+
+  // ── Müşteri silme — onay dialog'u + repository çağrısı ──────────────────────
+  // İlişkili kayıtlar (satış/ödeme/borç) foreign key kısıtı nedeniyle silmeyi
+  // engelleyebilir; bu durumda çökme olmaması için hata yakalanır.
+  Future<void> _confirmAndDelete(BuildContext context, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Müşteriyi Sil'),
+        content: Text('$name müşterisini silmek istediğinize emin misiniz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(customerRepositoryProvider).delete(widget.customerId);
+      ref.invalidate(customersProvider);
+      ref.invalidate(totalCustomerDebtProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$name silindi.')),
+        );
+        context.go('/customers');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: AppColors.danger,
+            content: Text(
+              'Müşteri silinemedi. İlişkili satış/ödeme kayıtları olabilir.',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showPaymentDialog(BuildContext context, CustomerPaymentType type) async {

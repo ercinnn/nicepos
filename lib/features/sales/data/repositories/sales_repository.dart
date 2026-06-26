@@ -91,6 +91,36 @@ class SalesRepository {
     }
   }
 
+  /// Bir satışı tamamen siler ve completeSale'in yan etkilerini geri alır.
+  ///
+  /// Sıra ve gerekçe:
+  /// 1. sale_items'tan ürün/miktar bilgisi okunur (stok iadesi için).
+  /// 2. Satılan ürünlerin STOĞU geri eklenir (completeSale decrementStock yapıyordu).
+  /// 3. Bu satışa bağlı customer_payments kayıtları (sale_id) silinir.
+  ///    completeSale açık hesap satışında sale_id'li bir 'borc' hareketi
+  ///    ekliyordu; customer_balances görünümü borcu bu hareketlerden hesapladığı
+  ///    için kaydı silmek borcu doğrudan geri alır (ters kayıt eklemeye gerek yok).
+  /// 4. sale_items silinir (FK), sonra sales kaydı silinir.
+  Future<void> deleteSale(String saleId) async {
+    // 1. Stok iadesi için kalemleri oku
+    final items = await fetchItems(saleId);
+
+    // 2. Stoğu geri ekle
+    for (final item in items) {
+      if (item.productId != null) {
+        await _productRepository.incrementStock(item.productId!, item.quantity);
+      }
+    }
+
+    // 3. Satışa bağlı borç/ödeme hareketlerini sil (açık hesap borcunu geri alır)
+    await _client.from('customer_payments').delete().eq('sale_id', saleId);
+
+    // 4. Kalemleri, sonra satışı sil (FK sırası)
+    await _client.from('sale_items').delete().eq('sale_id', saleId);
+    final deleted = await _client.from('sales').delete().eq('id', saleId).select('id');
+    if (deleted.isEmpty) throw Exception('Satış silinemedi.');
+  }
+
   Future<String> completeSale({
     required List<CartItem> items,
     required num discountPercent,

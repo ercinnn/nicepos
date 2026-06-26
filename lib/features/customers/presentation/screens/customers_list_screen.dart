@@ -149,13 +149,13 @@ class _CustomersListScreenState extends ConsumerState<CustomersListScreen> {
   }
 }
 
-class _CustomersTable extends StatelessWidget {
+class _CustomersTable extends ConsumerWidget {
   final List<Customer> customers;
 
   const _CustomersTable({required this.customers});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (customers.isEmpty) {
       return const Center(child: Text('Müşteri bulunamadı.'));
     }
@@ -175,7 +175,22 @@ class _CustomersTable extends StatelessWidget {
           ],
           rows: customers.map((c) {
             return DataRow(cells: [
-              DataCell(Text(c.name)),
+              // Müşteri adı + adın yanında silme butonu
+              DataCell(Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(c.name),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline,
+                        size: 18, color: AppColors.danger),
+                    tooltip: 'Müşteriyi sil',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () =>
+                        _confirmAndDeleteCustomer(context, ref, c),
+                  ),
+                ],
+              )),
               DataCell(Text('${c.purchaseCount}')),
               DataCell(Text(formatCurrency(c.openAccountTotal))),
               DataCell(Text(formatCurrency(c.paidTotal))),
@@ -227,12 +242,12 @@ class _CustomersMobileList extends StatelessWidget {
   }
 }
 
-class _CustomerMobileCard extends StatelessWidget {
+class _CustomerMobileCard extends ConsumerWidget {
   final Customer customer;
   const _CustomerMobileCard({required this.customer});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = customer;
     return InkWell(
       onTap: () => context.go('/customers/${c.id}'),
@@ -246,15 +261,35 @@ class _CustomerMobileCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    c.name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  // Müşteri adı + adın yanında silme butonu
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          c.name,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 30,
+                        height: 30,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.delete_outline,
+                              size: 18, color: AppColors.danger),
+                          tooltip: 'Müşteriyi sil',
+                          onPressed: () =>
+                              _confirmAndDeleteCustomer(context, ref, c),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -302,5 +337,61 @@ class _CustomerMobileCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ── Müşteri silme — onay dialog'u + repository çağrısı ────────────────────────
+//
+// İlişkili kayıtlar (satış, ödeme, borç hareketi) nedeniyle foreign key kısıtı
+// silmeyi engelleyebilir. Bu durumda çökme olmaması için hata yakalanır ve
+// kullanıcıya anlaşılır bir SnackBar gösterilir.
+Future<void> _confirmAndDeleteCustomer(
+  BuildContext context,
+  WidgetRef ref,
+  Customer customer,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Müşteriyi Sil'),
+      content: Text(
+        '${customer.name} müşterisini silmek istediğinize emin misiniz?',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('İptal'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Sil'),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+
+  try {
+    await ref.read(customerRepositoryProvider).delete(customer.id);
+    ref.invalidate(customersProvider);
+    ref.invalidate(totalCustomerDebtProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${customer.name} silindi.')),
+      );
+    }
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.danger,
+          content: Text(
+            'Müşteri silinemedi. İlişkili satış/ödeme kayıtları olabilir.',
+          ),
+        ),
+      );
+    }
   }
 }

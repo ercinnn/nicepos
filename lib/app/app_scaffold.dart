@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_sizes.dart';
+import '../core/utils/formatters.dart';
 import '../core/utils/responsive.dart';
 import '../features/auth/application/auth_provider.dart';
 
@@ -470,6 +473,65 @@ class _SidebarTileState extends State<_SidebarTile> {
 }
 
 // ---------------------------------------------------------------------------
+// Canlı tarih + saat (üst bar'da arama kutusunun yerini alır)
+// ---------------------------------------------------------------------------
+
+class _LiveClock extends StatefulWidget {
+  const _LiveClock();
+
+  @override
+  State<_LiveClock> createState() => _LiveClockState();
+}
+
+class _LiveClockState extends State<_LiveClock> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    // Her saniye güncelle
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.access_time, size: 18, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Text(
+            formatDateTime(_now),
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Desktop top bar
 // ---------------------------------------------------------------------------
 
@@ -487,34 +549,8 @@ class _TopBar extends ConsumerWidget {
       color: AppColors.cardBg,
       child: Row(
         children: [
-          Expanded(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 380),
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: 'Ara...',
-                  prefixIcon: const Icon(Icons.search, size: 18, color: AppColors.textMuted),
-                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
-                  filled: true,
-                  fillColor: AppColors.pageBg,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                  ),
-                  isDense: true,
-                ),
-              ),
-            ),
-          ),
+          // Arama kutusu yerine: günün tarihi + canlı saat
+          const _LiveClock(),
           const Spacer(),
           if (email != null) ...[
             Container(
