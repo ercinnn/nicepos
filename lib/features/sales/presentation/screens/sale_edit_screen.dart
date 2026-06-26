@@ -7,6 +7,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../features/products/application/products_provider.dart';
 import '../../../../features/products/data/models/product.dart';
+import '../../data/models/cart_item.dart' show DiscountType;
 import '../../data/models/sale.dart';
 import '../../data/models/sale_item.dart';
 import '../../data/repositories/sales_repository.dart';
@@ -29,13 +30,56 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
   late List<SaleItem> _items;
   bool _saving = false;
 
+  // ── İskonto durumu ──────────────────────────────────────────────────────────
+  // Sale modeli iskontoyu yalnızca yüzde (discount_percent) olarak saklar.
+  // Bu yüzden düzenleme ekranı YÜZDE modunda açılır; kullanıcı dilerse TL'ye
+  // geçebilir. TL girilirse kaydederken brüt ara toplama göre eşdeğer yüzdeye
+  // çevrilir (bkz. _save).
+  final _discountController = TextEditingController();
+  late num _discountValue;
+  DiscountType _discountType = DiscountType.percent;
+
   @override
   void initState() {
     super.initState();
     _items = List.from(widget.initialItems);
+    _discountValue = widget.sale.discountPercent;
+    _discountController.text =
+        _discountValue == 0 ? '' : formatNumber(_discountValue);
   }
 
-  num get _total => _items.fold<num>(0, (sum, item) => sum + item.total);
+  @override
+  void dispose() {
+    _discountController.dispose();
+    super.dispose();
+  }
+
+  /// İskontosuz (brüt) ara toplam — kalem toplamlarının (satır iskontosu
+  /// uygulanmış) toplamı.
+  num get _subtotal => _items.fold<num>(0, (sum, item) => sum + item.total);
+
+  /// Satış geneli iskonto tutarı (her zaman TL cinsinden).
+  num get _discountAmount => _discountType == DiscountType.percent
+      ? _subtotal * _discountValue / 100
+      : _discountValue.clamp(0, _subtotal);
+
+  /// İskonto uygulanmış net toplam (asla 0'ın altına inmez).
+  num get _netTotal => (_subtotal - _discountAmount).clamp(0, double.infinity);
+
+  void _onDiscountChanged(String text) {
+    final parsed = num.tryParse(text.replaceAll(',', '.')) ?? 0;
+    setState(() => _discountValue = parsed < 0 ? 0 : parsed);
+  }
+
+  void _setDiscountType(DiscountType type) {
+    if (_discountType == type) return;
+    // Tür değişince değeri sıfırla — satış ekranındaki setDiscountType örüntüsü.
+    setState(() {
+      _discountType = type;
+      _discountValue = 0;
+      _discountController.clear();
+    });
+  }
 
   Future<void> _addMiscItem() async {
     final nameController = TextEditingController(text: 'Muhtelif');
@@ -186,14 +230,24 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
     setState(() => _saving = true);
     try {
       final repo = SalesRepository();
-      final remainingDebt = (widget.sale.totalAmount - widget.sale.cashAmount - widget.sale.cardAmount)
+      final subtotal = _subtotal;
+      final discountAmount = _discountAmount;
+      final netTotal = (subtotal - discountAmount).clamp(0, double.infinity);
+      // Sale modeli iskontoyu yalnızca yüzde (discount_percent) olarak tutar.
+      // TL iskonto girildiyse brüt ara toplama göre eşdeğer yüzdeye çeviriyoruz;
+      // böylece yeniden açıldığında aynı tutar yüzde olarak geri yüklenir.
+      final discountPercentToSave =
+          subtotal > 0 ? (discountAmount / subtotal * 100) : 0;
+      // total_amount net (iskontolu) tutar olarak yazılır; remaining_debt yeni
+      // net toplam üzerinden hesaplanır (completeSale ile tutarlı).
+      final remainingDebt = (netTotal - widget.sale.cashAmount - widget.sale.cardAmount)
           .clamp(0, double.infinity);
       await repo.updateSale(
         saleId: widget.sale.id,
         oldItems: widget.initialItems,
         items: _items,
-        totalAmount: _total,
-        discountPercent: widget.sale.discountPercent,
+        totalAmount: netTotal,
+        discountPercent: discountPercentToSave,
         paidAmount: widget.sale.paidAmount,
         cashAmount: widget.sale.cashAmount,
         cardAmount: widget.sale.cardAmount,
@@ -247,6 +301,88 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  // ── İskonto girişi + toplam özeti (mobil ve masaüstü ortak) ─────────────────
+  Widget _buildDiscountTotals() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _discountController,
+                enabled: !_saving,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                ],
+                decoration: InputDecoration(
+                  isDense: true,
+                  labelText: 'İskonto',
+                  suffixText:
+                      _discountType == DiscountType.percent ? '%' : '₺',
+                ),
+                onChanged: _onDiscountChanged,
+              ),
+            ),
+            const SizedBox(width: 8),
+            SegmentedButton<DiscountType>(
+              segments: const [
+                ButtonSegment(value: DiscountType.percent, label: Text('%')),
+                ButtonSegment(value: DiscountType.tl, label: Text('₺')),
+              ],
+              selected: {_discountType},
+              showSelectedIcon: false,
+              style: ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onSelectionChanged: _saving
+                  ? null
+                  : (sel) => _setDiscountType(sel.first),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _totalLine('Ara Toplam', _subtotal),
+        if (_discountAmount > 0)
+          _totalLine('İskonto', -_discountAmount, color: AppColors.danger),
+        const Divider(height: 12, color: AppColors.divider),
+        _totalLine(
+          'İndirimli Toplam',
+          _netTotal,
+          color: AppColors.primary,
+          bold: true,
+          size: 16,
+        ),
+      ],
+    );
+  }
+
+  Widget _totalLine(String label, num value,
+      {Color? color, bool bold = false, double size = 14}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(fontSize: size, color: AppColors.textSecondary)),
+          Text(
+            formatCurrency(value),
+            style: TextStyle(
+              fontSize: size,
+              fontWeight: bold ? FontWeight.bold : FontWeight.w600,
+              color: color ?? AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -348,53 +484,55 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
               ),
               const Divider(height: 24),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.delete_outline, size: 16),
-                    label: const Text('Satışı Sil'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: const BorderSide(color: AppColors.danger),
-                    ),
-                    onPressed: _saving ? null : _delete,
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Ürün Ekle'),
-                    onPressed: _saving ? null : _addProduct,
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.edit_note, size: 16),
-                    label: const Text('Muhtelif'),
-                    onPressed: _saving ? null : _addMiscItem,
-                  ),
-                  const Spacer(),
-                  Text(
-                    'Toplam: ',
-                    style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
-                  ),
-                  Text(
-                    formatCurrency(_total),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                  // Sol: kalem aksiyon butonları
+                  Expanded(
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.delete_outline, size: 16),
+                          label: const Text('Satışı Sil'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.danger,
+                            side: const BorderSide(color: AppColors.danger),
+                          ),
+                          onPressed: _saving ? null : _delete,
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Ürün Ekle'),
+                          onPressed: _saving ? null : _addProduct,
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.edit_note, size: 16),
+                          label: const Text('Muhtelif'),
+                          onPressed: _saving ? null : _addMiscItem,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Kaydet'),
-                  ),
+                  const SizedBox(width: 24),
+                  // Sağ: iskonto girişi + toplamlar
+                  SizedBox(width: 300, child: _buildDiscountTotals()),
                 ],
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Kaydet'),
+                ),
               ),
             ],
           ),
@@ -541,20 +679,9 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Satışı sil — tam genişlik
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('Satışı Sil'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.danger,
-                        side: const BorderSide(color: AppColors.danger),
-                      ),
-                      onPressed: _saving ? null : _delete,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
+                  // İskonto girişi + toplam özeti
+                  _buildDiscountTotals(),
+                  const SizedBox(height: 12),
                   // Ürün ekle / muhtelif satırı
                   Row(
                     children: [
@@ -576,35 +703,34 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  // Toplam + Kaydet
-                  Row(
-                    children: [
-                      const Text(
-                        'Toplam: ',
-                        style: TextStyle(
-                            fontSize: 14, color: AppColors.textSecondary),
+                  // Satışı sil — tam genişlik
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('Satışı Sil'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                        side: const BorderSide(color: AppColors.danger),
                       ),
-                      Text(
-                        formatCurrency(_total),
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const Spacer(),
-                      FilledButton(
-                        onPressed: _saving ? null : _save,
-                        child: _saving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Text('Kaydet'),
-                      ),
-                    ],
+                      onPressed: _saving ? null : _delete,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Kaydet — tam genişlik
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Kaydet'),
+                    ),
                   ),
                 ],
               ),
