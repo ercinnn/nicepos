@@ -35,6 +35,8 @@ class Sale {
   final String branch;
   final num totalAmount;
   final num discountPercent;
+  final num discountAmount; // iskontonun kesin TL tutarı
+  final String discountType; // 'percent' | 'tl' — kullanıcının girdiği mod
   final num paidAmount;
   final PaymentType paymentType;
   final num cashAmount;
@@ -53,6 +55,8 @@ class Sale {
     this.branch = 'ANA HESAP',
     this.totalAmount = 0,
     this.discountPercent = 0,
+    this.discountAmount = 0,
+    this.discountType = 'percent',
     this.paidAmount = 0,
     this.paymentType = PaymentType.nakit,
     this.cashAmount = 0,
@@ -79,6 +83,8 @@ class Sale {
       branch: map['branch'] as String? ?? 'ANA HESAP',
       totalAmount: map['total_amount'] as num? ?? 0,
       discountPercent: map['discount_percent'] as num? ?? 0,
+      discountAmount: map['discount_amount'] as num? ?? 0,
+      discountType: map['discount_type'] as String? ?? 'percent',
       paidAmount: map['paid_amount'] as num? ?? 0,
       paymentType: PaymentTypeX.fromDb(map['payment_type'] as String? ?? 'nakit'),
       cashAmount: map['cash_amount'] as num? ?? 0,

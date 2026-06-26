@@ -62,6 +62,10 @@ class CustomerRepository {
     await _client.from('customer_payments').insert(payment.toInsertMap());
   }
 
+  Future<void> deletePayment(String id) async {
+    await _client.from('customer_payments').delete().eq('id', id);
+  }
+
   Future<num> fetchTotalDebt() async {
     final customers = await fetchAll();
     return customers.fold<num>(0, (sum, c) => sum + c.remainingDebt);

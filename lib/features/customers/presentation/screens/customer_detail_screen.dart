@@ -8,6 +8,8 @@ import '../../../../core/utils/responsive.dart';
 import '../../application/customers_provider.dart';
 import '../../data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
+import '../../../sales/data/repositories/sales_repository.dart';
+import '../../../sales/presentation/screens/sale_edit_screen.dart';
 import '../widgets/customer_form_dialog.dart';
 
 class CustomerDetailScreen extends ConsumerStatefulWidget {
@@ -22,6 +24,7 @@ class CustomerDetailScreen extends ConsumerStatefulWidget {
 class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   DateTime? _from;
   DateTime? _to;
+  bool _busy = false; // toplu/tekil silme sırasında çift-tıklamayı engeller
 
   @override
   Widget build(BuildContext context) {
@@ -253,9 +256,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               // Mobil: başlık üstte, tarih seçiciler altta (tek satıra sığmaz)
               // Masaüstü: tek satır
               if (context.isMobile) ...[
-                const Text('Alışverişler',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    const Text('Alışverişler',
+                        style:
+                            TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    if ((salesAsync.value ?? const []).isNotEmpty)
+                      _deleteAllButton(
+                          () => _deleteAllSales(salesAsync.value ?? const [])),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -290,6 +301,10 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     const Text('Alışverişler',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 12),
+                    if ((salesAsync.value ?? const []).isNotEmpty)
+                      _deleteAllButton(
+                          () => _deleteAllSales(salesAsync.value ?? const [])),
                     const Spacer(),
                     SizedBox(
                       width: 160,
@@ -321,17 +336,33 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               const SizedBox(height: 8),
               Card(
                 child: salesAsync.when(
-                  data: (sales) => _SalesTable(sales: sales),
+                  data: (sales) => _SalesTable(
+                    sales: sales,
+                    onTap: _openSaleEdit,
+                    onDelete: _deleteSale,
+                  ),
                   loading: () => const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
                   error: (e, _) => Padding(padding: const EdgeInsets.all(24), child: Text('Hata: $e')),
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('Ödeme / Borç Hareketleri', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  const Text('Ödeme / Borç Hareketleri',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  if ((paymentsAsync.value ?? const []).isNotEmpty)
+                    _deleteAllButton(
+                        () => _deleteAllPayments(paymentsAsync.value ?? const [])),
+                ],
+              ),
               const SizedBox(height: 8),
               Card(
                 child: paymentsAsync.when(
-                  data: (payments) => _PaymentsTable(payments: payments),
+                  data: (payments) => _PaymentsTable(
+                    payments: payments,
+                    onDelete: _deletePayment,
+                  ),
                   loading: () => const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
                   error: (e, _) => Padding(padding: const EdgeInsets.all(24), child: Text('Hata: $e')),
                 ),
@@ -446,6 +477,125 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     ref.invalidate(customersProvider);
     ref.invalidate(totalCustomerDebtProvider);
   }
+
+  // ── Geçmiş işlemler: düzenle / sil / toplu sil ─────────────────────────────
+
+  void _invalidateHistory() {
+    ref.invalidate(customerSalesProvider);
+    ref.invalidate(customerPaymentsProvider(widget.customerId));
+    ref.invalidate(customerByIdProvider(widget.customerId));
+    ref.invalidate(customersProvider);
+    ref.invalidate(totalCustomerDebtProvider);
+  }
+
+  Widget _deleteAllButton(VoidCallback onPressed) {
+    return TextButton.icon(
+      onPressed: _busy ? null : onPressed,
+      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+      label: const Text('Tümünü Sil'),
+      style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+    );
+  }
+
+  /// Geçmiş satışa tıklayınca — günlük rapordaki gibi düzenleme ekranı açılır.
+  Future<void> _openSaleEdit(Sale s) async {
+    if (_busy) return;
+    final items = await SalesRepository().fetchItems(s.id);
+    if (!mounted) return;
+    final updated = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => SaleEditScreen(sale: s, initialItems: items),
+    );
+    if (updated == true) _invalidateHistory();
+  }
+
+  Future<bool> _confirm(String title, String message) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// Ortak silme yürütücüsü: meşgul bayrağı + invalidate + SnackBar + hata yakalama.
+  Future<void> _runDelete(Future<void> Function() action, String successMsg) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+      _invalidateHistory();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(successMsg)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: AppColors.danger, content: Text('Silinemedi: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _deleteSale(Sale s) async {
+    if (_busy) return;
+    if (!await _confirm('Satışı Sil',
+        '${s.saleCode} satışını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.')) {
+      return;
+    }
+    await _runDelete(() => SalesRepository().deleteSale(s.id), '${s.saleCode} silindi.');
+  }
+
+  Future<void> _deleteAllSales(List<Sale> sales) async {
+    if (_busy || sales.isEmpty) return;
+    if (!await _confirm('Tüm Satışları Sil',
+        '${sales.length} satışın tamamı silinecek. Bu işlem geri alınamaz. Emin misiniz?')) {
+      return;
+    }
+    await _runDelete(() async {
+      for (final s in sales) {
+        await SalesRepository().deleteSale(s.id);
+      }
+    }, '${sales.length} satış silindi.');
+  }
+
+  Future<void> _deletePayment(CustomerPayment p) async {
+    if (_busy) return;
+    if (!await _confirm('Hareketi Sil',
+        '${p.type.label} (${formatCurrency(p.amount)}) hareketini silmek istediğinize emin misiniz?')) {
+      return;
+    }
+    await _runDelete(
+        () => ref.read(customerRepositoryProvider).deletePayment(p.id), 'Hareket silindi.');
+  }
+
+  Future<void> _deleteAllPayments(List<CustomerPayment> payments) async {
+    if (_busy || payments.isEmpty) return;
+    if (!await _confirm('Tüm Hareketleri Sil',
+        '${payments.length} ödeme/borç hareketinin tamamı silinecek. Emin misiniz?')) {
+      return;
+    }
+    await _runDelete(() async {
+      for (final p in payments) {
+        await ref.read(customerRepositoryProvider).deletePayment(p.id);
+      }
+    }, '${payments.length} hareket silindi.');
+  }
 }
 
 // _SummaryCard: boyutu üst widget belirler (masaüstü: Expanded, mobil: SizedBox)
@@ -520,7 +670,13 @@ class _DateField extends StatelessWidget {
 
 class _SalesTable extends StatelessWidget {
   final List<Sale> sales;
-  const _SalesTable({required this.sales});
+  final void Function(Sale) onTap;
+  final void Function(Sale) onDelete;
+  const _SalesTable({
+    required this.sales,
+    required this.onTap,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -540,67 +696,78 @@ class _SalesTable extends StatelessWidget {
             const Divider(height: 1, color: AppColors.divider),
         itemBuilder: (context, i) {
           final s = sales[i];
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                // Sol: satış kodu + tarih
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        s.saleCode,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
+          return InkWell(
+            onTap: () => onTap(s),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  // Sol: satış kodu + tarih
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          s.saleCode,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        formatDateTime(s.saleDate),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
+                        const SizedBox(height: 2),
+                        Text(
+                          formatDateTime(s.saleDate),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textMuted,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Orta: ödeme tipi rozeti
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.3),
+                      ],
                     ),
                   ),
-                  child: Text(
-                    s.paymentType.label,
+                  const SizedBox(width: 8),
+                  // Orta: ödeme tipi rozeti
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Text(
+                      s.paymentType.label,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Sağ: tutar
+                  Text(
+                    formatCurrency(s.totalAmount),
                     style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                // Sağ: tutar
-                Text(
-                  formatCurrency(s.totalAmount),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                  // Sil butonu
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline,
+                        size: 18, color: AppColors.danger),
+                    tooltip: 'Satışı sil',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => onDelete(s),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -619,17 +786,27 @@ class _SalesTable extends StatelessWidget {
           DataColumn(label: Text('Ödenen')),
           DataColumn(label: Text('Kalan Borç')),
           DataColumn(label: Text('Ödeme Tipi')),
+          DataColumn(label: Text('')),
         ],
         rows: sales.map((s) {
-          return DataRow(cells: [
-            DataCell(Text(s.saleCode)),
-            DataCell(Text(formatDateTime(s.saleDate))),
-            DataCell(Text(formatCurrency(s.totalAmount))),
-            DataCell(Text('%${s.discountPercent}')),
-            DataCell(Text(formatCurrency(s.paidAmount))),
-            DataCell(Text(formatCurrency(s.remainingDebt))),
-            DataCell(Text(s.paymentType.label)),
-          ]);
+          return DataRow(
+            onSelectChanged: (_) => onTap(s),
+            cells: [
+              DataCell(Text(s.saleCode)),
+              DataCell(Text(formatDateTime(s.saleDate))),
+              DataCell(Text(formatCurrency(s.totalAmount))),
+              DataCell(Text('%${s.discountPercent}')),
+              DataCell(Text(formatCurrency(s.paidAmount))),
+              DataCell(Text(formatCurrency(s.remainingDebt))),
+              DataCell(Text(s.paymentType.label)),
+              DataCell(IconButton(
+                icon: const Icon(Icons.delete_outline,
+                    size: 18, color: AppColors.danger),
+                tooltip: 'Satışı sil',
+                onPressed: () => onDelete(s),
+              )),
+            ],
+          );
         }).toList(),
       ),
     );
@@ -640,7 +817,8 @@ class _SalesTable extends StatelessWidget {
 
 class _PaymentsTable extends StatelessWidget {
   final List<CustomerPayment> payments;
-  const _PaymentsTable({required this.payments});
+  final void Function(CustomerPayment) onDelete;
+  const _PaymentsTable({required this.payments, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -725,6 +903,13 @@ class _PaymentsTable extends StatelessWidget {
                     color: isDebt ? AppColors.danger : AppColors.success,
                   ),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline,
+                      size: 18, color: AppColors.danger),
+                  tooltip: 'Hareketi sil',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => onDelete(p),
+                ),
               ],
             ),
           );
@@ -741,6 +926,7 @@ class _PaymentsTable extends StatelessWidget {
           DataColumn(label: Text('Tür')),
           DataColumn(label: Text('Tutar')),
           DataColumn(label: Text('Not')),
+          DataColumn(label: Text('')),
         ],
         rows: payments.map((p) {
           return DataRow(cells: [
@@ -756,6 +942,12 @@ class _PaymentsTable extends StatelessWidget {
             )),
             DataCell(Text(formatCurrency(p.amount))),
             DataCell(Text(p.note ?? '-')),
+            DataCell(IconButton(
+              icon: const Icon(Icons.delete_outline,
+                  size: 18, color: AppColors.danger),
+              tooltip: 'Hareketi sil',
+              onPressed: () => onDelete(p),
+            )),
           ]);
         }).toList(),
       ),

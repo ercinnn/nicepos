@@ -31,19 +31,22 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
   bool _saving = false;
 
   // ── İskonto durumu ──────────────────────────────────────────────────────────
-  // Sale modeli iskontoyu yalnızca yüzde (discount_percent) olarak saklar.
-  // Bu yüzden düzenleme ekranı YÜZDE modunda açılır; kullanıcı dilerse TL'ye
-  // geçebilir. TL girilirse kaydederken brüt ara toplama göre eşdeğer yüzdeye
-  // çevrilir (bkz. _save).
+  // İskonto artık birebir saklanır: discount_amount (kesin TL) + discount_type
+  // (kullanıcının % mi ₺ mi girdiği). Ekran kaydedilen türle/değerle açılır,
+  // böylece yuvarlama farkı olmadan aynı tutar geri yüklenir.
   final _discountController = TextEditingController();
   late num _discountValue;
-  DiscountType _discountType = DiscountType.percent;
+  late DiscountType _discountType;
 
   @override
   void initState() {
     super.initState();
     _items = List.from(widget.initialItems);
-    _discountValue = widget.sale.discountPercent;
+    _discountType =
+        widget.sale.discountType == 'tl' ? DiscountType.tl : DiscountType.percent;
+    _discountValue = _discountType == DiscountType.tl
+        ? widget.sale.discountAmount
+        : widget.sale.discountPercent;
     _discountController.text =
         _discountValue == 0 ? '' : formatNumber(_discountValue);
   }
@@ -233,9 +236,9 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
       final subtotal = _subtotal;
       final discountAmount = _discountAmount;
       final netTotal = (subtotal - discountAmount).clamp(0, double.infinity);
-      // Sale modeli iskontoyu yalnızca yüzde (discount_percent) olarak tutar.
-      // TL iskonto girildiyse brüt ara toplama göre eşdeğer yüzdeye çeviriyoruz;
-      // böylece yeniden açıldığında aynı tutar yüzde olarak geri yüklenir.
+      // İskonto birebir saklanır: discount_amount (kesin TL) + discount_type.
+      // discount_percent ayrıca eşdeğer yüzde olarak yazılır (geriye dönük
+      // uyumluluk / raporlar için).
       final discountPercentToSave =
           subtotal > 0 ? (discountAmount / subtotal * 100) : 0;
       // total_amount net (iskontolu) tutar olarak yazılır; remaining_debt yeni
@@ -248,6 +251,8 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
         items: _items,
         totalAmount: netTotal,
         discountPercent: discountPercentToSave,
+        discountAmount: discountAmount,
+        discountType: _discountType == DiscountType.tl ? 'tl' : 'percent',
         paidAmount: widget.sale.paidAmount,
         cashAmount: widget.sale.cashAmount,
         cardAmount: widget.sale.cardAmount,

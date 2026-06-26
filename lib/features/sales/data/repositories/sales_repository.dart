@@ -56,6 +56,8 @@ class SalesRepository {
     required List<SaleItem> items,
     required num totalAmount,
     required num discountPercent,
+    num discountAmount = 0,
+    String discountType = 'percent',
     required num paidAmount,
     required num cashAmount,
     required num cardAmount,
@@ -72,6 +74,8 @@ class SalesRepository {
     await _client.from('sales').update({
       'total_amount': totalAmount,
       'discount_percent': discountPercent,
+      'discount_amount': discountAmount,
+      'discount_type': discountType,
       'paid_amount': paidAmount,
       'cash_amount': cashAmount,
       'card_amount': cardAmount,
@@ -136,12 +140,17 @@ class SalesRepository {
     final saleCodeResult = await _client.rpc('generate_sale_code');
     final saleCode = saleCodeResult as String;
     final remainingDebt = (totalAmount - cashAmount - cardAmount).clamp(0, double.infinity);
+    // İskontonun kesin TL tutarı: brüt (kalem toplamları) − net toplam.
+    final subtotal = items.fold<num>(0, (sum, item) => sum + item.total);
+    final discountAmount = (subtotal - totalAmount).clamp(0, double.infinity);
 
     final saleRow = await _client.from('sales').insert({
       'sale_code': saleCode,
       'customer_id': customerId,
       'total_amount': totalAmount,
       'discount_percent': discountPercent,
+      'discount_amount': discountAmount,
+      'discount_type': 'percent',
       'paid_amount': paidAmount,
       'payment_type': paymentType.dbValue,
       'cash_amount': cashAmount,
@@ -203,6 +212,8 @@ class SalesRepository {
       'customer_id': customerId,
       'total_amount': -totalAmount,
       'discount_percent': 0,
+      'discount_amount': 0,
+      'discount_type': 'percent',
       'paid_amount': -totalAmount,
       'payment_type': paymentType.dbValue,
       'cash_amount': paymentType == PaymentType.nakit ? -totalAmount : 0,
