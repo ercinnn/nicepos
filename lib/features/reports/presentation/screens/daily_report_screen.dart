@@ -404,7 +404,7 @@ class _SalesTable extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: sales.length,
-          separatorBuilder: (_, __) =>
+          separatorBuilder: (_, _) =>
               const Divider(height: 1, color: AppColors.divider),
           itemBuilder: (context, i) {
             final s = sales[i];
@@ -651,7 +651,7 @@ class _PaymentsTable extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: payments.length,
-          separatorBuilder: (_, __) =>
+          separatorBuilder: (_, _) =>
               const Divider(height: 1, color: AppColors.divider),
           itemBuilder: (_, i) {
             final p = payments[i];

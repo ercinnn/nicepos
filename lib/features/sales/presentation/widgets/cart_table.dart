@@ -99,7 +99,7 @@ class CartTable extends ConsumerWidget {
   // Ürün sütunu kalan alanın tamamını alır (Expanded).
 
   static const double _wDisc  = 175;
-  static const double _wQty   = 78;
+  static const double _wQty   = 116;
   static const double _wPrice = 88;
   static const double _wTotal = 88;
   static const double _wDel   = 40;
@@ -200,17 +200,11 @@ class CartTable extends ConsumerWidget {
                           // ── Miktar ─────────────────────────────────────
                           SizedBox(
                             width: _wQty,
-                            child: TextFormField(
-                              key: ValueKey('qty-$index-${item.quantity}'),
-                              initialValue: item.quantity.toString(),
-                              decoration: const InputDecoration(),
-                              keyboardType: TextInputType.number,
-                              onFieldSubmitted: (v) {
-                                final value =
-                                    num.tryParse(v.replaceAll(',', '.')) ??
-                                        item.quantity;
-                                notifier.updateItemQuantity(index, value);
-                              },
+                            child: _QuantityControl(
+                              key: ValueKey('qty-$index'),
+                              quantity: item.quantity,
+                              onChanged: (q) =>
+                                  notifier.updateItemQuantity(index, q),
                             ),
                           ),
                           // ── Birim fiyat ────────────────────────────────
@@ -351,33 +345,16 @@ class _MobileCartItem extends StatelessWidget {
     required this.onRemove,
   });
 
-  void _editQuantity(BuildContext context) {
-    final ctrl = TextEditingController(text: item.quantity.toString());
-    showDialog(
+  Future<void> _editQuantity(BuildContext context) async {
+    final result = await showDialog<num>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Adet'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(hintText: 'Adet giriniz'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Vazgeç')),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              final v = num.tryParse(ctrl.text.replaceAll(',', '.'));
-              if (v != null) onQuantityChanged(v);
-            },
-            child: const Text('Tamam'),
-          ),
-        ],
+      builder: (dialogContext) => _MobileQtyDialog(
+        initialQuantity: item.quantity,
+        unitPrice: item.unitPrice,
       ),
     );
+    // State güncellemesi dialog kapandıktan SONRA yapılır.
+    if (result != null) onQuantityChanged(result);
   }
 
   @override
@@ -643,6 +620,268 @@ class _TypeChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Miktar metni biçimleyici ───────────────────────────────────────────────
+// Tam sayı ise "2", ondalıklı ise "2.5" gibi gösterir.
+String _qtyText(num q) =>
+    q == q.truncate() ? q.toInt().toString() : q.toString();
+
+// ── Satır içi miktar kontrolü ( - [alan] + ) ───────────────────────────────
+//
+// Sol "-" butonu KIRMIZI, sağ "+" butonu lacivert. Alana yazılan her karakterde
+// (onChanged) miktar canlı olarak notifier'a iletilir; böylece satır toplamı
+// anında güncellenir. Geçersiz/boş giriş yok sayılır (eski değer korunur).
+class _QuantityControl extends StatefulWidget {
+  final num quantity;
+  final ValueChanged<num> onChanged;
+
+  const _QuantityControl({
+    super.key,
+    required this.quantity,
+    required this.onChanged,
+  });
+
+  @override
+  State<_QuantityControl> createState() => _QuantityControlState();
+}
+
+class _QuantityControlState extends State<_QuantityControl> {
+  late TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: _qtyText(widget.quantity));
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuantityControl old) {
+    super.didUpdateWidget(old);
+    // Dışarıdan (ör. +/- veya başka bir akış) gelen değer, alandaki değerden
+    // farklıysa metni güncelle. Kullanıcı yazarken (değerler eşitken) dokunma —
+    // imleç kaymasın.
+    final current = num.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (widget.quantity != current) {
+      _ctrl.text = _qtyText(widget.quantity);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _setText(num q) {
+    _ctrl.text = _qtyText(q);
+    _ctrl.selection =
+        TextSelection.collapsed(offset: _ctrl.text.length);
+  }
+
+  void _delta(num d) {
+    final current =
+        num.tryParse(_ctrl.text.replaceAll(',', '.')) ?? widget.quantity;
+    var next = current + d;
+    if (next < 1) next = 1;
+    _setText(next);
+    widget.onChanged(next);
+  }
+
+  void _onChanged(String v) {
+    final parsed = num.tryParse(v.replaceAll(',', '.'));
+    // Boş veya geçersiz giriş -> dokunma. Sıfır/negatif -> kabul etme.
+    if (parsed != null && parsed > 0) {
+      widget.onChanged(parsed);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _QtyBtn(
+          icon: Icons.remove,
+          color: AppColors.danger,
+          onTap: () => _delta(-1),
+        ),
+        const SizedBox(width: 2),
+        Expanded(
+          child: TextField(
+            controller: _ctrl,
+            textAlign: TextAlign.center,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+            ),
+            style: const TextStyle(fontSize: 13),
+            onChanged: _onChanged,
+          ),
+        ),
+        const SizedBox(width: 2),
+        _QtyBtn(
+          icon: Icons.add,
+          color: AppColors.primary,
+          onTap: () => _delta(1),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Miktar +/- butonu ──────────────────────────────────────────────────────
+class _QtyBtn extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final double size;
+
+  const _QtyBtn({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    this.size = 28,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Icon(icon, size: 16, color: color),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Mobil miktar düzenleme dialog'u ────────────────────────────────────────
+//
+// -/+ butonları ve metin alanı; her değişimde satır toplamı canlı güncellenir.
+// "Tamam" ile seçilen miktar Navigator.pop ile geri döner (state pop'tan sonra).
+class _MobileQtyDialog extends StatefulWidget {
+  final num initialQuantity;
+  final num unitPrice;
+
+  const _MobileQtyDialog({
+    required this.initialQuantity,
+    required this.unitPrice,
+  });
+
+  @override
+  State<_MobileQtyDialog> createState() => _MobileQtyDialogState();
+}
+
+class _MobileQtyDialogState extends State<_MobileQtyDialog> {
+  late TextEditingController _ctrl;
+  late num _qty;
+
+  @override
+  void initState() {
+    super.initState();
+    _qty = widget.initialQuantity;
+    _ctrl = TextEditingController(text: _qtyText(_qty));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _setQty(num q) {
+    _ctrl.text = _qtyText(q);
+    _ctrl.selection =
+        TextSelection.collapsed(offset: _ctrl.text.length);
+    setState(() => _qty = q);
+  }
+
+  void _delta(num d) {
+    var next = _qty + d;
+    if (next < 1) next = 1;
+    _setQty(next);
+  }
+
+  void _onChanged(String v) {
+    final parsed = num.tryParse(v.replaceAll(',', '.'));
+    if (parsed != null && parsed > 0) {
+      setState(() => _qty = parsed);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Adet'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              _QtyBtn(
+                icon: Icons.remove,
+                color: AppColors.danger,
+                onTap: () => _delta(-1),
+                size: 40,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _ctrl,
+                  autofocus: true,
+                  textAlign: TextAlign.center,
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true),
+                  decoration: const InputDecoration(
+                    hintText: 'Adet giriniz',
+                    isDense: true,
+                  ),
+                  onChanged: _onChanged,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QtyBtn(
+                icon: Icons.add,
+                color: AppColors.primary,
+                onTap: () => _delta(1),
+                size: 40,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Satır Toplamı: ${formatCurrency(_qty * widget.unitPrice)}',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Vazgeç'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(_qty),
+          child: const Text('Tamam'),
+        ),
+      ],
     );
   }
 }

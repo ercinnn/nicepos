@@ -25,7 +25,7 @@ class _HistoricalReportTabState extends ConsumerState<HistoricalReportTab> {
 
   Future<void> _openSaleEdit(Sale s) async {
     final items = await SalesRepository().fetchItems(s.id);
-    if (!context.mounted) return;
+    if (!mounted) return;
     final updated = await showDialog<bool>(
       context: context,
       barrierDismissible: false,

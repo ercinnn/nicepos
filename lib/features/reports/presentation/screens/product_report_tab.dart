@@ -228,7 +228,7 @@ class _ProductHistoryState extends ConsumerState<_ProductHistory> {
     final repo = SalesRepository();
     final sale = await repo.fetchSaleById(r.saleId);
     final items = await repo.fetchItems(r.saleId);
-    if (!context.mounted) return;
+    if (!mounted) return;
     final updated = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
