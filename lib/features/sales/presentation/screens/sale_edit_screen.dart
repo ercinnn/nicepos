@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../data/models/cart_item.dart' show DiscountType;
 import '../../data/models/sale.dart';
 import '../../data/models/sale_item.dart';
 import '../../data/repositories/sales_repository.dart';
+import '../widgets/sale_print.dart';
 
 class SaleEditScreen extends ConsumerStatefulWidget {
   final Sale sale;
@@ -177,9 +179,23 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
           unitPrice: product.price1,
           discountValue: 0,
           total: product.price1,
+          barcode: product.barcode,
         ));
       });
     }
+  }
+
+  /// Web'de A4 dikey yazdırma penceresi açar (sepet detayları).
+  void _print() {
+    printSaleA4(
+      saleCode: widget.sale.saleCode,
+      customerName: widget.sale.customerName ?? 'Perakende',
+      saleDate: widget.sale.saleDate,
+      items: _items,
+      subtotal: _subtotal,
+      discountAmount: _discountAmount,
+      netTotal: _netTotal,
+    );
   }
 
   void _removeItem(int index) {
@@ -440,6 +456,7 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                           columnSpacing: 16,
                           columns: const [
                             DataColumn(label: Text('Ürün')),
+                            DataColumn(label: Text('Barkod')),
                             DataColumn(label: Text('Miktar'), numeric: true),
                             DataColumn(label: Text('Birim Fiyat'), numeric: true),
                             DataColumn(label: Text('Toplam'), numeric: true),
@@ -454,6 +471,18 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                   child: Text(
                                     item.productName,
                                     overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  (item.barcode == null || item.barcode!.isEmpty)
+                                      ? '—'
+                                      : item.barcode!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textMuted,
+                                    fontFeatures: [FontFeature.tabularFigures()],
                                   ),
                                 ),
                               ),
@@ -516,6 +545,16 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                           label: const Text('Muhtelif'),
                           onPressed: _saving ? null : _addMiscItem,
                         ),
+                        if (kIsWeb)
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.print_outlined, size: 16),
+                            label: const Text('Yazdır'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              side: const BorderSide(color: AppColors.primary),
+                            ),
+                            onPressed: _items.isEmpty ? null : _print,
+                          ),
                       ],
                     ),
                   ),
@@ -626,13 +665,33 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 4),
-                          // Ürün adı
-                          title: Text(
-                            item.productName,
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                          // Ürün adı + barkod
+                          title: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                item.productName,
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (item.barcode != null && item.barcode!.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    item.barcode!,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textMuted,
+                                      fontFeatures: [
+                                        FontFeature.tabularFigures()
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           // Miktar + birim fiyat — dokunarak miktar düzenlenebilir
                           subtitle: GestureDetector(

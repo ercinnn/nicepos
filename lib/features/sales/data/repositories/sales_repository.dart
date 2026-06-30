@@ -46,7 +46,10 @@ class SalesRepository {
   }
 
   Future<List<SaleItem>> fetchItems(String saleId) async {
-    final rows = await _client.from('sale_items').select().eq('sale_id', saleId);
+    final rows = await _client
+        .from('sale_items')
+        .select('*, products(barcode)')
+        .eq('sale_id', saleId);
     return (rows as List).map((row) => SaleItem.fromMap(Map<String, dynamic>.from(row as Map))).toList();
   }
 

@@ -9,6 +9,10 @@ class SaleItem {
   final num total;
   final String? note;
 
+  /// Satılan ürünün barkodu. `sale_items` tablosunda saklanmaz; sorguda
+  /// `products(barcode)` join'i ile gelir (muhtelif kalemlerde null olur).
+  final String? barcode;
+
   const SaleItem({
     this.id = '',
     this.saleId,
@@ -19,9 +23,15 @@ class SaleItem {
     this.discountValue = 0,
     this.total = 0,
     this.note,
+    this.barcode,
   });
 
   factory SaleItem.fromMap(Map<String, dynamic> map) {
+    // Barkod ya doğrudan map'te ya da products(barcode) join'i içinde gelir.
+    final productRel = map['products'];
+    final barcode = productRel is Map
+        ? productRel['barcode'] as String?
+        : map['barcode'] as String?;
     return SaleItem(
       id: map['id'] as String? ?? '',
       saleId: map['sale_id'] as String?,
@@ -32,6 +42,7 @@ class SaleItem {
       discountValue: map['discount_value'] as num? ?? 0,
       total: map['total'] as num? ?? 0,
       note: map['note'] as String?,
+      barcode: barcode,
     );
   }
 
