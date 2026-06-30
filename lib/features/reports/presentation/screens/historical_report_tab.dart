@@ -296,7 +296,9 @@ class _HistoricalSalesTable extends StatelessWidget {
                   ),
                 )),
                 DataCell(Text(
-                  s.discountPercent > 0 ? '%${s.discountPercent}' : '-',
+                  s.discountPercent > 0
+                      ? '% ${s.discountPercent.toStringAsFixed(2)}'
+                      : '-',
                   style: const TextStyle(
                     color: AppColors.textMuted,
                     fontFeatures: [FontFeature.tabularFigures()],
