@@ -51,12 +51,19 @@ class DashboardSection extends ConsumerWidget {
         if (context.isMobile)
           const _DailySalesChartCard(compact: true)
         else
-          Align(
-            alignment: Alignment.center,
-            child: FractionallySizedBox(
-              widthFactor: 0.9,
-              child: const _DailySalesChartCard(compact: false),
-            ),
+          // Grafik ekran genişliğinin %90'ı, ortalanmış.
+          // Not: FractionallySizedBox dikey Column içinde (heightFactor null +
+          // sınırsız yükseklik) sonsuz yükseklik hatası verir; bu yüzden
+          // genişliği LayoutBuilder ile hesaplayıp sabit SizedBox kullanıyoruz.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return Center(
+                child: SizedBox(
+                  width: constraints.maxWidth * 0.9,
+                  child: const _DailySalesChartCard(compact: false),
+                ),
+              );
+            },
           ),
       ],
     );
