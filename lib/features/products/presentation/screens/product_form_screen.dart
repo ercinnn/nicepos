@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -7,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../data/models/product.dart';
 import '../../application/products_provider.dart';
 
@@ -148,6 +148,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return ((price2 - purchase) / purchase) * 100;
   }
 
+  /// Kamerayı açar; okunan barkodu alana yazar ve varsa mevcut ürünü getirir
+  /// (yeni ürün ekliyorsanız barkod alanda kalır). Sadece mobil/native.
+  Future<void> _scanBarcode() async {
+    await openBarcodeScanner(context, (value) {
+      _barcodeCtrl.text = value.trim();
+      _fetchByBarcode();
+    });
+  }
+
   Future<void> _fetchByBarcode() async {
     final barcode = _barcodeCtrl.text.trim();
     if (barcode.isEmpty) return;
@@ -263,6 +272,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     onSubmitted: (_) => _fetchByBarcode(),
                   ),
                 ),
+                // Kamera ile barkod okut — sadece mobil/native
+                if (!kIsWeb && context.isMobile) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 48,
+                    width: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: _scanBarcode,
+                      child: const Icon(Icons.camera_alt_outlined, size: 22),
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 8),
                 OutlinedButton(onPressed: _fetchByBarcode, child: const Text('Ürünü Getir')),
               ],

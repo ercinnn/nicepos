@@ -53,39 +53,28 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Günlük Rapor',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
                         Text(
                           formatDate(_date),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textMuted,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     )
                   : Row(
                       children: [
-                        const Text(
+                        Text(
                           'Günlük Rapor',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: AppSizes.space12),
                         Text(
                           formatDate(_date),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textMuted,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppColors.textMuted),
                         ),
                       ],
                     ),
@@ -134,38 +123,136 @@ class _ReportContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // İmza: ekranın TEK kahramanı — Toplam Ciro.
+          ReportHero(amount: report.grandTotal),
+          const SizedBox(height: AppSizes.space16),
           ReportSummaryRow(report: report),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSizes.space24),
           ReportSectionHeader(
             title: 'Satışlar',
             badge: '${report.sales.length}',
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSizes.space8),
           report.sales.isEmpty
               ? const ReportEmptyCard('Bu tarihte satış bulunamadı.')
-              : Card(
+              : ReportTableCard(
                   child: _SalesTable(sales: report.sales, onRowTap: onSaleTap),
                 ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSizes.space24),
           ReportSectionHeader(
             title: 'Alınan Ödemeler',
             badge: '${report.receivedPayments.length}',
             color: AppColors.success,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSizes.space8),
           report.receivedPayments.isEmpty
               ? const ReportEmptyCard('Bu tarihte ödeme bulunamadı.')
-              : Card(
+              : ReportTableCard(
                   child: _PaymentsTable(payments: report.receivedPayments),
                 ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSizes.space24),
         ],
       ),
     );
   }
 }
 
+// ── Hero Tutar (public — imza öğesi, §4) ──────────────────────────────────────
+// Ekranın TEK kahramanı: Toplam Ciro. İri tabular tutar + ince altın ray.
+// Kenarlıksız yüzey (§5 hero istisnası): yalnız zemin + yumuşak gölge + ray.
+
+class ReportHero extends StatelessWidget {
+  final num amount;
+  final String label;
+  const ReportHero({
+    super.key,
+    required this.amount,
+    this.label = 'TOPLAM CİRO',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final mobil = context.isMobile;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space20,
+        vertical: AppSizes.space20,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        boxShadow: AppSizes.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: AppSizes.space8),
+          IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatCurrency(amount),
+                  style: TextStyle(
+                    fontSize: mobil ? 30 : 38,
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                    letterSpacing: -0.5,
+                    color: AppColors.primary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: AppSizes.space6),
+                // Altın aksan rayı — yalnızca hero tutarın altında (~%40).
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: 0.4,
+                  child: Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: AppColors.gold,
+                      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Tablo Kartı (public) — token kart kabuğu, içerik kırpılır ─────────────────
+
+class ReportTableCard extends StatelessWidget {
+  final Widget child;
+  const ReportTableCard({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: AppSizes.cardDecoration(),
+      child: child,
+    );
+  }
+}
+
 // ── Özet Satırı (public — tarihsel rapor da kullanır) ─────────────────────────
+// Hero (Toplam Ciro) artık ızgaranın üyesi DEĞİL → burada tekrar edilmez.
+// Kalan kartlar sakin destek; yalnız semantik renkler (nakit/POS/kâr) konuşur.
 
 class ReportSummaryRow extends StatelessWidget {
   final DailyReportSummary report;
@@ -177,49 +264,33 @@ class ReportSummaryRow extends StatelessWidget {
       ReportStatCard(icon: Icons.payments_outlined, label: 'Nakit Tahsilat', value: formatCurrency(report.cashTotal), color: AppColors.cash),
       ReportStatCard(icon: Icons.credit_card_outlined, label: 'POS Tahsilat', value: formatCurrency(report.posTotal), color: AppColors.pos),
       ReportStatCard(icon: Icons.account_balance_wallet_outlined, label: 'Açık Hesap', value: formatCurrency(report.openAccountTotal), color: AppColors.openAccount),
-      ReportStatCard(icon: Icons.bar_chart_outlined, label: 'Toplam Ciro', value: formatCurrency(report.grandTotal), color: AppColors.primary, highlight: true),
       ReportStatCard(icon: Icons.shopping_cart_outlined, label: 'Satış Adedi', value: '${report.sales.length}', color: AppColors.textSecondary),
       ReportStatCard(icon: Icons.inventory_2_outlined, label: 'Ürün Maliyeti', value: formatCurrency(report.productCost), color: AppColors.textMuted),
-      ReportStatCard(icon: Icons.trending_up_outlined, label: 'Kâr', value: formatCurrency(report.profit), color: report.profit >= 0 ? AppColors.success : AppColors.danger, highlight: true),
+      // Kâr: highlight YOK (R7) — yalnız success/danger metin semantiği taşır.
+      ReportStatCard(icon: Icons.trending_up_outlined, label: 'Kâr', value: formatCurrency(report.profit), color: report.profit >= 0 ? AppColors.success : AppColors.danger),
       ReportStatCard(icon: Icons.arrow_circle_down_outlined, label: 'Alınan Ödemeler', value: formatCurrency(report.receivedPaymentsTotal), color: AppColors.success),
     ];
 
     if (context.isMobile) {
+      // İki sütun — token boşluklu Wrap (yüzde-genişlik düzeni kaldırıldı).
       return LayoutBuilder(
         builder: (_, constraints) {
-          final w = constraints.maxWidth;
-          final sideGap = w * 0.03;
-          final centerGap = w * 0.04;
-          final cardWidth = w * 0.45;
-
-          final rows = <Widget>[];
-          for (int i = 0; i < cards.length; i += 2) {
-            rows.add(Row(
-              children: [
-                SizedBox(width: sideGap),
-                SizedBox(width: cardWidth, child: cards[i]),
-                SizedBox(width: centerGap),
-                SizedBox(
-                  width: cardWidth,
-                  child: i + 1 < cards.length ? cards[i + 1] : const SizedBox(),
-                ),
-                SizedBox(width: sideGap),
-              ],
-            ));
-            if (i + 2 < cards.length) rows.add(const SizedBox(height: 10));
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: rows,
+          final cardWidth =
+              (constraints.maxWidth - AppSizes.space12) / 2;
+          return Wrap(
+            spacing: AppSizes.space12,
+            runSpacing: AppSizes.space12,
+            children: cards
+                .map((c) => SizedBox(width: cardWidth, child: c))
+                .toList(),
           );
         },
       );
     }
 
     return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+      spacing: AppSizes.space12,
+      runSpacing: AppSizes.space12,
       children: cards.map((c) => SizedBox(width: 200, child: c)).toList(),
     );
   }
@@ -232,7 +303,6 @@ class ReportStatCard extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
-  final bool highlight;
 
   const ReportStatCard({
     super.key,
@@ -240,54 +310,47 @@ class ReportStatCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
-    this.highlight = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      shape: highlight
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppSizes.cardRadius),
-              side: BorderSide(color: color.withValues(alpha: 0.4), width: 1.5),
-            )
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSizes.cardPadding),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color, size: 18),
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.all(AppSizes.cardPadding),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppSizes.radiusSm),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: AppSizes.space12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: AppSizes.space4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: color,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -311,17 +374,25 @@ class ReportSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(width: 8),
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(width: AppSizes.space8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space8,
+            vertical: AppSizes.space2,
+          ),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
           ),
           child: Text(
             badge,
-            style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
         ),
       ],
@@ -337,12 +408,12 @@ class ReportEmptyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32),
-        child: Center(
-          child: Text(message, style: const TextStyle(color: AppColors.textMuted)),
-        ),
+    return Container(
+      width: double.infinity,
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.symmetric(vertical: AppSizes.space32),
+      child: Center(
+        child: Text(message, style: const TextStyle(color: AppColors.textMuted)),
       ),
     );
   }
@@ -364,10 +435,13 @@ class ReportPaymentBadge extends StatelessWidget {
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space8,
+        vertical: AppSizes.space2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
         border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Text(
@@ -411,7 +485,10 @@ class _SalesTable extends StatelessWidget {
             return InkWell(
               onTap: () => onRowTap(s),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.space12,
+                  vertical: AppSizes.space12,
+                ),
                 child: Row(
                   children: [
                     // Sol: satış kodu + saat + müşteri
@@ -428,20 +505,21 @@ class _SalesTable extends StatelessWidget {
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.primary,
+                                  fontFeatures: [FontFeature.tabularFigures()],
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: AppSizes.space6),
                               Text(
                                 _timeOnly(s.saleDate),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textMuted,
-                                  fontFamily: 'monospace',
+                                  fontFeatures: [FontFeature.tabularFigures()],
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: AppSizes.space4),
                           Text(
                             s.customerName ?? 'Perakende',
                             style: TextStyle(
@@ -458,19 +536,20 @@ class _SalesTable extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppSizes.space8),
                     // Orta: ödeme rozeti
                     ReportPaymentBadge(type: s.paymentType),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppSizes.space8),
                     // Sağ: toplam tutar
                     Text(
                       formatCurrency(s.totalAmount),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
+                        fontFeatures: [FontFeature.tabularFigures()],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: AppSizes.space4),
                     const Icon(
                       Icons.chevron_right,
                       size: 16,
@@ -485,7 +564,10 @@ class _SalesTable extends StatelessWidget {
         // Toplam satırı
         Container(
           color: AppColors.tableHeader,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space12,
+            vertical: AppSizes.space12,
+          ),
           child: Row(
             children: [
               Expanded(
@@ -494,6 +576,7 @@ class _SalesTable extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
               ),
@@ -503,6 +586,7 @@ class _SalesTable extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                   color: AppColors.primary,
+                  fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -537,14 +621,18 @@ class _SalesTable extends StatelessWidget {
               cells: [
                 DataCell(Text(
                   '${i + 1}',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
                 )),
                 DataCell(Text(
                   _timeOnly(s.saleDate),
                   style: const TextStyle(
-                    fontFamily: 'monospace',
                     fontSize: 13,
                     color: AppColors.textSecondary,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 )),
                 DataCell(Text(
@@ -553,6 +641,7 @@ class _SalesTable extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                     color: AppColors.primary,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 )),
                 DataCell(Text(
@@ -564,19 +653,26 @@ class _SalesTable extends StatelessWidget {
                     fontStyle: s.customerName == null ? FontStyle.italic : null,
                   ),
                 )),
-                DataCell(Text('${s.totalProducts} adet')),
+                DataCell(Text(
+                  '${s.totalProducts} adet',
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                )),
                 DataCell(Text(
                   s.discountPercent > 0 ? '%${s.discountPercent}' : '-',
-                  style: TextStyle(
-                    color: s.discountPercent > 0
-                        ? AppColors.warning
-                        : AppColors.textMuted,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 )),
                 DataCell(ReportPaymentBadge(type: s.paymentType)),
                 DataCell(Text(
                   formatCurrency(s.totalAmount),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
                 )),
                 DataCell(
                   SizedBox(
@@ -600,18 +696,27 @@ class _SalesTable extends StatelessWidget {
               const DataCell(Text('')),
               DataCell(Text(
                 'TOPLAM (${sales.length} satış)',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(Text(
                 '${sales.fold<int>(0, (s, e) => s + e.totalProducts)} adet',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               const DataCell(Text('')),
               const DataCell(Text('')),
               DataCell(Text(
                 formatCurrency(sales.fold<num>(0, (s, e) => s + e.totalAmount)),
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: AppColors.primary),
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               const DataCell(Text('')),
             ],
@@ -656,7 +761,10 @@ class _PaymentsTable extends StatelessWidget {
           itemBuilder: (_, i) {
             final p = payments[i];
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space12,
+                vertical: AppSizes.space12,
+              ),
               child: Row(
                 children: [
                   // Sol: müşteri + not + saat
@@ -675,7 +783,7 @@ class _PaymentsTable extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         if (p.note != null && p.note!.isNotEmpty) ...[
-                          const SizedBox(height: 2),
+                          const SizedBox(height: AppSizes.space4),
                           Text(
                             p.note!,
                             style: const TextStyle(
@@ -685,19 +793,19 @@ class _PaymentsTable extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
-                        const SizedBox(height: 2),
+                        const SizedBox(height: AppSizes.space4),
                         Text(
                           _timeOnly(p.paymentDate),
                           style: const TextStyle(
                             fontSize: 11,
                             color: AppColors.textMuted,
-                            fontFamily: 'monospace',
+                            fontFeatures: [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSizes.space12),
                   // Sağ: tutar
                   Text(
                     formatCurrency(p.amount),
@@ -705,6 +813,7 @@ class _PaymentsTable extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
                       color: AppColors.success,
+                      fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
@@ -715,7 +824,10 @@ class _PaymentsTable extends StatelessWidget {
         // Toplam satırı
         Container(
           color: AppColors.tableHeader,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space12,
+            vertical: AppSizes.space12,
+          ),
           child: Row(
             children: [
               Expanded(
@@ -724,6 +836,7 @@ class _PaymentsTable extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
               ),
@@ -733,6 +846,7 @@ class _PaymentsTable extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                   color: AppColors.success,
+                  fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -761,17 +875,27 @@ class _PaymentsTable extends StatelessWidget {
             return DataRow(cells: [
               DataCell(Text(
                 '${i + 1}',
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(Text(
                 _timeOnly(p.paymentDate),
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(Text(p.customerName ?? '-')),
               DataCell(Text(
                 formatCurrency(p.amount),
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: AppColors.success),
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.success,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(SizedBox(
                 width: 200,
@@ -791,12 +915,18 @@ class _PaymentsTable extends StatelessWidget {
               const DataCell(Text('')),
               DataCell(Text(
                 'TOPLAM (${payments.length} ödeme)',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(Text(
                 formatCurrency(payments.fold<num>(0, (s, p) => s + p.amount)),
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: AppColors.success),
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.success,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               const DataCell(Text('')),
             ],

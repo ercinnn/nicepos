@@ -5,9 +5,16 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/skeleton.dart';
 import '../../application/customers_provider.dart';
 import '../../data/models/customer.dart';
 import '../widgets/customer_form_dialog.dart';
+
+/// Tablo/satır para ve sayı hücreleri için tabular figür (hizalı rakam) stili.
+const TextStyle _tabular = TextStyle(
+  fontFeatures: [FontFeature.tabularFigures()],
+);
 
 class CustomersListScreen extends ConsumerStatefulWidget {
   const CustomersListScreen({super.key});
@@ -41,10 +48,7 @@ class _CustomersListScreenState extends ConsumerState<CustomersListScreen> {
           children: [
             Text(
               'Müşteriler',
-              style: TextStyle(
-                fontSize: isMobile ? 18 : 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
             const Spacer(),
             ElevatedButton.icon(
@@ -64,32 +68,12 @@ class _CustomersListScreenState extends ConsumerState<CustomersListScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        // ── Toplam borç özet kartı ────────────────────────────────────────────
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Toplam Kalan Borç',
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  formatCurrency(totalDebtAsync.value ?? 0),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.danger,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSizes.space16),
+        // ── İmza HERO: Toplam Kalan Borç (ekranın TEK kahramanı) ──────────────
+        // İri tabular tutar + altında semantik ray: borç (>0) ise danger,
+        // alacak fazlası / sıfır ise positive (§4 müşteri istisnası — altın değil).
+        _TotalDebtHero(total: totalDebtAsync.value ?? 0, isMobile: isMobile),
+        const SizedBox(height: AppSizes.space16),
         // ── Arama + Filtre ────────────────────────────────────────────────────
         // Mobil: arama tam genişlik, filtre bir alt satıra geçer
         // Masaüstü: yan yana tek satır
@@ -139,12 +123,89 @@ class _CustomersListScreenState extends ConsumerState<CustomersListScreen> {
           child: customersAsync.when(
             data: (customers) => isMobile
                 ? _CustomersMobileList(customers: customers)
-                : Card(child: _CustomersTable(customers: customers)),
-            loading: () => const Center(child: CircularProgressIndicator()),
+                : Container(
+                    decoration: AppSizes.cardDecoration(),
+                    clipBehavior: Clip.antiAlias,
+                    child: _CustomersTable(customers: customers),
+                  ),
+            loading: () => const SkeletonList(itemCount: 8),
             error: (e, _) => Center(child: Text('Hata: $e')),
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── İmza HERO: Toplam Kalan Borç ─────────────────────────────────────────────
+// Ekranın tek kahramanı: agregat kalan borç. İri tabular tutar + altında
+// semantik ray (borç>0 → danger, alacak/sıfır → positive). Altın DEĞİL (§4 istisna).
+class _TotalDebtHero extends StatelessWidget {
+  final num total;
+  final bool isMobile;
+  const _TotalDebtHero({required this.total, required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDebt = total > 0;
+    final semantic = hasDebt ? AppColors.danger : AppColors.success;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space20,
+        vertical: AppSizes.space20,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        boxShadow: AppSizes.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'TOPLAM KALAN BORÇ',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: AppSizes.space8),
+          IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatCurrency(total),
+                  style: TextStyle(
+                    fontSize: isMobile ? 30 : 38,
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                    letterSpacing: -0.5,
+                    color: semantic,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: AppSizes.space6),
+                // Altın değil — tutara göre semantik ray (~%40 genişlik).
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: 0.4,
+                  child: Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: semantic,
+                      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -157,19 +218,27 @@ class _CustomersTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (customers.isEmpty) {
-      return const Center(child: Text('Müşteri bulunamadı.'));
+      return const EmptyState(
+        icon: Icons.people_outline,
+        title: 'Müşteri bulunamadı',
+        message: 'Aramanızı değiştirin veya yeni müşteri ekleyin',
+      );
     }
+
+    final headingStyle = Theme.of(context).textTheme.labelMedium;
 
     return SingleChildScrollView(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
+          headingRowColor: const WidgetStatePropertyAll(AppColors.goldBg),
+          headingTextStyle: headingStyle,
           columns: const [
             DataColumn(label: Text('Müşteri')),
-            DataColumn(label: Text('Alışveriş Sayısı')),
-            DataColumn(label: Text('Açık Hesap')),
-            DataColumn(label: Text('Ödeme')),
-            DataColumn(label: Text('Kalan Borç')),
+            DataColumn(label: Text('Alışveriş Sayısı'), numeric: true),
+            DataColumn(label: Text('Açık Hesap'), numeric: true),
+            DataColumn(label: Text('Ödeme'), numeric: true),
+            DataColumn(label: Text('Kalan Borç'), numeric: true),
             DataColumn(label: Text('Son Ödeme Tarihi')),
             DataColumn(label: Text('Detay')),
           ],
@@ -191,12 +260,12 @@ class _CustomersTable extends ConsumerWidget {
                   ),
                 ],
               )),
-              DataCell(Text('${c.purchaseCount}')),
-              DataCell(Text(formatCurrency(c.openAccountTotal))),
-              DataCell(Text(formatCurrency(c.paidTotal))),
+              DataCell(Text('${c.purchaseCount}', style: _tabular)),
+              DataCell(Text(formatCurrency(c.openAccountTotal), style: _tabular)),
+              DataCell(Text(formatCurrency(c.paidTotal), style: _tabular)),
               DataCell(Text(
                 formatCurrency(c.remainingDebt),
-                style: TextStyle(
+                style: _tabular.copyWith(
                   color: c.remainingDebt > 0 ? AppColors.danger : AppColors.success,
                   fontWeight: FontWeight.w600,
                 ),
@@ -228,9 +297,15 @@ class _CustomersMobileList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (customers.isEmpty) {
-      return const Center(child: Text('Müşteri bulunamadı.'));
+      return const EmptyState(
+        icon: Icons.people_outline,
+        title: 'Müşteri bulunamadı',
+        message: 'Aramanızı değiştirin veya yeni müşteri ekleyin',
+      );
     }
-    return Card(
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      clipBehavior: Clip.antiAlias,
       child: ListView.separated(
         itemCount: customers.length,
         separatorBuilder: (_, _) =>
@@ -252,7 +327,8 @@ class _CustomerMobileCard extends ConsumerWidget {
     return InkWell(
       onTap: () => context.go('/customers/${c.id}'),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space12, vertical: AppSizes.space12),
         child: Row(
           children: [
             // Sol: müşteri adı + bilgi
@@ -276,18 +352,19 @@ class _CustomerMobileCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      SizedBox(
-                        width: 30,
-                        height: 30,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.delete_outline,
-                              size: 18, color: AppColors.danger),
-                          tooltip: 'Müşteriyi sil',
-                          onPressed: () =>
-                              _confirmAndDeleteCustomer(context, ref, c),
+                      // Dokunma hedefi mobilde min 48×48 (token §3); ikon 18px
+                      // görünür ama dokunma alanı yanlış-dokunmaya karşı 48'e çıkar.
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
                         ),
+                        icon: const Icon(Icons.delete_outline,
+                            size: 18, color: AppColors.danger),
+                        tooltip: 'Müşteriyi sil',
+                        onPressed: () =>
+                            _confirmAndDeleteCustomer(context, ref, c),
                       ),
                     ],
                   ),
@@ -306,26 +383,38 @@ class _CustomerMobileCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            // Sağ: kalan borç tutarı
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  formatCurrency(c.remainingDebt),
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: c.remainingDebt > 0
-                        ? AppColors.danger
-                        : AppColors.success,
-                  ),
-                ),
-                const Text(
-                  'Borç',
-                  style: TextStyle(fontSize: 11, color: AppColors.textMuted),
-                ),
-              ],
+            // Sağ: bakiye tutarı + semantik etiket
+            // Borç (>0) danger; alacak (<0) / kapalı (0) positive. Etiket de
+            // duruma göre değişir ki yeşil tutar "Borç" diye yanlış okunmasın.
+            Builder(
+              builder: (context) {
+                final hasDebt = c.remainingDebt > 0;
+                final semantic =
+                    hasDebt ? AppColors.danger : AppColors.success;
+                final label = hasDebt
+                    ? 'Borç'
+                    : (c.remainingDebt < 0 ? 'Alacak' : 'Bakiye kapalı');
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      formatCurrency(c.remainingDebt),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: semantic,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.textMuted),
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(width: 4),
             const Icon(

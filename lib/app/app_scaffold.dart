@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -14,18 +15,26 @@ import '../features/auth/application/auth_provider.dart';
 class _NavItem {
   final String label;
   final IconData icon;
+  final IconData selectedIcon;
   final String route;
 
-  const _NavItem(this.label, this.icon, this.route);
+  const _NavItem(this.label, this.icon, this.selectedIcon, this.route);
 }
 
 const _navItems = [
-  _NavItem('Anasayfa', Icons.dashboard_outlined, '/home'),
-  _NavItem('Satış Yap', Icons.point_of_sale_outlined, '/sales'),
-  _NavItem('Raporlar', Icons.bar_chart_outlined, '/reports'),
-  _NavItem('Müşteriler', Icons.people_outline, '/customers'),
-  _NavItem('Ürünler', Icons.inventory_2_outlined, '/products'),
+  _NavItem('Anasayfa', Icons.dashboard_outlined, Icons.dashboard, '/home'),
+  _NavItem('Satış Yap', Icons.point_of_sale_outlined, Icons.point_of_sale, '/sales'),
+  _NavItem('Raporlar', Icons.bar_chart_outlined, Icons.insert_chart, '/reports'),
+  _NavItem('Müşteriler', Icons.people_outline, Icons.people, '/customers'),
+  _NavItem('Ürünler', Icons.inventory_2_outlined, Icons.inventory_2, '/products'),
 ];
+
+int _selectedNavIndex(String currentPath) {
+  final index = _navItems.indexWhere((item) =>
+      currentPath == item.route ||
+      (item.route != '/home' && currentPath.startsWith(item.route)));
+  return index < 0 ? 0 : index;
+}
 
 
 class AppScaffold extends ConsumerStatefulWidget {
@@ -122,9 +131,10 @@ class _MobileScaffold extends ConsumerWidget {
             Text(
               'NicePOS',
               style: TextStyle(
-                color: AppColors.sidebarTextActive,
+                color: AppColors.primary,
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 17,
+                letterSpacing: 0.2,
               ),
             ),
           ],
@@ -146,68 +156,79 @@ class _MobileScaffold extends ConsumerWidget {
         padding: const EdgeInsets.all(12),
         child: child,
       ),
-      bottomNavigationBar: _ScrollableBottomNav(currentPath: currentPath),
+      bottomNavigationBar: _MobileBottomNav(currentPath: currentPath),
     );
   }
 }
 
-class _ScrollableBottomNav extends StatelessWidget {
+// ---------------------------------------------------------------------------
+// Mobil alt navigasyon — Material 3 NavigationBar (lacivert zemin, altın
+// seçili "pill" göstergesi + haptic). Yatay-scroll anti-pattern'inden çıkış.
+// ---------------------------------------------------------------------------
+
+class _MobileBottomNav extends StatelessWidget {
   final String currentPath;
 
-  const _ScrollableBottomNav({required this.currentPath});
+  const _MobileBottomNav({required this.currentPath});
 
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = _selectedNavIndex(currentPath);
+
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: AppColors.sidebarBg,
-        border: const Border(top: BorderSide(color: AppColors.border, width: 1)),
+        border: Border(top: BorderSide(color: AppColors.primaryMid, width: 1)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x331B2A4A),
+            blurRadius: 16,
+            offset: Offset(0, -4),
+            spreadRadius: -4,
+          ),
+        ],
       ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 56,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _navItems.map((item) {
-                final selected = currentPath == item.route ||
-                    (item.route != '/home' && currentPath.startsWith(item.route));
-                return InkWell(
-                  onTap: () => context.go(item.route),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(
-                          color: selected ? AppColors.goldLight : Colors.transparent,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          item.icon,
-                          size: 22,
-                          color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          item.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
-                            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
+      child: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          indicatorColor: AppColors.goldLight.withValues(alpha: 0.18),
+          indicatorShape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+          ),
+          height: 64,
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return TextStyle(
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
+            );
+          }),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            final selected = states.contains(WidgetState.selected);
+            return IconThemeData(
+              size: 24,
+              color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
+            );
+          }),
+        ),
+        child: SafeArea(
+          top: false,
+          child: NavigationBar(
+            selectedIndex: selectedIndex,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            onDestinationSelected: (index) {
+              HapticFeedback.selectionClick();
+              context.go(_navItems[index].route);
+            },
+            destinations: _navItems.map((item) {
+              return NavigationDestination(
+                icon: Icon(item.icon),
+                selectedIcon: Icon(item.selectedIcon),
+                label: item.label,
+              );
+            }).toList(),
           ),
         ),
       ),

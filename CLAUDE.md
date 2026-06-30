@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚑ Oturum Başlangıcı — Tasarım (ÖNCE BUNU OKU)
+
+Bu proje **tasarım-lideri** agent mimarisiyle yürür (varsayılan agent: `tasarim-lideri`,
+bkz. `.claude/settings.json`). Her tasarım oturumuna şu sırayla başla:
+
+1. **`design/design-tokens.md`** — tek doğru kaynak (TEK SOURCE OF TRUTH). Palet, tipografi,
+   spacing ve **imza öğesi (Hero Tutar + Altın Ray)** burada. Durum: **v1 ONAYLANDI** +
+   §5'e "Ödeme türü butonu" ve "Altın ekonomisi" maddeleri eklendi.
+2. **Memory'i oku** (kaldığın yer + sıradaki iş burada tutulur):
+   - `memory/MEMORY.md` (indeks)
+   - `memory/design-agent-workflow.md` (tasarım turunun güncel ilerleme durumu)
+
+**Güncel durum (özet):** Satış ekranı tasarımı **bitti** (2 görsel QA turu PASS + masaüstü
+sepet tablosu responsive kırılması düzeltildi). 🔴 **Sıradaki ilk iş:** son doğrulama QA
+turunu (`gorsel-elestirmen`) tekrar çalıştır — **1280/1366/1440px** responsive teyidi +
+`flutter analyze`. Ardından sıradaki ekran: **satış grafikleri**. Detaylar memory'de.
+
+> Kural: kod yazmadan önce yön ve token kararı `tasarim-lideri` üzerinden geçer; ekran
+> tasarımcıları token'ı okur ama değiştirmez.
+
 ## Commands
 
 ## Supabase Kimlik Bilgileri

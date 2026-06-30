@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/widgets/empty_state.dart';
 import '../../application/sales_cart_notifier.dart';
 
 class CartTable extends ConsumerWidget {
@@ -34,12 +36,10 @@ class CartTable extends ConsumerWidget {
       children: [
         Expanded(
           child: tab.items.isEmpty
-              ? const Center(
-                  child: Text(
-                    'Sepet boş.\nBarkod okutun veya ürün seçin.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textMuted),
-                  ),
+              ? const EmptyState(
+                  icon: Icons.shopping_cart_outlined,
+                  title: 'Sepet boş',
+                  message: 'Barkod okutun veya aşağıdan ürün seçin',
                 )
               : ListView.separated(
                   itemCount: tab.items.length,
@@ -52,6 +52,8 @@ class CartTable extends ConsumerWidget {
                       index: index,
                       onQuantityChanged: (q) =>
                           notifier.updateItemQuantity(index, q),
+                      onDiscountChanged: (v, t) =>
+                          notifier.updateItemDiscount(index, v, t),
                       onRemove: () => notifier.removeItem(index),
                     );
                   },
@@ -73,16 +75,65 @@ class CartTable extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Genel toplamın TEK sahibi alttaki sticky ödeme barıdır (§4 hero).
+                  // Alt özet yalnızca kırılım verir: Ara Toplam (iskonto öncesi).
                   Text(
-                    'Toplam: ${formatCurrency(tab.total)}',
+                    'Ara Toplam: ${formatCurrency(tab.subtotal)}',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
                   ),
-                  if (tab.discountAmount > 0)
-                    Text(
-                      'İskonto: -${formatCurrency(tab.discountAmount)}',
-                      style: const TextStyle(
-                          fontSize: 12, color: AppColors.danger),
+                  // Sepet (genel) iskonto girişi — yalnızca sepet doluyken anlamlı.
+                  // 48px dokunma hedefi (§3). Aktifse danger renkli "İskonto: -₺X"
+                  // kırılımı (tabular), yoksa "İskonto ekle" affordance'ı; dokununca
+                  // web ile aynı _DiscountDialog açılır.
+                  if (tab.items.isNotEmpty)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                      onTap: () => _openDiscountDialog(
+                        context,
+                        value: tab.discountValue,
+                        type: tab.discountType,
+                        onApply: (v, t) => notifier.setDiscount(v, t),
+                      ),
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppSizes.space4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              tab.discountAmount > 0
+                                  ? Icons.edit
+                                  : Icons.percent,
+                              size: 15,
+                              color: tab.discountAmount > 0
+                                  ? AppColors.danger
+                                  : AppColors.textMuted,
+                            ),
+                            const SizedBox(width: AppSizes.space4),
+                            Text(
+                              tab.discountAmount > 0
+                                  ? 'İskonto: -${formatCurrency(tab.discountAmount)}'
+                                  : 'İskonto ekle',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: tab.discountAmount > 0
+                                    ? AppColors.danger
+                                    : AppColors.textMuted,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -95,14 +146,20 @@ class CartTable extends ConsumerWidget {
 
   // ─── Masaüstü sabit genişlikli tablo ─────────────────────────────────────
   //
-  // Kolon genişlikleri (px): İskonto 175 · Miktar 78 · Fiyat 88 · Tutar 88 · Sil 40
-  // Ürün sütunu kalan alanın tamamını alır (Expanded).
+  // Kolon genişlikleri (px): İskonto 96 · Miktar 116 · Fiyat 88 · Tutar 88 · Sil 40
+  // Ürün sütunu kalan alanı alır; ancak en az _wProductMin korunur. Toplam genişlik
+  // panele sığmazsa tablo yatay kaydırılır (kırpma/çökme yok).
+  //
+  // İskonto sütunu eskiden 175px'lik satır içi alan idi; kompakt rozet + düzenleme
+  // dialog'una (_CompactDiscountCell) taşındığı için 96px'e indi → dar panelde
+  // ürün sütununa nefes kalır.
 
-  static const double _wDisc  = 175;
-  static const double _wQty   = 116;
-  static const double _wPrice = 88;
-  static const double _wTotal = 88;
-  static const double _wDel   = 40;
+  static const double _wDisc       = 96;
+  static const double _wQty        = 116;
+  static const double _wPrice      = 88;
+  static const double _wTotal      = 88;
+  static const double _wDel        = 40;
+  static const double _wProductMin = 220; // ürün adının dikey karaktere çökmesini önler
 
   static const TextStyle _headerStyle = TextStyle(
     fontSize: 12,
@@ -119,162 +176,248 @@ class CartTable extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Başlık satırı ──────────────────────────────────────────────────
-        Container(
-          color: AppColors.tableHeader,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          child: Row(
-            children: [
-              const Expanded(child: Text('Ürün', style: _headerStyle)),
-              SizedBox(width: _wDisc,  child: const Text('İskonto', style: _headerStyle)),
-              SizedBox(width: _wQty,   child: const Text('Miktar',  style: _headerStyle)),
-              SizedBox(width: _wPrice, child: const Text('Fiyat',   style: _headerStyle, textAlign: TextAlign.right)),
-              SizedBox(width: _wTotal, child: const Text('Tutar',   style: _headerStyle, textAlign: TextAlign.right)),
-              SizedBox(width: _wDel),
-            ],
+        // ── Başlık + satırlar ──────────────────────────────────────────────
+        // Sütunların toplam genişliği panele sığarsa ürün sütunu esner; sığmazsa
+        // ürün sütunu _wProductMin'de kalır ve tablo tek parça yatay kaydırılır
+        // (başlık ile satırlar aynı offset'te hizalı kalır, kırpma olmaz).
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const fixed = _wDisc + _wQty + _wPrice + _wTotal + _wDel;
+              const hPad = AppSizes.space12 * 2; // satır/başlık yatay iç boşluk
+              final available = constraints.maxWidth;
+              final room = available - fixed - hPad;
+              final productWidth = room >= _wProductMin ? room : _wProductMin;
+              final tableWidth = fixed + hPad + productWidth;
+              final needsScroll = tableWidth > available + 0.5;
+
+              final table = SizedBox(
+                width: tableWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeaderRow(productWidth),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: tab.items.isEmpty
+                          ? const EmptyState(
+                              icon: Icons.shopping_cart_outlined,
+                              title: 'Sepet boş',
+                              message: 'Barkod okutun veya sağdan ürün seçin',
+                            )
+                          : ListView.separated(
+                              itemCount: tab.items.length,
+                              separatorBuilder: (_, _) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (ctx, index) => _buildItemRow(
+                                productWidth, index, tab.items[index], notifier),
+                            ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (!needsScroll) return table;
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: table,
+              );
+            },
           ),
         ),
         const Divider(height: 1),
-        // ── Satır listesi ──────────────────────────────────────────────────
-        Expanded(
-          child: tab.items.isEmpty
-              ? const Center(
-                  child: Text(
-                    'Sepet boş. Barkod okutun veya ürün seçin.',
-                    style: TextStyle(color: AppColors.textMuted),
+        _buildFooter(context, ref, tab, notifier),
+      ],
+    );
+  }
+
+  // ── Başlık satırı ──────────────────────────────────────────────────────────
+  Widget _buildHeaderRow(double productWidth) {
+    return Container(
+      color: AppColors.tableHeader,
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space8),
+      child: Row(
+        children: [
+          SizedBox(width: productWidth, child: const Text('Ürün', style: _headerStyle)),
+          SizedBox(width: _wDisc,  child: const Text('İskonto', style: _headerStyle)),
+          SizedBox(width: _wQty,   child: const Text('Miktar',  style: _headerStyle)),
+          SizedBox(width: _wPrice, child: const Text('Fiyat',   style: _headerStyle, textAlign: TextAlign.right)),
+          SizedBox(width: _wTotal, child: const Text('Tutar',   style: _headerStyle, textAlign: TextAlign.right)),
+          const SizedBox(width: _wDel),
+        ],
+      ),
+    );
+  }
+
+  // ── Tek bir sepet satırı ─────────────────────────────────────────────────
+  Widget _buildItemRow(
+      double productWidth, int index, dynamic item, SalesCart notifier) {
+    final hasBarcode = item.barcode != null && item.barcode!.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // ── Ürün adı + barkod ───────────────────────────────────────────
+          SizedBox(
+            width: productWidth,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.productName,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
                   ),
-                )
-              : ListView.separated(
-                  itemCount: tab.items.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (ctx, index) {
-                    final item = tab.items[index];
-                    final hasBarcode =
-                        item.barcode != null && item.barcode!.isNotEmpty;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // ── Ürün adı + barkod ───────────────────────────
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  item.productName,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (hasBarcode)
-                                  SelectableText(
-                                    item.barcode!,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.textMuted,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          // ── İskonto ────────────────────────────────────
-                          SizedBox(
-                            width: _wDisc,
-                            child: _DiscountField(
-                              key: ValueKey(
-                                  'item-disc-$index-${item.discountValue}-${item.discountType}'),
-                              initialValue: item.discountValue,
-                              initialType: item.discountType,
-                              onApply: (value, type) => notifier
-                                  .updateItemDiscount(index, value, type),
-                            ),
-                          ),
-                          // ── Miktar ─────────────────────────────────────
-                          SizedBox(
-                            width: _wQty,
-                            child: _QuantityControl(
-                              key: ValueKey('qty-$index'),
-                              quantity: item.quantity,
-                              onChanged: (q) =>
-                                  notifier.updateItemQuantity(index, q),
-                            ),
-                          ),
-                          // ── Birim fiyat ────────────────────────────────
-                          SizedBox(
-                            width: _wPrice,
-                            child: Text(
-                              formatCurrency(item.unitPrice),
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ),
-                          // ── Satır tutarı ───────────────────────────────
-                          SizedBox(
-                            width: _wTotal,
-                            child: Text(
-                              formatCurrency(item.total),
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                          ),
-                          // ── Sil ───────────────────────────────────────
-                          SizedBox(
-                            width: _wDel,
-                            child: IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  size: 18, color: AppColors.danger),
-                              onPressed: () => notifier.removeItem(index),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                  minWidth: 32, minHeight: 32),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-        ),
-        const Divider(height: 1),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+                if (hasBarcode)
+                  SelectableText(
+                    item.barcode!,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textMuted,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // ── İskonto (kompakt rozet → düzenleme dialog'u) ────────────────
+          SizedBox(
+            width: _wDisc,
+            child: _CompactDiscountCell(
+              value: item.discountValue,
+              type: item.discountType,
+              onApply: (value, type) =>
+                  notifier.updateItemDiscount(index, value, type),
+            ),
+          ),
+          // ── Miktar ───────────────────────────────────────────────────────
+          SizedBox(
+            width: _wQty,
+            child: _QuantityControl(
+              key: ValueKey('qty-$index'),
+              quantity: item.quantity,
+              onChanged: (q) => notifier.updateItemQuantity(index, q),
+            ),
+          ),
+          // ── Birim fiyat ──────────────────────────────────────────────────
+          SizedBox(
+            width: _wPrice,
+            child: Text(
+              formatCurrency(item.unitPrice),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 13,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          // ── Satır tutarı ─────────────────────────────────────────────────
+          SizedBox(
+            width: _wTotal,
+            child: Text(
+              formatCurrency(item.total),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          // ── Sil ──────────────────────────────────────────────────────────
+          SizedBox(
+            width: _wDel,
+            child: IconButton(
+              icon: const Icon(Icons.delete_outline,
+                  size: 18, color: AppColors.danger),
+              onPressed: () => notifier.removeItem(index),
+              padding: EdgeInsets.zero,
+              constraints:
+                  const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Footer (Muhtelif · Genel İskonto · Ara Toplam/İndirim/Toplam) ─────────
+  // Panele sığarsa toplamlar sağa yaslanır; sığmazsa footer yatay kaydırılır →
+  // hiçbir genişlikte toplamlar kırpılmaz (IntrinsicWidth + minWidth güvenlik ağı).
+  Widget _buildFooter(
+    BuildContext context,
+    WidgetRef ref,
+    CustomerTabState tab,
+    SalesCart notifier,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final row = Padding(
+          padding: const EdgeInsets.symmetric(
+              vertical: AppSizes.space8, horizontal: AppSizes.space12),
           child: Row(
             children: [
               OutlinedButton.icon(
                 onPressed: () => _showAddMiscDialog(context, ref),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('Muhtelif Tutar Ekle'),
+                label: const Text('Muhtelif'),
               ),
-              const Spacer(),
-              _DiscountField(
-                key: ValueKey(
-                    'cart-disc-${tab.discountValue}-${tab.discountType}'),
-                initialValue: tab.discountValue,
-                initialType: tab.discountType,
+              const SizedBox(width: AppSizes.space16),
+              _CompactDiscountCell(
+                value: tab.discountValue,
+                type: tab.discountType,
                 onApply: (value, type) => notifier.setDiscount(value, type),
                 leadingLabel: 'Genel İskonto',
               ),
-              const SizedBox(width: 24),
-              Text('Ara Toplam: ${formatCurrency(tab.subtotal)}'),
-              const SizedBox(width: 16),
+              const Spacer(),
+              // Footer Ara Toplam/İndirim odağına alınır; genel toplamın TEK sahibi
+              // ödeme panelindeki hero tutardır (§4) — buradaki Toplam normal ağırlıkta.
+              Text(
+                'Ara Toplam: ${formatCurrency(tab.subtotal)}',
+                style: const TextStyle(
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              if (tab.discountAmount > 0) ...[
+                const SizedBox(width: AppSizes.space16),
+                Text(
+                  'İndirim: -${formatCurrency(tab.discountAmount)}',
+                  style: const TextStyle(
+                    color: AppColors.danger,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+              const SizedBox(width: AppSizes.space16),
               Text(
                 'Toplam: ${formatCurrency(tab.total)}',
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16),
+                  fontSize: 14,
+                  color: AppColors.textSecondary,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               ),
             ],
           ),
-        ),
-      ],
+        );
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: IntrinsicWidth(child: row),
+          ),
+        );
+      },
     );
   }
 
@@ -336,12 +479,14 @@ class _MobileCartItem extends StatelessWidget {
   final dynamic item;   // CartItem
   final int index;
   final ValueChanged<num> onQuantityChanged;
+  final void Function(num value, DiscountType type) onDiscountChanged;
   final VoidCallback onRemove;
 
   const _MobileCartItem({
     required this.item,
     required this.index,
     required this.onQuantityChanged,
+    required this.onDiscountChanged,
     required this.onRemove,
   });
 
@@ -378,8 +523,8 @@ class _MobileCartItem extends StatelessWidget {
             GestureDetector(
               onTap: () => _editQuantity(context),
               child: Container(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
@@ -393,6 +538,7 @@ class _MobileCartItem extends StatelessWidget {
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: AppColors.primary,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
               ),
@@ -425,7 +571,7 @@ class _MobileCartItem extends StatelessWidget {
                                 style: const TextStyle(
                                     fontSize: 11,
                                     color: AppColors.textMuted,
-                                    fontFamily: 'monospace'),
+                                    fontFeatures: [FontFeature.tabularFigures()]),
                                 maxLines: 1,
                               )
                             : Text(
@@ -438,14 +584,22 @@ class _MobileCartItem extends StatelessWidget {
                       Text(
                         formatCurrency(item.unitPrice),
                         style: const TextStyle(
-                            fontSize: 11, color: AppColors.textSecondary),
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                            fontFeatures: [FontFeature.tabularFigures()]),
                       ),
                     ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            // ── İskonto girişi (48px hedef → web ile aynı _DiscountDialog) ──
+            _MobileDiscountButton(
+              value: item.discountValue,
+              type: item.discountType,
+              onApply: onDiscountChanged,
+            ),
+            const SizedBox(width: 4),
             // ── %20: Tutar ─────────────────────────────────────────
             SizedBox(
               width: 72,
@@ -456,6 +610,7 @@ class _MobileCartItem extends StatelessWidget {
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
+                  fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),
             ),
@@ -471,37 +626,196 @@ class _MobileCartItem extends StatelessWidget {
   }
 }
 
-// ── Ortak İskonto Alanı ────────────────────────────────────────────────────
+// ── İskonto dialog açıcı (web + mobil ortak) ───────────────────────────────
+//
+// Hem satır hem sepet bazı iskonto için aynı _DiscountDialog'u açar (web ile
+// AYNI %/₺ deneyimi). Seçilen değer/tür dialog kapandıktan SONRA onApply'a
+// iletilir (notifier davranışı korunur).
+Future<void> _openDiscountDialog(
+  BuildContext context, {
+  required num value,
+  required DiscountType type,
+  required void Function(num value, DiscountType type) onApply,
+}) async {
+  final result = await showDialog<(num, DiscountType)>(
+    context: context,
+    builder: (dialogContext) =>
+        _DiscountDialog(initialValue: value, initialType: type),
+  );
+  // State güncellemesi dialog kapandıktan SONRA yapılır.
+  if (result != null) onApply(result.$1, result.$2);
+}
 
-class _DiscountField extends StatefulWidget {
-  final num initialValue;
-  final DiscountType initialType;
+// ── Mobil satır iskonto butonu ─────────────────────────────────────────────
+//
+// 48×48 dokunma hedefi (§3). İskonto yoksa nötr yüzde ikonu (altın serpilmez,
+// §5); aktifse danger renkli tabular rozet (%10 / 10 ₺). Dokununca web ile
+// aynı _DiscountDialog açılır → updateItemDiscount.
+class _MobileDiscountButton extends StatelessWidget {
+  final num value;
+  final DiscountType type;
+  final void Function(num value, DiscountType type) onApply;
+
+  const _MobileDiscountButton({
+    required this.value,
+    required this.type,
+    required this.onApply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = value > 0;
+    final label = type == DiscountType.percent
+        ? '%${_qtyText(value)}'
+        : '${_qtyText(value)} ₺';
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+      onTap: () => _openDiscountDialog(
+        context,
+        value: value,
+        type: type,
+        onApply: onApply,
+      ),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        alignment: Alignment.center,
+        child: active
+            ? Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSizes.space6, vertical: AppSizes.space2),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                  border: Border.all(
+                      color: AppColors.danger.withValues(alpha: 0.40)),
+                ),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.danger,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              )
+            : const Icon(Icons.percent, size: 20, color: AppColors.textMuted),
+      ),
+    );
+  }
+}
+
+// ── Kompakt İskonto Hücresi ────────────────────────────────────────────────
+//
+// Satır içinde dar bir rozet gösterir: iskonto varsa "%10" / "10 ₺", yoksa "İsk.".
+// Dokununca _DiscountDialog açılır (%/₺ seçimi + değer). Eski 175px'lik satır içi
+// alanın yerini alır → İskonto sütunu 96px'e iner, dar panelde kırpma riski kalmaz.
+class _CompactDiscountCell extends StatelessWidget {
+  final num value;
+  final DiscountType type;
   final void Function(num value, DiscountType type) onApply;
   final String? leadingLabel;
 
-  const _DiscountField({
-    super.key,
-    required this.initialValue,
-    required this.initialType,
+  const _CompactDiscountCell({
+    required this.value,
+    required this.type,
     required this.onApply,
     this.leadingLabel,
   });
 
+  Future<void> _edit(BuildContext context) async {
+    final result = await showDialog<(num, DiscountType)>(
+      context: context,
+      builder: (dialogContext) =>
+          _DiscountDialog(initialValue: value, initialType: type),
+    );
+    // State güncellemesi dialog kapandıktan SONRA yapılır.
+    if (result != null) onApply(result.$1, result.$2);
+  }
+
   @override
-  State<_DiscountField> createState() => _DiscountFieldState();
+  Widget build(BuildContext context) {
+    final active = value > 0;
+    final label = active
+        ? (type == DiscountType.percent
+            ? '%${_qtyText(value)}'
+            : '${_qtyText(value)} ₺')
+        : 'İsk.';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (leadingLabel != null) ...[
+          Text(
+            leadingLabel!,
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+          const SizedBox(width: AppSizes.space8),
+        ],
+        InkWell(
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+          onTap: () => _edit(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space8, vertical: AppSizes.space4),
+            decoration: BoxDecoration(
+              color: active ? AppColors.primary : AppColors.goldBg,
+              borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+              border: Border.all(
+                  color: active ? AppColors.primary : AppColors.goldBorder),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  active ? Icons.edit : Icons.add,
+                  size: 13,
+                  color:
+                      active ? AppColors.goldLight : AppColors.textSecondary,
+                ),
+                const SizedBox(width: AppSizes.space4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color:
+                        active ? AppColors.goldLight : AppColors.textSecondary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
-class _DiscountFieldState extends State<_DiscountField> {
+// ── İskonto düzenleme dialog'u ─────────────────────────────────────────────
+class _DiscountDialog extends StatefulWidget {
+  final num initialValue;
+  final DiscountType initialType;
+
+  const _DiscountDialog({
+    required this.initialValue,
+    required this.initialType,
+  });
+
+  @override
+  State<_DiscountDialog> createState() => _DiscountDialogState();
+}
+
+class _DiscountDialogState extends State<_DiscountDialog> {
   late TextEditingController _ctrl;
   late DiscountType _type;
-  bool _dirty = false;
 
   @override
   void initState() {
     super.initState();
     _type = widget.initialType;
     _ctrl = TextEditingController(
-      text: widget.initialValue == 0 ? '' : widget.initialValue.toString(),
+      text: widget.initialValue == 0 ? '' : _qtyText(widget.initialValue),
     );
   }
 
@@ -511,75 +825,56 @@ class _DiscountFieldState extends State<_DiscountField> {
     super.dispose();
   }
 
-  void _apply() {
+  void _submit() {
     final value = num.tryParse(_ctrl.text.replaceAll(',', '.')) ?? 0;
-    widget.onApply(value, _type);
-    setState(() => _dirty = false);
-  }
-
-  void _selectType(DiscountType t) {
-    if (_type == t) return;
-    setState(() {
-      _type = t;
-      _dirty = _ctrl.text.isNotEmpty;
-    });
+    Navigator.of(context).pop((value, _type));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (widget.leadingLabel != null) ...[
-          Text(widget.leadingLabel!,
-              style: const TextStyle(
-                  color: AppColors.textMuted, fontSize: 13)),
-          const SizedBox(width: 8),
-        ],
-        _TypeChip(
-          label: '%',
-          selected: _type == DiscountType.percent,
-          onTap: () => _selectType(DiscountType.percent),
-        ),
-        const SizedBox(width: 4),
-        _TypeChip(
-          label: '₺',
-          selected: _type == DiscountType.tl,
-          onTap: () => _selectType(DiscountType.tl),
-        ),
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 90,
-          child: TextField(
-            controller: _ctrl,
-            decoration: InputDecoration(
-              hintText: '0',
-              suffixText: _type == DiscountType.percent ? '%' : '₺',
-              isDense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    return AlertDialog(
+      title: const Text('İskonto'),
+      content: SizedBox(
+        width: 280,
+        child: Row(
+          children: [
+            _TypeChip(
+              label: '%',
+              selected: _type == DiscountType.percent,
+              onTap: () => setState(() => _type = DiscountType.percent),
             ),
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (v) =>
-                setState(() => _dirty = v.trim().isNotEmpty),
-            onSubmitted: (_) => _apply(),
-          ),
+            const SizedBox(width: AppSizes.space4),
+            _TypeChip(
+              label: '₺',
+              selected: _type == DiscountType.tl,
+              onTap: () => setState(() => _type = DiscountType.tl),
+            ),
+            const SizedBox(width: AppSizes.space12),
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: '0',
+                  suffixText: _type == DiscountType.percent ? '%' : '₺',
+                  isDense: true,
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                onSubmitted: (_) => _submit(),
+              ),
+            ),
+          ],
         ),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: _dirty
-              ? IconButton(
-                  key: const ValueKey('check'),
-                  icon: const Icon(Icons.check_circle_rounded,
-                      color: AppColors.success, size: 22),
-                  onPressed: _apply,
-                  tooltip: 'Uygula',
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 30, minHeight: 30),
-                )
-              : const SizedBox(key: ValueKey('empty'), width: 30),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Vazgeç'),
+        ),
+        ElevatedButton(
+          onPressed: _submit,
+          child: const Text('Uygula'),
         ),
       ],
     );
@@ -603,10 +898,11 @@ class _TypeChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space8, vertical: AppSizes.space4),
         decoration: BoxDecoration(
           color: selected ? AppColors.primary : AppColors.goldBg,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
           border: Border.all(
             color: selected ? AppColors.primary : AppColors.goldBorder,
           ),
@@ -721,7 +1017,8 @@ class _QuantityControlState extends State<_QuantityControl> {
               contentPadding:
                   EdgeInsets.symmetric(horizontal: 2, vertical: 8),
             ),
-            style: const TextStyle(fontSize: 13),
+            style: const TextStyle(
+                fontSize: 13, fontFeatures: [FontFeature.tabularFigures()]),
             onChanged: _onChanged,
           ),
         ),
@@ -868,6 +1165,7 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
               fontWeight: FontWeight.bold,
               fontSize: 15,
               color: AppColors.textPrimary,
+              fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
         ],

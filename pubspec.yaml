@@ -44,6 +44,9 @@ dependencies:
   path_provider: ^2.1.5
   mobile_scanner: ^6.0.5
   fl_chart: ^0.68.0
+  google_fonts: ^8.1.0
+  archive: ^3.6.1
+  xml: ^6.6.1
 
 dev_dependencies:
   flutter_test:

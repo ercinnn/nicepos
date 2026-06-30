@@ -46,7 +46,7 @@ class AppColors {
 
   // ── Kenarlık / Bölücü ────────────────────────────────────────────────────────
   static const border  = Color(0xFFD4B86A); // Altın kenarlık
-  static const divider = Color(0xFFEADEBB); // Açık altın bölücü
+  static const divider = Color(0xFFEAECF0); // Nötr hairline (textMuted ~%18 beyaz üstü) — KARAR v1.2
 
   // ── Tablo ────────────────────────────────────────────────────────────────────
   static const tableHeader   = Color(0xFFFDF6E3); // Altın zemin tonu

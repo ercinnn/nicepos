@@ -12,6 +12,11 @@ import '../../../sales/data/repositories/sales_repository.dart';
 import '../../../sales/presentation/screens/sale_edit_screen.dart';
 import '../widgets/customer_form_dialog.dart';
 
+/// Tablo para/sayı hücreleri için tabular figür (hizalı rakam) stili.
+const TextStyle _tabular = TextStyle(
+  fontFeatures: [FontFeature.tabularFigures()],
+);
+
 class CustomerDetailScreen extends ConsumerStatefulWidget {
   final String customerId;
 
@@ -56,8 +61,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     Expanded(
                       child: Text(
                         customer.name,
-                        style: const TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.bold),
+                        style: Theme.of(context).textTheme.titleLarge,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -78,6 +82,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       icon: const Icon(Icons.delete_outline,
                           size: 18, color: AppColors.danger),
                       tooltip: 'Müşteriyi sil',
+                      constraints: const BoxConstraints(
+                          minWidth: 48, minHeight: 48),
                       onPressed: () => _confirmAndDelete(context, customer.name),
                     ),
                   ],
@@ -113,8 +119,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                       icon: const Icon(Icons.arrow_back),
                     ),
                     Text(customer.name,
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
+                        style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(width: 8),
                     IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 18),
@@ -151,116 +156,104 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     ),
                   ],
                 ),
-              const SizedBox(height: 16),
-              // ── Özet kartlar ──────────────────────────────────────────────────
-              // Mobil: 2×2 ızgara — her kart yarı genişlik
-              // Masaüstü: 4'lü tek satır (Expanded ile eşit dağılım)
-              if (context.isMobile)
-                LayoutBuilder(
-                  builder: (_, constraints) {
-                    final cardWidth = (constraints.maxWidth - 12) / 2;
-                    final totalSales = formatCurrency(
-                      (salesAsync.value ?? [])
-                          .fold<num>(0, (s, sale) => s + sale.totalAmount),
+              const SizedBox(height: AppSizes.space16),
+              // ── İmza HERO: Kalan Borç (müşteri bakiyesi) ─────────────────────
+              // Ekranın tek kahramanı. İri tabular tutar + altında semantik ray:
+              // borç (>0) → danger, alacak/sıfır → positive (§4 istisna, altın değil).
+              _BalanceHero(
+                balance: customer.remainingDebt,
+                isMobile: context.isMobile,
+              ),
+              const SizedBox(height: AppSizes.space12),
+              // ── Sakin destek kartları (hero ile yarışmaz) ────────────────────
+              // Toplam Satış nötr; Toplam Borç danger; Ödeme success semantik.
+              Builder(
+                builder: (context) {
+                  final totalSales = formatCurrency((salesAsync.value ?? [])
+                      .fold<num>(0, (s, sale) => s + sale.totalAmount));
+                  final cards = [
+                    _SummaryCard(
+                      title: 'Toplam Satış',
+                      value: totalSales,
+                      color: AppColors.textPrimary,
+                    ),
+                    _SummaryCard(
+                      title: 'Toplam Borç',
+                      value: formatCurrency(customer.openAccountTotal),
+                      color: AppColors.danger,
+                    ),
+                    _SummaryCard(
+                      title: 'Ödeme',
+                      value: formatCurrency(customer.paidTotal),
+                      color: AppColors.success,
+                    ),
+                  ];
+                  if (context.isMobile) {
+                    return LayoutBuilder(
+                      builder: (_, constraints) {
+                        final cardWidth =
+                            (constraints.maxWidth - AppSizes.space12) / 2;
+                        return Wrap(
+                          spacing: AppSizes.space12,
+                          runSpacing: AppSizes.space12,
+                          children: [
+                            for (final card in cards)
+                              SizedBox(width: cardWidth, child: card),
+                          ],
+                        );
+                      },
                     );
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        SizedBox(
-                          width: cardWidth,
-                          child: _SummaryCard(
-                              title: 'Toplam Satış',
-                              value: totalSales,
-                              color: AppColors.info),
-                        ),
-                        SizedBox(
-                          width: cardWidth,
-                          child: _SummaryCard(
-                              title: 'Toplam Borç',
-                              value: formatCurrency(customer.openAccountTotal),
-                              color: AppColors.warning),
-                        ),
-                        SizedBox(
-                          width: cardWidth,
-                          child: _SummaryCard(
-                              title: 'Ödeme',
-                              value: formatCurrency(customer.paidTotal),
-                              color: AppColors.success),
-                        ),
-                        SizedBox(
-                          width: cardWidth,
-                          child: _SummaryCard(
-                              title: 'Kalan Borç',
-                              value: formatCurrency(customer.remainingDebt),
-                              color: AppColors.danger),
-                        ),
+                  }
+                  return Row(
+                    children: [
+                      for (var i = 0; i < cards.length; i++) ...[
+                        if (i > 0) const SizedBox(width: AppSizes.space12),
+                        Expanded(child: cards[i]),
                       ],
-                    );
-                  },
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SummaryCard(
-                        title: 'Toplam Satış',
-                        value: formatCurrency((salesAsync.value ?? [])
-                            .fold<num>(0, (s, sale) => s + sale.totalAmount)),
-                        color: AppColors.info,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _SummaryCard(
-                          title: 'Toplam Borç',
-                          value: formatCurrency(customer.openAccountTotal),
-                          color: AppColors.warning),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _SummaryCard(
-                          title: 'Ödeme',
-                          value: formatCurrency(customer.paidTotal),
-                          color: AppColors.success),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _SummaryCard(
-                          title: 'Kalan Borç',
-                          value: formatCurrency(customer.remainingDebt),
-                          color: AppColors.danger),
-                    ),
-                  ],
-                ),
-              const SizedBox(height: 16),
-              if (customer.phone != null || customer.address != null || customer.note != null)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: AppSizes.space16),
+              // ── İletişim & hesap bilgileri (salt-okunur künye) ────────────
+              // Inline metin yerine etiket/değer çiftleri: künye taranabilir.
+              Builder(
+                builder: (context) {
+                  final pairs = <_InfoPair>[
+                    if (customer.phone != null)
+                      _InfoPair('Telefon', customer.phone!),
+                    if (customer.paymentTermDays != null)
+                      _InfoPair('Vade Süresi', '${customer.paymentTermDays} gün'),
+                    if (customer.creditLimit > 0)
+                      _InfoPair('Açık Hesap Limiti',
+                          formatCurrency(customer.creditLimit)),
+                    if (customer.address != null)
+                      _InfoPair('Adres', customer.address!),
+                    if (customer.note != null)
+                      _InfoPair('Not', customer.note!),
+                  ];
+                  if (pairs.isEmpty) return const SizedBox.shrink();
+                  return Container(
+                    width: double.infinity,
+                    decoration: AppSizes.cardDecoration(),
+                    padding: const EdgeInsets.all(AppSizes.cardPadding),
                     child: Wrap(
-                      spacing: 24,
-                      runSpacing: 8,
-                      children: [
-                        if (customer.phone != null) Text('Telefon: ${customer.phone}'),
-                        if (customer.paymentTermDays != null) Text('Vade Süresi: ${customer.paymentTermDays} gün'),
-                        if (customer.creditLimit > 0) Text('Açık Hesap Limiti: ${formatCurrency(customer.creditLimit)}'),
-                        if (customer.address != null) Text('Adres: ${customer.address}'),
-                        if (customer.note != null) Text('Not: ${customer.note}'),
-                      ],
+                      spacing: AppSizes.space32,
+                      runSpacing: AppSizes.space12,
+                      children: pairs,
                     ),
-                  ),
-                ),
-              const SizedBox(height: 16),
+                  );
+                },
+              ),
+              const SizedBox(height: AppSizes.space16),
               // ── Alışverişler başlığı + tarih filtreleri ───────────────────
               // Mobil: başlık üstte, tarih seçiciler altta (tek satıra sığmaz)
               // Masaüstü: tek satır
               if (context.isMobile) ...[
                 Row(
                   children: [
-                    const Text('Alışverişler',
-                        style:
-                            TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text('Alışverişler',
+                        style: Theme.of(context).textTheme.titleMedium),
                     const Spacer(),
                     if ((salesAsync.value ?? const []).isNotEmpty)
                       _deleteAllButton(
@@ -298,9 +291,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               ] else
                 Row(
                   children: [
-                    const Text('Alışverişler',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text('Alışverişler',
+                        style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(width: 12),
                     if ((salesAsync.value ?? const []).isNotEmpty)
                       _deleteAllButton(
@@ -334,7 +326,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   ],
                 ),
               const SizedBox(height: 8),
-              Card(
+              Container(
+                decoration: AppSizes.cardDecoration(),
+                clipBehavior: Clip.antiAlias,
                 child: salesAsync.when(
                   data: (sales) => _SalesTable(
                     sales: sales,
@@ -348,8 +342,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  const Text('Ödeme / Borç Hareketleri',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text('Ödeme / Borç Hareketleri',
+                      style: Theme.of(context).textTheme.titleMedium),
                   const Spacer(),
                   if ((paymentsAsync.value ?? const []).isNotEmpty)
                     _deleteAllButton(
@@ -357,7 +351,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              Card(
+              Container(
+                decoration: AppSizes.cardDecoration(),
+                clipBehavior: Clip.antiAlias,
                 child: paymentsAsync.when(
                   data: (payments) => _PaymentsTable(
                     payments: payments,
@@ -429,34 +425,91 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   Future<void> _showPaymentDialog(BuildContext context, CustomerPaymentType type) async {
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
+    // Geçmişe dönük giriş için tarih seçilebilir; varsayılan: bugün.
+    var selectedDate = DateTime.now();
+
+    final isOdeme = type == CustomerPaymentType.odeme;
+    // Semantik renk: ödeme borcu azaltır (success), borç artırır (danger).
+    final semantic = isOdeme ? AppColors.success : AppColors.danger;
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(type == CustomerPaymentType.odeme ? 'Ödeme Ekle' : 'Borç Ekle'),
-        content: SizedBox(
-          width: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Row(
             children: [
-              TextField(
-                controller: amountCtrl,
-                decoration: const InputDecoration(labelText: 'Tutar'),
-                keyboardType: TextInputType.number,
-                autofocus: true,
+              Icon(
+                isOdeme ? Icons.arrow_downward : Icons.arrow_upward,
+                size: 20,
+                color: semantic,
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: noteCtrl,
-                decoration: const InputDecoration(labelText: 'Not'),
-              ),
+              const SizedBox(width: AppSizes.space8),
+              Text(isOdeme ? 'Ödeme Ekle' : 'Borç Ekle'),
             ],
           ),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: amountCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Tutar',
+                    prefixText: '₺ ',
+                    helperText:
+                        isOdeme ? 'Bakiyeden düşülür' : 'Bakiyeye eklenir',
+                    helperStyle: TextStyle(color: semantic),
+                  ),
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                ),
+                const SizedBox(height: AppSizes.space16),
+                TextField(
+                  controller: noteCtrl,
+                  decoration: const InputDecoration(labelText: 'Not (opsiyonel)'),
+                ),
+                const SizedBox(height: AppSizes.space16),
+                // ── Tarih seçici (geçmişe dönük giriş) ───────────────────────
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: dialogContext,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2015),
+                      lastDate: DateTime.now(),
+                      helpText: 'İşlem tarihini seçin',
+                    );
+                    if (picked != null) {
+                      // Saat kısmını şimdiki saatle koru (sıralama tutarlı olsun).
+                      final now = DateTime.now();
+                      setDialogState(() => selectedDate = DateTime(
+                            picked.year,
+                            picked.month,
+                            picked.day,
+                            now.hour,
+                            now.minute,
+                            now.second,
+                          ));
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Tarih',
+                      suffixIcon: Icon(Icons.calendar_today, size: 16),
+                      isDense: true,
+                    ),
+                    child: Text(formatDate(selectedDate)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Vazgeç')),
+            ElevatedButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Kaydet')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Vazgeç')),
-          ElevatedButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Kaydet')),
-        ],
       ),
     );
 
@@ -469,7 +522,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           type: type,
           amount: amount,
           note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
-          paymentDate: DateTime.now(),
+          paymentDate: selectedDate,
         ));
 
     ref.invalidate(customerByIdProvider(widget.customerId));
@@ -598,6 +651,114 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   }
 }
 
+// ── İmza HERO: Kalan Borç (müşteri bakiyesi) ─────────────────────────────────
+// Ekranın tek kahramanı. İri tabular tutar + altında semantik ray:
+// borç (>0) → danger, alacak/sıfır → positive (§4 müşteri istisnası, altın değil).
+class _BalanceHero extends StatelessWidget {
+  final num balance;
+  final bool isMobile;
+  const _BalanceHero({required this.balance, required this.isMobile});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDebt = balance > 0;
+    final semantic = hasDebt ? AppColors.danger : AppColors.success;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space20,
+        vertical: AppSizes.space20,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        boxShadow: AppSizes.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            hasDebt ? 'KALAN BORÇ' : 'BAKİYE',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: AppSizes.space8),
+          IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatCurrency(balance),
+                  style: TextStyle(
+                    fontSize: isMobile ? 30 : 38,
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                    letterSpacing: -0.5,
+                    color: semantic,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: AppSizes.space6),
+                // Altın değil — tutara göre semantik ray (~%40 genişlik).
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: 0.4,
+                  child: Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: semantic,
+                      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// _InfoPair: künye satırı — etiket (utility/muted) üstte, değer (body/ink) altta.
+// Salt-okunur müşteri bilgilerinin taranabilirliği için.
+class _InfoPair extends StatelessWidget {
+  final String label;
+  final String value;
+  const _InfoPair(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.6,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: AppSizes.space4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 14,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // _SummaryCard: boyutu üst widget belirler (masaüstü: Expanded, mobil: SizedBox)
 class _SummaryCard extends StatelessWidget {
   final String title;
@@ -608,25 +769,30 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
-              overflow: TextOverflow.ellipsis,
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space16, vertical: AppSizes.space12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
@@ -699,7 +865,8 @@ class _SalesTable extends StatelessWidget {
           return InkWell(
             onTap: () => onTap(s),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: AppSizes.space12),
               child: Row(
                 children: [
                   // Sol: satış kodu + tarih
@@ -731,10 +898,12 @@ class _SalesTable extends StatelessWidget {
                   const SizedBox(width: 8),
                   // Orta: ödeme tipi rozeti
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSizes.space8, vertical: AppSizes.space2),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius:
+                          BorderRadius.circular(AppSizes.radiusPill),
                       border: Border.all(
                         color: AppColors.primary.withValues(alpha: 0.3),
                       ),
@@ -756,14 +925,18 @@ class _SalesTable extends StatelessWidget {
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                       color: AppColors.textPrimary,
+                      fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
-                  // Sil butonu
+                  // Sil butonu — dokunma hedefi min 48×48 (token §3)
                   IconButton(
                     icon: const Icon(Icons.delete_outline,
                         size: 18, color: AppColors.danger),
                     tooltip: 'Satışı sil',
-                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
                     onPressed: () => onDelete(s),
                   ),
                 ],
@@ -778,13 +951,15 @@ class _SalesTable extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        headingRowColor: const WidgetStatePropertyAll(AppColors.goldBg),
+        headingTextStyle: Theme.of(context).textTheme.labelMedium,
         columns: const [
           DataColumn(label: Text('Satış Kodu')),
           DataColumn(label: Text('Tarih')),
-          DataColumn(label: Text('Tutar')),
-          DataColumn(label: Text('İskonto')),
-          DataColumn(label: Text('Ödenen')),
-          DataColumn(label: Text('Kalan Borç')),
+          DataColumn(label: Text('Tutar'), numeric: true),
+          DataColumn(label: Text('İskonto'), numeric: true),
+          DataColumn(label: Text('Ödenen'), numeric: true),
+          DataColumn(label: Text('Kalan Borç'), numeric: true),
           DataColumn(label: Text('Ödeme Tipi')),
           DataColumn(label: Text('')),
         ],
@@ -794,10 +969,25 @@ class _SalesTable extends StatelessWidget {
             cells: [
               DataCell(Text(s.saleCode)),
               DataCell(Text(formatDateTime(s.saleDate))),
-              DataCell(Text(formatCurrency(s.totalAmount))),
-              DataCell(Text('%${s.discountPercent}')),
-              DataCell(Text(formatCurrency(s.paidAmount))),
-              DataCell(Text(formatCurrency(s.remainingDebt))),
+              DataCell(Text(formatCurrency(s.totalAmount), style: _tabular)),
+              // İskonto TL tipiyse kesin TL tutarı, değilse yüzde gösterilir
+              // (yalnız yüzde göstermek TL iskontoda yanıltıcı olur).
+              DataCell(Text(
+                s.discountType == 'tl'
+                    ? formatCurrency(s.discountAmount)
+                    : '%${s.discountPercent}',
+                style: _tabular,
+              )),
+              DataCell(Text(formatCurrency(s.paidAmount), style: _tabular)),
+              DataCell(Text(
+                formatCurrency(s.remainingDebt),
+                style: _tabular.copyWith(
+                  color: s.remainingDebt > 0
+                      ? AppColors.danger
+                      : AppColors.success,
+                  fontWeight: FontWeight.w600,
+                ),
+              )),
               DataCell(Text(s.paymentType.label)),
               DataCell(IconButton(
                 icon: const Icon(Icons.delete_outline,
@@ -840,7 +1030,8 @@ class _PaymentsTable extends StatelessWidget {
           final p = payments[i];
           final isDebt = p.type == CustomerPaymentType.borc;
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 12, vertical: AppSizes.space12),
             child: Row(
               children: [
                 // Tür ikonu
@@ -901,13 +1092,18 @@ class _PaymentsTable extends StatelessWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: isDebt ? AppColors.danger : AppColors.success,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
+                // Dokunma hedefi min 48×48 (token §3)
                 IconButton(
                   icon: const Icon(Icons.delete_outline,
                       size: 18, color: AppColors.danger),
                   tooltip: 'Hareketi sil',
-                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
+                  ),
                   onPressed: () => onDelete(p),
                 ),
               ],
@@ -921,26 +1117,33 @@ class _PaymentsTable extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        headingRowColor: const WidgetStatePropertyAll(AppColors.goldBg),
+        headingTextStyle: Theme.of(context).textTheme.labelMedium,
         columns: const [
           DataColumn(label: Text('Tarih')),
           DataColumn(label: Text('Tür')),
-          DataColumn(label: Text('Tutar')),
+          DataColumn(label: Text('Tutar'), numeric: true),
           DataColumn(label: Text('Not')),
           DataColumn(label: Text('')),
         ],
         rows: payments.map((p) {
+          final isDebt = p.type == CustomerPaymentType.borc;
           return DataRow(cells: [
             DataCell(Text(formatDateTime(p.paymentDate))),
             DataCell(Text(
               p.type.label,
               style: TextStyle(
-                color: p.type == CustomerPaymentType.borc
-                    ? AppColors.danger
-                    : AppColors.success,
+                color: isDebt ? AppColors.danger : AppColors.success,
                 fontWeight: FontWeight.w600,
               ),
             )),
-            DataCell(Text(formatCurrency(p.amount))),
+            DataCell(Text(
+              formatCurrency(p.amount),
+              style: _tabular.copyWith(
+                color: isDebt ? AppColors.danger : AppColors.success,
+                fontWeight: FontWeight.w600,
+              ),
+            )),
             DataCell(Text(p.note ?? '-')),
             DataCell(IconButton(
               icon: const Icon(Icons.delete_outline,

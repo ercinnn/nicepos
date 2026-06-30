@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../application/payment_input_notifier.dart';
 import '../../application/sales_cart_notifier.dart';
@@ -60,10 +61,11 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
             // İade modu banner
             if (isReturnMode) ...[
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                padding: const EdgeInsets.symmetric(
+                    vertical: AppSizes.space6, horizontal: AppSizes.space8),
                 decoration: BoxDecoration(
                   color: AppColors.danger.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                   border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
                 ),
                 child: const Row(
@@ -85,28 +87,9 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
               ),
               const SizedBox(height: 12),
             ],
-            // Tutar satırı
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  isReturnMode ? 'İade Tutarı' : 'Tutar',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isReturnMode ? AppColors.danger : AppColors.textMuted,
-                  ),
-                ),
-                Text(
-                  formatCurrency(tab.total),
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: isReturnMode ? AppColors.danger : AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
+            // İmza öğesi — hero toplam + altın aksan rayı (ekran başına tek hero)
+            _HeroTotal(amount: tab.total, isReturnMode: isReturnMode),
+            const SizedBox(height: 16),
             if (isReturnMode) ...[
               // İade modu — sadece Nakit ve POS
               Row(
@@ -171,7 +154,9 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                       icon: Icons.account_balance_wallet_outlined,
                       color: AppColors.openAccount,
                       selected: payment.type == PaymentType.acikHesap,
-                      onTap: () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
+                      onTap: (cartEmpty || _completing)
+                          ? null
+                          : () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -182,7 +167,9 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                       icon: Icons.call_split_outlined,
                       color: AppColors.splitPayment,
                       selected: payment.type == PaymentType.parcali,
-                      onTap: () => paymentNotifier.selectType(PaymentType.parcali, tab.total),
+                      onTap: (cartEmpty || _completing)
+                          ? null
+                          : () => paymentNotifier.selectType(PaymentType.parcali, tab.total),
                     ),
                   ),
                 ],
@@ -234,7 +221,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
               ] else if (payment.type == PaymentType.acikHesap) ...[
                 Text(
                   'Açık Hesap: ${formatCurrency(tab.total)} müşteri hesabına borç olarak işlenecek.',
-                  style: const TextStyle(color: AppColors.warning),
+                  style: const TextStyle(color: AppColors.danger),
                 ),
                 if (tab.customerId == null)
                   const Padding(
@@ -363,6 +350,70 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
   }
 }
 
+/// İmza öğesi (design-tokens §4): bir ekrandaki en önemli tutar kahraman olarak
+/// gösterilir — iri tabular rakam + altında ince altın aksan rayı.
+/// Satış ekranında bu, sepetin GENEL TOPLAM'ıdır. Ekran başına yalnızca bir tane.
+class _HeroTotal extends StatelessWidget {
+  final num amount;
+  final bool isReturnMode;
+
+  const _HeroTotal({required this.amount, required this.isReturnMode});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isReturnMode ? AppColors.danger : AppColors.primary;
+    final rayColor = isReturnMode ? AppColors.danger : AppColors.gold;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          isReturnMode ? 'İADE TUTARI' : 'TOPLAM',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.8,
+            color: isReturnMode ? AppColors.danger : AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: 2),
+        // Ray genişliği hero rakam genişliğine bağlanır (~%40) — sabit px yerine.
+        IntrinsicWidth(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                formatCurrency(amount),
+                style: TextStyle(
+                  fontSize: 38,
+                  fontWeight: FontWeight.w800,
+                  height: 1.05,
+                  letterSpacing: -0.5,
+                  color: color,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(height: AppSizes.space6),
+              // Altın aksan rayı — yalnızca hero tutarın altında belirir (~%40).
+              FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: 0.4,
+                child: Container(
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: rayColor,
+                    borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ParcaliSummary extends StatelessWidget {
   final num cashSplit;
   final num cardSplit;
@@ -380,10 +431,11 @@ class _ParcaliSummary extends StatelessWidget {
     final diff = total - paid;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space8, vertical: AppSizes.space6),
       decoration: BoxDecoration(
         color: AppColors.tableHeader,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,7 +449,7 @@ class _ParcaliSummary extends StatelessWidget {
             _SummaryLine(
               label: diff > 0 ? 'Eksik' : 'Fazla',
               amount: diff.abs(),
-              color: diff > 0 ? AppColors.danger : AppColors.warning,
+              color: AppColors.danger,
             ),
           ],
         ],
@@ -424,7 +476,12 @@ class _SummaryLine extends StatelessWidget {
         ),
         Text(
           formatCurrency(amount),
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: color,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
         ),
       ],
     );
@@ -451,48 +508,78 @@ class _PaymentTypeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
-    final bg = selected
-        ? color
-        : disabled
-            ? AppColors.goldSubtle
-            : AppColors.goldBg;
+    // §5 "Ödeme türü butonu": seçili değilken zemin nötr beyaz (color.surface) +
+    // ince hairline kenarlık. Tür kimliği SOL renk şeridi + ikon/etiket ile taşınır;
+    // dört buton "altın duvar"a dönüşmesin diye goldBg zemin kullanılmaz.
+    final isGold = color == AppColors.openAccount;
+    final bg = selected ? color : AppColors.cardBg;
+    // §1: altın metin açık zemine yazılmaz → açık hesap seçili değilken etiket/ikon
+    // lacivert (ink). Diğer türler kendi renginde okunur (AA sağlar).
     final fg = selected
         ? Colors.white
         : disabled
             ? AppColors.textMuted
+            : isGold
+                ? AppColors.primary
+                : color;
+    final borderColor = selected
+        ? color
+        : disabled
+            ? AppColors.divider
+            : AppColors.goldBorder;
+    // Sol şerit, türü bir bakışta ayırt ettirir; seçiliyken dolgu üstünde beyaz aksan.
+    final stripColor = disabled
+        ? AppColors.textMuted
+        : selected
+            ? Colors.white
             : color;
-    final borderColor = selected ? color : AppColors.goldBorder;
 
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
           border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: fg, size: 22),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: fg,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Tür kimliği — sol renk şeridi
+              Container(width: 4, color: stripColor),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      vertical: AppSizes.space12, horizontal: AppSizes.space8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, color: fg, size: 22),
+                      const SizedBox(height: AppSizes.space4),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: fg,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      if (sublabel.isNotEmpty)
+                        Text(
+                          sublabel,
+                          style:
+                              TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.7)),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-              textAlign: TextAlign.center,
-            ),
-            if (sublabel.isNotEmpty)
-              Text(
-                sublabel,
-                style: TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.7)),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

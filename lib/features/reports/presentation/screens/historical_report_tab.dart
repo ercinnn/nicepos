@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../customers/data/models/customer_payment.dart';
@@ -69,11 +70,11 @@ class _HistoricalReportTabState extends ConsumerState<HistoricalReportTab> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Tarihsel Rapor',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSizes.space12),
               Row(
                 children: [
                   Expanded(
@@ -104,7 +105,7 @@ class _HistoricalReportTabState extends ConsumerState<HistoricalReportTab> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSizes.space8),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -123,9 +124,9 @@ class _HistoricalReportTabState extends ConsumerState<HistoricalReportTab> {
           // Masaüstü: yan yana tek satır
           Row(
             children: [
-              const Text(
+              Text(
                 'Tarihsel Rapor',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.titleLarge,
               ),
               const Spacer(),
               OutlinedButton.icon(
@@ -153,7 +154,7 @@ class _HistoricalReportTabState extends ConsumerState<HistoricalReportTab> {
               ),
             ],
           ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSizes.space16),
         if (_activeParam == null)
           const Expanded(
             child: Center(
@@ -192,27 +193,34 @@ class _DateRangeContent extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // İmza: aralığın TEK kahramanı — Toplam Ciro.
+            ReportHero(amount: report.grandTotal),
+            const SizedBox(height: AppSizes.space16),
             ReportSummaryRow(report: report),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSizes.space24),
             ReportSectionHeader(
               title: 'Satışlar',
               badge: '${report.sales.length}',
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSizes.space8),
             report.sales.isEmpty
                 ? const ReportEmptyCard('Bu tarih aralığında satış bulunamadı.')
-                : Card(child: _HistoricalSalesTable(sales: report.sales, onRowTap: onSaleTap)),
-            const SizedBox(height: 24),
+                : ReportTableCard(
+                    child: _HistoricalSalesTable(
+                        sales: report.sales, onRowTap: onSaleTap)),
+            const SizedBox(height: AppSizes.space24),
             ReportSectionHeader(
               title: 'Alınan Ödemeler',
               badge: '${report.receivedPayments.length}',
               color: AppColors.success,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSizes.space8),
             report.receivedPayments.isEmpty
                 ? const ReportEmptyCard('Bu tarih aralığında ödeme bulunamadı.')
-                : Card(child: _HistoricalPaymentsTable(payments: report.receivedPayments)),
-            const SizedBox(height: 24),
+                : ReportTableCard(
+                    child: _HistoricalPaymentsTable(
+                        payments: report.receivedPayments)),
+            const SizedBox(height: AppSizes.space24),
           ],
         ),
       ),
@@ -252,11 +260,18 @@ class _HistoricalSalesTable extends StatelessWidget {
               cells: [
                 DataCell(Text(
                   '${i + 1}',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
                 )),
                 DataCell(Text(
                   formatDateTime(s.saleDate),
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
                 )),
                 DataCell(Text(
                   s.saleCode,
@@ -264,6 +279,7 @@ class _HistoricalSalesTable extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     fontSize: 12,
                     color: AppColors.primary,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 )),
                 DataCell(Text(
@@ -273,17 +289,26 @@ class _HistoricalSalesTable extends StatelessWidget {
                     fontStyle: s.customerName == null ? FontStyle.italic : null,
                   ),
                 )),
-                DataCell(Text('${s.totalProducts} adet')),
+                DataCell(Text(
+                  '${s.totalProducts} adet',
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                )),
                 DataCell(Text(
                   s.discountPercent > 0 ? '%${s.discountPercent}' : '-',
-                  style: TextStyle(
-                    color: s.discountPercent > 0 ? AppColors.warning : AppColors.textMuted,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 )),
                 DataCell(ReportPaymentBadge(type: s.paymentType)),
                 DataCell(Text(
                   formatCurrency(s.totalAmount),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
                 )),
                 DataCell(SizedBox(
                   width: 120,
@@ -304,17 +329,27 @@ class _HistoricalSalesTable extends StatelessWidget {
               const DataCell(Text('')),
               DataCell(Text(
                 'TOPLAM (${sales.length} satış)',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(Text(
                 '${sales.fold<int>(0, (s, e) => s + e.totalProducts)} adet',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               const DataCell(Text('')),
               const DataCell(Text('')),
               DataCell(Text(
                 formatCurrency(sales.fold<num>(0, (s, e) => s + e.totalAmount)),
-                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               const DataCell(Text('')),
             ],
@@ -349,15 +384,26 @@ class _HistoricalPaymentsTable extends StatelessWidget {
             final p = payments[i];
             return DataRow(cells: [
               DataCell(Text('${i + 1}',
-                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12))),
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ))),
               DataCell(Text(
                 formatDateTime(p.paymentDate),
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(Text(p.customerName ?? '-')),
               DataCell(Text(
                 formatCurrency(p.amount),
-                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.success),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.success,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(SizedBox(
                 width: 200,
@@ -376,11 +422,18 @@ class _HistoricalPaymentsTable extends StatelessWidget {
               const DataCell(Text('')),
               DataCell(Text(
                 'TOPLAM (${payments.length} ödeme)',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               DataCell(Text(
                 formatCurrency(payments.fold<num>(0, (s, p) => s + p.amount)),
-                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.success),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.success,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               )),
               const DataCell(Text('')),
             ],

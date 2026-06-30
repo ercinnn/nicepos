@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../constants/app_colors.dart';
@@ -9,6 +10,54 @@ part 'app_theme.g.dart';
 // ── Riverpod provider — tek kaynak ──────────────────────────────────────────
 @Riverpod(keepAlive: true)
 ThemeData appTheme(AppThemeRef ref) => _buildTheme();
+
+// ── Tipografi ───────────────────────────────────────────────────────────────
+// Başlıklar: Manrope (geometrik, premium) · Gövde + sayılar: Inter (tabular
+// figür → para tutarları hizalı). Tek kaynak — tüm uygulama buradan beslenir.
+TextTheme _buildTextTheme() {
+  final heading = GoogleFonts.manrope();
+  final body = GoogleFonts.inter();
+
+  TextStyle h(double size, FontWeight weight, {double? height, double? spacing}) =>
+      heading.copyWith(
+        fontSize: size,
+        fontWeight: weight,
+        height: height,
+        letterSpacing: spacing,
+        color: AppColors.textPrimary,
+      );
+
+  TextStyle b(double size, FontWeight weight, {Color? color, double? height}) =>
+      body.copyWith(
+        fontSize: size,
+        fontWeight: weight,
+        height: height,
+        color: color ?? AppColors.textPrimary,
+      );
+
+  return TextTheme(
+    // Display — büyük tutarlar / hero
+    displayLarge: h(40, FontWeight.w800, height: 1.1, spacing: -0.5),
+    displayMedium: h(32, FontWeight.w800, height: 1.12, spacing: -0.5),
+    displaySmall: h(28, FontWeight.w700, height: 1.15, spacing: -0.3),
+    // Headline — ekran başlıkları
+    headlineLarge: h(24, FontWeight.w700, height: 1.2, spacing: -0.2),
+    headlineMedium: h(20, FontWeight.w700, height: 1.25),
+    headlineSmall: h(18, FontWeight.w700, height: 1.3),
+    // Title — kart / bölüm başlıkları
+    titleLarge: h(17, FontWeight.w700, height: 1.3),
+    titleMedium: h(15, FontWeight.w600, height: 1.35),
+    titleSmall: b(13, FontWeight.w600, height: 1.4),
+    // Body — gövde metni
+    bodyLarge: b(15, FontWeight.w400, height: 1.45),
+    bodyMedium: b(13, FontWeight.w400, height: 1.45, color: AppColors.textSecondary),
+    bodySmall: b(12, FontWeight.w400, height: 1.4, color: AppColors.textMuted),
+    // Label — buton / etiket
+    labelLarge: b(13, FontWeight.w600, height: 1.3),
+    labelMedium: b(12, FontWeight.w600, height: 1.3),
+    labelSmall: b(11, FontWeight.w500, height: 1.3, color: AppColors.textMuted),
+  );
+}
 
 // ── Tema inşaatı ────────────────────────────────────────────────────────────
 ThemeData _buildTheme() {
@@ -47,28 +96,40 @@ ThemeData _buildTheme() {
     useMaterial3: true,
     colorScheme: colorScheme,
     scaffoldBackgroundColor: AppColors.pageBg,
-    fontFamily: 'Roboto',
+    textTheme: _buildTextTheme(),
 
     // ── AppBar ───────────────────────────────────────────────────────────────
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       backgroundColor: AppColors.cardBg,
       foregroundColor: AppColors.textPrimary,
       elevation: 0,
+      scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
+      centerTitle: false,
+      titleTextStyle: GoogleFonts.manrope(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textPrimary,
+      ),
     ),
 
     // ── Card ─────────────────────────────────────────────────────────────────
+    // Yumuşak lacivert-tint gölge → düz görünümden çıkış. Çok katmanlı gölge
+    // için karmaşık alanlarda AppSizes.cardDecoration() kullanılır.
     cardTheme: CardThemeData(
       color: AppColors.cardBg,
-      elevation: 0,
-      shadowColor: Colors.transparent,
+      elevation: 3,
+      shadowColor: const Color(0x1F1B2A4A),
+      surfaceTintColor: Colors.transparent,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSizes.cardRadius),
-        side: const BorderSide(color: AppColors.goldBorder, width: 1),
+        side: const BorderSide(color: AppColors.goldSubtle, width: 1),
       ),
     ),
 
     // ── Divider ──────────────────────────────────────────────────────────────
+    dividerColor: AppColors.divider,
     dividerTheme: const DividerThemeData(
       color: AppColors.divider,
       thickness: 1,
@@ -108,8 +169,8 @@ ThemeData _buildTheme() {
         disabledBackgroundColor: AppColors.primaryMid,
         disabledForegroundColor: AppColors.goldSubtle,
         elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
         ),
@@ -122,8 +183,8 @@ ThemeData _buildTheme() {
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.goldLight,
         elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
         ),
@@ -135,8 +196,8 @@ ThemeData _buildTheme() {
       style: OutlinedButton.styleFrom(
         foregroundColor: AppColors.primary,
         backgroundColor: AppColors.cardBg,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
         ),
@@ -149,7 +210,7 @@ ThemeData _buildTheme() {
       style: TextButton.styleFrom(
         foregroundColor: AppColors.primary,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
         ),
@@ -190,13 +251,15 @@ ThemeData _buildTheme() {
     dialogTheme: DialogThemeData(
       backgroundColor: AppColors.cardBg,
       surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      shadowColor: const Color(0x331B2A4A),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSizes.cardRadius),
-        side: const BorderSide(color: AppColors.goldBorder),
+        borderRadius: BorderRadius.circular(AppSizes.radiusXl),
+        side: const BorderSide(color: AppColors.goldSubtle),
       ),
-      titleTextStyle: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.bold,
+      titleTextStyle: GoogleFonts.manrope(
+        fontSize: 19,
+        fontWeight: FontWeight.w700,
         color: AppColors.primary,
       ),
     ),
@@ -204,11 +267,27 @@ ThemeData _buildTheme() {
     // ── SnackBar ─────────────────────────────────────────────────────────────
     snackBarTheme: SnackBarThemeData(
       backgroundColor: AppColors.primaryDark,
-      contentTextStyle: const TextStyle(color: AppColors.goldLight),
+      contentTextStyle: GoogleFonts.inter(
+        color: AppColors.goldLight,
+        fontWeight: FontWeight.w500,
+        fontSize: 13,
+      ),
       behavior: SnackBarBehavior.floating,
+      elevation: 6,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
         side: const BorderSide(color: AppColors.goldBorder),
+      ),
+    ),
+
+    // ── BottomSheet ──────────────────────────────────────────────────────────
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: AppColors.cardBg,
+      surfaceTintColor: Colors.transparent,
+      elevation: 12,
+      modalElevation: 12,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppSizes.radiusXl)),
       ),
     ),
 

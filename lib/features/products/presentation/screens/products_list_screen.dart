@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../../core/widgets/skeleton.dart';
 import '../../data/models/product.dart';
 import '../../application/product_columns_provider.dart';
 import '../../application/products_provider.dart';
@@ -113,7 +116,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             child: const Text('Sil'),
           ),
         ],
@@ -140,7 +143,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           ? '"${p.name}" silinemedi: Bu ürüne ait satış kaydı bulunuyor.'
           : '"${p.name}" silinemedi: $e';
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(backgroundColor: Colors.red, content: Text(msg)));
+          SnackBar(backgroundColor: AppColors.danger, content: Text(msg)));
     }
   }
 
@@ -197,7 +200,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         : '$deleted ürün silindi, $skipped ürün silinemedi (satış kaydı mevcut).';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor: skipped > 0 ? AppColors.warning : null,
+      backgroundColor: skipped > 0 ? AppColors.danger : null,
     ));
   }
 
@@ -243,8 +246,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         // Başlık + Ürün Özet + Yeni Ürün
         Row(
           children: [
-            const Text('Ürünler',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Ürünler', style: Theme.of(context).textTheme.titleLarge),
             const Spacer(),
             // Ürün Özet butonu — masaüstüyle aynı işlevi mobilde de sunar
             IconButton(
@@ -260,7 +262,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: AppSizes.space12),
         // Arama
         TextField(
           controller: _searchController,
@@ -274,7 +276,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             _loadProducts();
           },
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSizes.space8),
         // Grup filtresi
         groupsAsync.when(
           data: (groups) => DropdownButtonFormField<String?>(
@@ -293,15 +295,19 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           loading: () => const SizedBox(height: 40),
           error: (_, _) => const SizedBox(),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSizes.space8),
         // Liste
         Expanded(
           child: _loading && _products.isEmpty
-              ? const Center(child: CircularProgressIndicator())
+              ? const SkeletonList(itemCount: 8)
               : _error != null
                   ? Center(child: Text('Hata: $_error'))
                   : _displayProducts.isEmpty
-                      ? const Center(child: Text('Ürün bulunamadı.'))
+                      ? const EmptyState(
+                          icon: Icons.inventory_2_outlined,
+                          title: 'Ürün bulunamadı',
+                          message: 'Aramanızı değiştirin veya yeni ürün ekleyin',
+                        )
                       : ListView.separated(
                           itemCount: _displayProducts.length,
                           separatorBuilder: (_, _) => const Divider(height: 1),
@@ -311,7 +317,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                           ),
                         ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSizes.space8),
         // Sayfalama
         _buildPagination(),
       ],
@@ -329,8 +335,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       children: [
         Row(
           children: [
-            const Text('Ürünler',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Text('Ürünler', style: Theme.of(context).textTheme.titleLarge),
             const Spacer(),
             OutlinedButton.icon(
               onPressed: () async {
@@ -346,7 +351,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               icon: const Icon(Icons.file_download_outlined),
               label: const Text('Excel Aktar'),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSizes.space8),
             OutlinedButton.icon(
               onPressed: () async {
                 await showDialog(
@@ -358,7 +363,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               icon: const Icon(Icons.file_upload_outlined),
               label: const Text('Excel İçe Aktar'),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSizes.space8),
             ElevatedButton.icon(
               onPressed: () => context.go('/products/new'),
               icon: const Icon(Icons.add),
@@ -366,7 +371,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSizes.space12),
         Row(
           children: [
             SizedBox(
@@ -383,7 +388,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                 },
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSizes.space12),
             SizedBox(
               width: 240,
               child: groupsAsync.when(
@@ -403,13 +408,13 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                 error: (_, _) => const SizedBox(),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSizes.space12),
             OutlinedButton.icon(
               onPressed: _showColumnPicker,
               icon: const Icon(Icons.view_column_outlined, size: 18),
               label: Text('Kolonlar (${ref.watch(productColumnsProvider).length})'),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSizes.space12),
             OutlinedButton.icon(
               onPressed: _showSummary,
               icon: const Icon(Icons.summarize_outlined, size: 18),
@@ -417,23 +422,24 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSizes.space8),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
           child: selCount > 0
               ? Container(
                   key: const ValueKey('selection-bar'),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  margin: const EdgeInsets.only(bottom: AppSizes.space8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.space16, vertical: AppSizes.space8),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                     border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
                       const Icon(Icons.check_box, color: AppColors.primary, size: 18),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSizes.space8),
                       Text('$selCount ürün seçildi',
                           style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.primary)),
                       const Spacer(),
@@ -441,7 +447,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                         onPressed: () => setState(() => _selectedIds.clear()),
                         child: const Text('Seçimi Temizle'),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSizes.space8),
                       ElevatedButton.icon(
                         onPressed: _deleteSelected,
                         icon: const Icon(Icons.delete_sweep_outlined, size: 18),
@@ -455,13 +461,19 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               : const SizedBox.shrink(key: ValueKey('no-selection')),
         ),
         Expanded(
-          child: Card(
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: AppSizes.cardDecoration(),
             child: _loading && _products.isEmpty
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList(itemCount: 10)
                 : _error != null
                     ? Center(child: Text('Hata: $_error'))
                     : _displayProducts.isEmpty
-                        ? const Center(child: Text('Ürün bulunamadı.'))
+                        ? const EmptyState(
+                            icon: Icons.inventory_2_outlined,
+                            title: 'Ürün bulunamadı',
+                            message: 'Aramanızı değiştirin veya yeni ürün ekleyin',
+                          )
                         : _ProductsTable(
                             products: _displayProducts,
                             visibleColumns: ref.watch(productColumnsProvider),
@@ -473,7 +485,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                           ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSizes.space8),
         _buildPagination(),
       ],
     );
@@ -490,9 +502,12 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           icon: const Icon(Icons.chevron_left),
           label: const Text('Önceki'),
         ),
-        const SizedBox(width: 16),
-        Text('Sayfa ${_page + 1}', style: const TextStyle(fontSize: 13)),
-        const SizedBox(width: 16),
+        const SizedBox(width: AppSizes.space16),
+        Text('Sayfa ${_page + 1}',
+            style: const TextStyle(
+                fontSize: 13,
+                fontFeatures: [FontFeature.tabularFigures()])),
+        const SizedBox(width: AppSizes.space16),
         TextButton.icon(
           onPressed: _hasMore && !_loading
               ? () { setState(() { _page++; _products = []; }); _loadProducts(); }
@@ -538,7 +553,7 @@ class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
         children: [
           const Icon(Icons.view_column_outlined,
               color: AppColors.primary, size: 20),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSizes.space8),
           const Text('Kolon Seçimi'),
           const Spacer(),
           TextButton(
@@ -709,17 +724,18 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: const EdgeInsets.only(bottom: AppSizes.space8),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space12),
       decoration: BoxDecoration(
         color: AppColors.primary.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
         border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [
           Icon(icon, color: AppColors.primary, size: 20),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSizes.space12),
           Expanded(
             child: Text(
               label,
@@ -727,13 +743,14 @@ class _SummaryRow extends StatelessWidget {
                   fontSize: 13, color: AppColors.textSecondary),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSizes.space8),
           Text(
             value,
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: AppColors.primary,
+              fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
         ],
@@ -769,6 +786,14 @@ class _ProductsTable extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
+          // Tablo başlığı: altın zemin (token §5) + type.utility
+          headingRowColor: WidgetStateProperty.all(AppColors.goldBg),
+          headingTextStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary,
+            letterSpacing: 0.2,
+          ),
           columns: _buildColumns(),
           rows: List.generate(products.length, (i) {
             final p = products[i];
@@ -804,13 +829,36 @@ class _ProductsTable extends StatelessWidget {
       const DataColumn(label: Text('#')),
       // Sabit: Ürün Adı
       const DataColumn(label: Text('Ürün Adı')),
-      // Dinamik kolonlar
+      // Dinamik kolonlar — sayısal olanlar sağa dayalı (tarama kolaylığı)
       ...ProductColumn.values
           .where((c) => visibleColumns.contains(c))
-          .map((c) => DataColumn(label: Text(c.label))),
+          .map((c) => DataColumn(
+                label: Text(c.label),
+                numeric: _isNumericColumn(c),
+              )),
       // Sabit: İşlem
       const DataColumn(label: Text('İşlem')),
     ];
+  }
+
+  // Stok/fiyat/oran kolonları rakamdır → sağa dayalı + tabular hizalama.
+  static bool _isNumericColumn(ProductColumn c) {
+    switch (c) {
+      case ProductColumn.stok:
+      case ProductColumn.kritikStok:
+      case ProductColumn.kdv:
+      case ProductColumn.alis:
+      case ProductColumn.fiyat1:
+      case ProductColumn.fiyat2:
+        return true;
+      case ProductColumn.gorsel:
+      case ProductColumn.barkod:
+      case ProductColumn.stokKodu:
+      case ProductColumn.ustGrup:
+      case ProductColumn.grupAdi:
+      case ProductColumn.birim:
+        return false;
+    }
   }
 
   List<DataCell> _buildCells(
@@ -864,7 +912,7 @@ class _ProductsTable extends StatelessWidget {
             ? const Icon(Icons.image_not_supported_outlined,
                 color: AppColors.textMuted, size: 22)
             : ClipRRect(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                 child: Image.network(p.imageUrl!,
                     width: 32, height: 32, fit: BoxFit.cover),
               ));
@@ -880,23 +928,35 @@ class _ProductsTable extends StatelessWidget {
         return DataCell(Text(p.groupName ?? '-',
             style: const TextStyle(color: AppColors.textSecondary)));
       case ProductColumn.stok:
-        return DataCell(Text(p.stockQuantity.toString()));
+        // İMZA — kritik stok sinyali (§5): tükendi / kritik / normal.
+        return DataCell(Align(
+          alignment: Alignment.centerRight,
+          child: _StockSignal(product: p),
+        ));
       case ProductColumn.kritikStok:
-        return DataCell(Text(p.criticalStock.toString()));
+        return DataCell(Text(formatNumber(p.criticalStock),
+            style: _kTabularMuted));
       case ProductColumn.birim:
         return DataCell(Text(p.unit));
       case ProductColumn.kdv:
-        return DataCell(Text('%${p.vatRate}'));
+        return DataCell(Text('%${p.vatRate}', style: _kTabular));
       case ProductColumn.alis:
-        return DataCell(Text(formatCurrency(p.purchasePrice)));
+        return DataCell(Text(formatCurrency(p.purchasePrice), style: _kTabular));
       case ProductColumn.fiyat1:
         return DataCell(Text(formatCurrency(p.price1),
-            style: const TextStyle(fontWeight: FontWeight.w600)));
+            style: _kTabular.copyWith(fontWeight: FontWeight.w600)));
       case ProductColumn.fiyat2:
-        return DataCell(Text(formatCurrency(p.price2)));
+        return DataCell(Text(formatCurrency(p.price2), style: _kTabular));
     }
   }
 }
+
+// Tablo/çip rakamları için tabular (hizalı) figür stilleri (§2).
+const _kTabular = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
+const _kTabularMuted = TextStyle(
+  color: AppColors.textSecondary,
+  fontFeatures: [FontFeature.tabularFigures()],
+);
 
 // ── Mobil ürün kartı ──────────────────────────────────────────────────────────
 //
@@ -915,7 +975,8 @@ class _ProductMobileCard extends StatelessWidget {
     return InkWell(
       onTap: () => context.go('/products/${p.id}'),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space12, vertical: AppSizes.space12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -934,7 +995,7 @@ class _ProductMobileCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: AppSizes.space4),
                   SelectableText(
                     p.barcode ?? '-',
                     style: const TextStyle(
@@ -945,16 +1006,25 @@ class _ProductMobileCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSizes.space12),
             // Sağ: üç değer sütunu
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisSize: MainAxisSize.min,
               children: [
-                _InfoChip(label: 'Stok', value: p.stockQuantity.toString()),
-                const SizedBox(height: 3),
+                // İMZA — kritik stok sinyali (§5)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Stok: ',
+                        style: TextStyle(
+                            fontSize: 11, color: AppColors.textMuted)),
+                    _StockSignal(product: p, compact: true),
+                  ],
+                ),
+                const SizedBox(height: AppSizes.space4),
                 _InfoChip(label: 'Alış', value: formatCurrency(p.purchasePrice)),
-                const SizedBox(height: 3),
+                const SizedBox(height: AppSizes.space4),
                 _InfoChip(
                   label: 'Fiyat',
                   value: formatCurrency(p.price1),
@@ -962,7 +1032,7 @@ class _ProductMobileCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: AppSizes.space4),
             const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
           ],
         ),
@@ -993,9 +1063,87 @@ class _InfoChip extends StatelessWidget {
             fontSize: 11,
             fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
             color: highlight ? AppColors.primary : AppColors.textSecondary,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Kritik stok sinyali (bu ekranın imzası, §5) ───────────────────────────────
+//
+// tükendi (stok ≤ 0)        → danger DOLU rozet (kırmızı zemin + beyaz metin)
+// kritik  (0 < stok ≤ eşik) → danger ince rozet (hafif zemin + danger metin)
+// normal  (stok > eşik)     → nötr tabular, vurgu yok
+//
+// Altın KULLANILMAZ; tablo "kırmızı duvar"a dönmesin diye yalnız riskli satır konuşur.
+class _StockSignal extends StatelessWidget {
+  final Product product;
+
+  /// Mobil çip için daha küçük tipografi.
+  final bool compact;
+
+  const _StockSignal({required this.product, this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final stock = product.stockQuantity;
+    final fontSize = compact ? 11.0 : 13.0;
+    final value = formatNumber(stock);
+
+    // Tükendi — en belirgin: danger dolu rozet.
+    if (stock <= 0) {
+      return Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space8, vertical: AppSizes.space2),
+        decoration: BoxDecoration(
+          color: AppColors.danger,
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        ),
+        child: Text(
+          'Tükendi',
+          style: TextStyle(
+            fontSize: 11.0,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textOnDark,
+            letterSpacing: 0.2,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      );
+    }
+
+    // Kritik — danger metin + ince rozet (hafif zemin).
+    if (stock <= product.criticalStock) {
+      return Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space6, vertical: AppSizes.space2),
+        decoration: BoxDecoration(
+          color: AppColors.danger.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        ),
+        child: Text(
+          value,
+          style: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.w700,
+            color: AppColors.danger,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      );
+    }
+
+    // Normal — nötr tabular, vurgu yok.
+    return Text(
+      value,
+      style: TextStyle(
+        fontSize: fontSize,
+        fontWeight: compact ? FontWeight.w500 : FontWeight.w400,
+        color: AppColors.textPrimary,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
     );
   }
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../features/products/application/products_provider.dart';
@@ -38,6 +40,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
 
     final product = await ref.read(productRepositoryProvider).fetchByBarcode(query);
     if (product != null) {
+      HapticFeedback.lightImpact();
       ref.read(salesCartProvider.notifier).addProduct(product);
       _barcodeController.clear();
       _barcodeFocusNode.requestFocus();
@@ -46,6 +49,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
 
     final matches = await ref.read(productRepositoryProvider).fetchAll(query: query);
     if (matches.length == 1) {
+      HapticFeedback.lightImpact();
       ref.read(salesCartProvider.notifier).addProduct(matches.first);
       _barcodeController.clear();
       _barcodeFocusNode.requestFocus();
@@ -200,10 +204,11 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
         if (isReturnMode) ...[
           const SizedBox(height: 6),
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+            padding: const EdgeInsets.symmetric(
+                vertical: AppSizes.space6, horizontal: AppSizes.space8),
             decoration: BoxDecoration(
               color: AppColors.danger.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(AppSizes.radiusSm),
               border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
             ),
             child: const Row(
@@ -233,18 +238,32 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
           ),
         ),
         // Hızlı ürünler — sabit yükseklik
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Icon(Icons.bolt_rounded, size: 16, color: AppColors.gold),
+            const SizedBox(width: 4),
+            Text(
+              'Hızlı Ürünler',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
         SizedBox(
-          height: 200,
+          height: 196,
           child: Card(
             margin: EdgeInsets.zero,
             child: const QuickProductsPanel(),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         // Ödeme çubuğu
         _MobilePaymentBar(
           total: tab.total,
+          itemCount: tab.items.length,
           hasItems: hasItems,
           isReturnMode: isReturnMode,
           onPay: _showMobilePaymentSheet,
@@ -309,68 +328,135 @@ class _ReturnModeButton extends ConsumerWidget {
 
 class _MobilePaymentBar extends ConsumerWidget {
   final num total;
+  final int itemCount;
   final bool hasItems;
   final bool isReturnMode;
   final VoidCallback onPay;
 
   const _MobilePaymentBar({
     required this.total,
+    required this.itemCount,
     required this.hasItems,
     required this.isReturnMode,
     required this.onPay,
   });
 
+  void _onPay() {
+    HapticFeedback.mediumImpact();
+    onPay();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final barColor = isReturnMode ? AppColors.danger.withValues(alpha: 0.08) : AppColors.cardBg;
-    final borderColor = isReturnMode ? AppColors.danger.withValues(alpha: 0.5) : AppColors.border;
+    final barColor = isReturnMode ? AppColors.danger.withValues(alpha: 0.06) : AppColors.cardBg;
+    final borderColor = isReturnMode ? AppColors.danger.withValues(alpha: 0.5) : AppColors.goldBorder;
     final amountColor = isReturnMode ? AppColors.danger : AppColors.primary;
     final buttonColor = isReturnMode ? AppColors.danger : AppColors.primary;
     final buttonLabel = isReturnMode ? 'İade Al' : 'Ödeme Al';
     final buttonIcon = isReturnMode ? Icons.undo_rounded : Icons.payments_outlined;
+    final labelColor = isReturnMode ? AppColors.danger : AppColors.textMuted;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: barColor,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
         border: Border.all(color: borderColor),
+        boxShadow: AppSizes.elevatedShadow,
       ),
       child: Row(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                isReturnMode ? 'İade Tutarı' : 'Toplam',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: isReturnMode ? AppColors.danger : AppColors.textMuted,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      isReturnMode ? 'İade Tutarı' : 'Toplam',
+                      style: TextStyle(fontSize: 11, color: labelColor),
+                    ),
+                    if (itemCount > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: amountColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                        ),
+                        child: Text(
+                          '$itemCount kalem',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: amountColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ),
-              Text(
-                formatCurrency(total),
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: amountColor,
+                const SizedBox(height: 2),
+                // Ray genişliği hero rakam genişliğine bağlanır (~%40) — sabit px yerine.
+                IntrinsicWidth(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: SizeTransition(
+                            sizeFactor: anim,
+                            axis: Axis.vertical,
+                            child: child,
+                          ),
+                        ),
+                        child: Text(
+                          formatCurrency(total),
+                          key: ValueKey(total),
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: amountColor,
+                            letterSpacing: -0.5,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      // İmza öğesi — hero tutarın altın aksan rayı (design-tokens §4)
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: 0.4,
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: isReturnMode ? AppColors.danger : AppColors.gold,
+                            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const Spacer(),
+          const SizedBox(width: 12),
           SizedBox(
-            height: 44,
+            height: 50,
             child: ElevatedButton.icon(
-              onPressed: hasItems ? onPay : null,
-              icon: Icon(buttonIcon, size: 18),
-              label: Text(buttonLabel, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              onPressed: hasItems ? _onPay : null,
+              icon: Icon(buttonIcon, size: 20),
+              label: Text(buttonLabel, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: buttonColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                disabledBackgroundColor: AppColors.primaryMid.withValues(alpha: 0.4),
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusMd)),
               ),
             ),
           ),

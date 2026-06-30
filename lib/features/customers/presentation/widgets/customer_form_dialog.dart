@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/theme.dart';
 import '../../application/customers_provider.dart';
 import '../../data/models/customer.dart';
 
@@ -79,6 +80,19 @@ class _CustomerFormDialogState extends ConsumerState<CustomerFormDialog> {
     if (mounted) Navigator.pop(context, true);
   }
 
+  /// Form içi grup başlığı — type.utility, sakin textMuted (alanları gruplar).
+  Widget _sectionLabel(String text) {
+    return Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.6,
+        color: AppColors.textMuted,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -90,50 +104,66 @@ class _CustomerFormDialogState extends ConsumerState<CustomerFormDialog> {
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Kimlik & İletişim ──────────────────────────────────────
+                _sectionLabel('Kimlik & İletişim'),
+                const SizedBox(height: AppSizes.space8),
                 TextFormField(
                   controller: _nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Müşteri Tanımı *'),
+                  decoration: const InputDecoration(
+                    labelText: 'Müşteri Tanımı *',
+                    hintText: 'Ad soyad veya firma adı',
+                  ),
+                  textInputAction: TextInputAction.next,
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Müşteri adı giriniz' : null,
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _paymentTermCtrl,
-                        decoration: const InputDecoration(labelText: 'Vade Süresi (gün)'),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _phoneCtrl,
-                        decoration: const InputDecoration(labelText: 'Telefon'),
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: AppSizes.space12),
+                TextFormField(
+                  controller: _phoneCtrl,
+                  decoration: const InputDecoration(labelText: 'Telefon'),
+                  keyboardType: TextInputType.phone,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSizes.space12),
                 TextFormField(
                   controller: _addressCtrl,
                   decoration: const InputDecoration(labelText: 'Adres'),
                   maxLines: 2,
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _noteCtrl,
-                  decoration: const InputDecoration(labelText: 'Müşteri Notu'),
-                  maxLines: 2,
+                const SizedBox(height: AppSizes.space20),
+                // ── Hesap & Vade ───────────────────────────────────────────
+                _sectionLabel('Hesap & Vade'),
+                const SizedBox(height: AppSizes.space8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _creditLimitCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Açık Hesap Limiti',
+                          prefixText: '₺ ',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: AppSizes.space12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _paymentTermCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Vade Süresi',
+                          suffixText: 'gün',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _creditLimitCtrl,
-                  decoration: const InputDecoration(labelText: 'Açık Hesap Limiti'),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSizes.space20),
+                // ── Vergi & Diğer ──────────────────────────────────────────
+                _sectionLabel('Vergi & Diğer'),
+                const SizedBox(height: AppSizes.space8),
                 Row(
                   children: [
                     Expanded(
@@ -142,14 +172,21 @@ class _CustomerFormDialogState extends ConsumerState<CustomerFormDialog> {
                         decoration: const InputDecoration(labelText: 'Vergi Dairesi'),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppSizes.space12),
                     Expanded(
                       child: TextFormField(
                         controller: _taxNumberCtrl,
                         decoration: const InputDecoration(labelText: 'Vergi No'),
+                        keyboardType: TextInputType.number,
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: AppSizes.space12),
+                TextFormField(
+                  controller: _noteCtrl,
+                  decoration: const InputDecoration(labelText: 'Müşteri Notu'),
+                  maxLines: 2,
                 ),
               ],
             ),

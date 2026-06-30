@@ -58,11 +58,11 @@ class _ProductReportTabState extends ConsumerState<ProductReportTab> {
       children: [
         Row(
           children: [
-            const Text(
+            Text(
               'Ürün Raporları',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: AppSizes.space16),
             Expanded(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
@@ -75,18 +75,20 @@ class _ProductReportTabState extends ConsumerState<ProductReportTab> {
                     hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
                     filled: true,
                     fillColor: AppColors.pageBg,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.space12,
+                      vertical: AppSizes.space8,
+                    ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                       borderSide: const BorderSide(color: AppColors.border),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                       borderSide: const BorderSide(color: AppColors.border),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                       borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
                     ),
                     isDense: true,
@@ -94,7 +96,7 @@ class _ProductReportTabState extends ConsumerState<ProductReportTab> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSizes.space8),
             FilledButton.icon(
               icon: const Icon(Icons.search, size: 16),
               label: const Text('Ara'),
@@ -102,7 +104,7 @@ class _ProductReportTabState extends ConsumerState<ProductReportTab> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSizes.space16),
         Expanded(
           child: _submittedQuery != null
               ? _ProductSearchResults(
@@ -152,7 +154,9 @@ class _ProductSearchResults extends ConsumerWidget {
             ),
           );
         }
-        return Card(
+        return Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: AppSizes.cardDecoration(),
           child: ListView.separated(
             itemCount: products.length,
             separatorBuilder: (_, _) =>
@@ -166,7 +170,7 @@ class _ProductSearchResults extends ConsumerWidget {
                   height: 36,
                   decoration: BoxDecoration(
                     color: AppColors.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(AppSizes.radiusSm),
                   ),
                   child: const Icon(Icons.inventory_2_outlined,
                       color: AppColors.primary, size: 18),
@@ -192,12 +196,18 @@ class _ProductSearchResults extends ConsumerWidget {
                     Text(
                       formatCurrency(p.price1),
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, color: AppColors.primary),
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
                     ),
                     Text(
                       'Stok: ${p.stockQuantity}',
                       style: const TextStyle(
-                          fontSize: 11, color: AppColors.textMuted),
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
                     ),
                   ],
                 ),
@@ -254,11 +264,11 @@ class _ProductHistoryState extends ConsumerState<_ProductHistory> {
               label: const Text('Ürün Ara'),
               onPressed: widget.onBack,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSizes.space8),
             Expanded(child: _ProductInfoCard(product: widget.product)),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSizes.space16),
         // Geçmiş tablosu
         Expanded(
           child: historyAsync.when(
@@ -325,15 +335,15 @@ class _ProductInfoCard extends StatelessWidget {
           child: _PriceChip(
               'Alış', product.purchasePrice, AppColors.textSecondary),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: AppSizes.space6),
         Expanded(
           child: _PriceChip('Fiyat 1', product.price1, AppColors.primary),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: AppSizes.space6),
         Expanded(
           child: _PriceChip('Fiyat 2', product.price2, AppColors.pos),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: AppSizes.space6),
         Expanded(
           child: _PriceChip(
               'Stok', product.stockQuantity, AppColors.success),
@@ -341,36 +351,38 @@ class _ProductInfoCard extends StatelessWidget {
       ],
     );
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: isMobile
-            // Mobil: ad üstte, chip'ler altta — taşma olmaz
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  nameSection,
-                  const SizedBox(height: 8),
-                  chipsSection,
-                ],
-              )
-            // Masaüstü: yan yana tek satır
-            : Row(
-                children: [
-                  Expanded(child: nameSection),
-                  const SizedBox(width: 16),
-                  _PriceChip(
-                      'Alış', product.purchasePrice, AppColors.textSecondary),
-                  const SizedBox(width: 12),
-                  _PriceChip('Fiyat 1', product.price1, AppColors.primary),
-                  const SizedBox(width: 12),
-                  _PriceChip('Fiyat 2', product.price2, AppColors.pos),
-                  const SizedBox(width: 12),
-                  _PriceChip('Stok', product.stockQuantity, AppColors.success),
-                ],
-              ),
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space12,
+        vertical: AppSizes.space12,
       ),
+      child: isMobile
+          // Mobil: ad üstte, chip'ler altta — taşma olmaz
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                nameSection,
+                const SizedBox(height: AppSizes.space8),
+                chipsSection,
+              ],
+            )
+          // Masaüstü: yan yana tek satır
+          : Row(
+              children: [
+                Expanded(child: nameSection),
+                const SizedBox(width: AppSizes.space16),
+                _PriceChip(
+                    'Alış', product.purchasePrice, AppColors.textSecondary),
+                const SizedBox(width: AppSizes.space12),
+                _PriceChip('Fiyat 1', product.price1, AppColors.primary),
+                const SizedBox(width: AppSizes.space12),
+                _PriceChip('Fiyat 2', product.price2, AppColors.pos),
+                const SizedBox(width: AppSizes.space12),
+                _PriceChip('Stok', product.stockQuantity, AppColors.success),
+              ],
+            ),
     );
   }
 }
@@ -385,21 +397,28 @@ class _PriceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space12,
+        vertical: AppSizes.space6,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
         border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Column(
         children: [
           Text(label,
               style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
-          const SizedBox(height: 2),
+          const SizedBox(height: AppSizes.space4),
           Text(
             label == 'Stok' ? value.toString() : formatCurrency(value),
             style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.bold, color: color),
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
         ],
       ),
@@ -428,22 +447,25 @@ class _SaleHistoryContent extends StatelessWidget {
       children: [
         // Özet istatistikler
         Wrap(
-          spacing: 10,
-          runSpacing: 8,
+          spacing: AppSizes.space8,
+          runSpacing: AppSizes.space8,
           children: [
             _StatChip('Toplam Satış', '${records.length} işlem', AppColors.primary),
             _StatChip('Toplam Miktar', totalQty.toString(), AppColors.textSecondary),
             _StatChip('Toplam Tutar', formatCurrency(totalAmount), AppColors.success),
             _StatChip('Min Birim Fiyat', formatCurrency(minPrice), AppColors.pos),
             _StatChip('Maks Birim Fiyat', formatCurrency(maxPrice), AppColors.danger),
-            _StatChip('Ort Birim Fiyat', formatCurrency(avgPrice), AppColors.warning),
+            // R2: palet dışı warning yerine palet içi POS mavisi.
+            _StatChip('Ort Birim Fiyat', formatCurrency(avgPrice), AppColors.pos),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSizes.space16),
         // Tablo
         Expanded(
           child: SingleChildScrollView(
-            child: Card(
+            child: Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: AppSizes.cardDecoration(),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
@@ -465,11 +487,16 @@ class _SaleHistoryContent extends StatelessWidget {
                       cells: [
                       DataCell(Text('${i + 1}',
                           style: const TextStyle(
-                              color: AppColors.textMuted, fontSize: 12))),
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ))),
                       DataCell(Text(
                         formatDateTime(r.saleDate),
                         style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 12),
+                          fontSize: 12,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       )),
                       DataCell(Text(
                         r.saleCode,
@@ -477,6 +504,7 @@ class _SaleHistoryContent extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           fontSize: 12,
                           color: AppColors.primary,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       )),
                       DataCell(Text(
@@ -490,16 +518,26 @@ class _SaleHistoryContent extends StatelessWidget {
                               : null,
                         ),
                       )),
-                      DataCell(Text(r.quantity.toString())),
+                      DataCell(Text(
+                        r.quantity.toString(),
+                        style: const TextStyle(
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      )),
                       DataCell(Text(
                         formatCurrency(r.unitPrice),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       )),
                       DataCell(Text(
                         formatCurrency(r.total),
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary),
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       )),
                     ]);
                   }),
@@ -525,10 +563,13 @@ class _StatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space12,
+        vertical: AppSizes.space8,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppSizes.cardRadius),
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
@@ -536,9 +577,13 @@ class _StatChip extends StatelessWidget {
         children: [
           Text(label,
               style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-          const SizedBox(height: 2),
+          const SizedBox(height: AppSizes.space4),
           Text(value,
-              style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: color,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              )),
         ],
       ),
     );
