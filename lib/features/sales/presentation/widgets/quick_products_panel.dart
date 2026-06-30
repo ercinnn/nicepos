@@ -49,43 +49,23 @@ class _QuickProductsPanelState extends ConsumerState<QuickProductsPanel> {
 
         return Column(
           children: [
-            // Grup sekmeleri
+            // Grup sekmeleri — tek satıra sığmazsa alt satıra kayar (Wrap)
             Container(
-              height: 40,
+              width: double.infinity,
               color: AppColors.cardBg,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSizes.space8, vertical: AppSizes.space4),
-                itemCount: salesGroups.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 6),
-                itemBuilder: (context, i) {
-                  final group = salesGroups[i];
-                  final selected = _selectedGroup?.id == group.id;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedGroup = group),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppSizes.space12, vertical: AppSizes.space4),
-                      decoration: BoxDecoration(
-                        color: selected ? AppColors.primary : Colors.transparent,
-                        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-                        border: Border.all(
-                          color: selected ? AppColors.primary : AppColors.border,
-                        ),
-                      ),
-                      child: Text(
-                        group.name,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: selected ? Colors.white : AppColors.textSecondary,
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                        ),
-                      ),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.space8, vertical: AppSizes.space4),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final group in salesGroups)
+                    _GroupChip(
+                      name: group.name,
+                      selected: _selectedGroup?.id == group.id,
+                      onTap: () => setState(() => _selectedGroup = group),
                     ),
-                  );
-                },
+                ],
               ),
             ),
             const Divider(height: 1),
@@ -98,6 +78,45 @@ class _QuickProductsPanelState extends ConsumerState<QuickProductsPanel> {
           ],
         );
       },
+    );
+  }
+}
+
+class _GroupChip extends StatelessWidget {
+  final String name;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _GroupChip({
+    required this.name,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.space12, vertical: AppSizes.space4),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          name,
+          style: TextStyle(
+            fontSize: 12,
+            color: selected ? Colors.white : AppColors.textSecondary,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
     );
   }
 }
