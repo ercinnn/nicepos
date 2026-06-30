@@ -246,14 +246,19 @@ class _StatCardsRow extends ConsumerWidget {
       );
     }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) const SizedBox(width: AppSizes.space12),
-          Expanded(child: _StatCard(data: cards[i])),
+    // IntrinsicHeight: kaydırılabilir sayfada (sınırsız yükseklik) stretch'li
+    // Row'a sınırlı yükseklik verir; aksi halde "infinite height" render hatası
+    // tüm dashboard'u çökertir.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < cards.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSizes.space12),
+            Expanded(child: _StatCard(data: cards[i])),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
