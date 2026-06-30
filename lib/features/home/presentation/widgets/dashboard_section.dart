@@ -45,24 +45,17 @@ class DashboardSection extends ConsumerWidget {
         _StatCardsRow(),
         const SizedBox(height: AppSizes.space16),
 
-        // ── Grafikler ───────────────────────────────────────────────────
+        // ── Grafik: Günlük Satış Grafiği ─────────────────────────────────
+        // Web: 8/15/30 gün seçilebilir (varsayılan 30), grafik ekran
+        // genişliğinin %90'ı. Mobil: sabit son 8 gün, seçici yok.
         if (context.isMobile)
-          Column(
-            children: const [
-              _DailyChartCard(),
-              SizedBox(height: AppSizes.space16),
-              _MonthlyChartCard(),
-            ],
-          )
+          const _DailySalesChartCard(compact: true)
         else
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: const [
-                Expanded(child: _DailyChartCard()),
-                SizedBox(width: AppSizes.space16),
-                Expanded(child: _MonthlyChartCard()),
-              ],
+          Align(
+            alignment: Alignment.center,
+            child: FractionallySizedBox(
+              widthFactor: 0.9,
+              child: const _DailySalesChartCard(compact: false),
             ),
           ),
       ],
@@ -452,19 +445,32 @@ class _DegisimBadge extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Günlük Satış Grafiği Kartı
+// Günlük Satış Grafiği Kartı (son 8/15/30 gün)
 // ═══════════════════════════════════════════════════════════════════════════
+// Web: 8/15/30 gün seçilebilir (varsayılan 30). Mobil (compact): sabit 8 gün,
+// seçici yok. X ekseninde her günün tarihi (GG/AA/YY) + altında Türkçe gün
+// kısaltması (Pzt..Pzr) gösterilir.
 
-class _DailyChartCard extends ConsumerStatefulWidget {
-  const _DailyChartCard();
+const _gunKisaltma = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts', 'Pzr'];
+
+String _ggAaYy(DateTime dt) =>
+    '${dt.day.toString().padLeft(2, '0')}/'
+    '${dt.month.toString().padLeft(2, '0')}/'
+    '${(dt.year % 100).toString().padLeft(2, '0')}';
+
+class _DailySalesChartCard extends ConsumerStatefulWidget {
+  /// Mobil için sıkıştırılmış mod: sabit 8 gün, gün seçici gösterilmez.
+  final bool compact;
+  const _DailySalesChartCard({required this.compact});
 
   @override
-  ConsumerState<_DailyChartCard> createState() => _DailyChartCardState();
+  ConsumerState<_DailySalesChartCard> createState() =>
+      _DailySalesChartCardState();
 }
 
-class _DailyChartCardState extends ConsumerState<_DailyChartCard> {
-  int _secilenGun = 7; // Varsayılan: 7 gün
-  final _gunSecenekleri = const [7, 14, 30];
+class _DailySalesChartCardState extends ConsumerState<_DailySalesChartCard> {
+  late int _secilenGun = widget.compact ? 8 : 30;
+  static const _gunSecenekleri = [8, 15, 30];
 
   @override
   Widget build(BuildContext context) {
@@ -474,16 +480,20 @@ class _DailyChartCardState extends ConsumerState<_DailyChartCard> {
       decoration: AppSizes.cardDecoration(),
       padding: const EdgeInsets.all(AppSizes.cardPadding),
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Başlık + seçici ─────────────────────────────────────────
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '$_secilenGun Günlük Satış',
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Başlık + (web) gün seçici ─────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  '$_secilenGun Günlük Satış Grafiği',
                   style: Theme.of(context).textTheme.titleMedium,
+                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              if (!widget.compact)
                 _ChipSecici(
                   secenekler: _gunSecenekleri
                       .map((g) => (etiket: '$g G', deger: g))
@@ -491,103 +501,55 @@ class _DailyChartCardState extends ConsumerState<_DailyChartCard> {
                   secilen: _secilenGun,
                   onSecim: (val) => setState(() => _secilenGun = val),
                 ),
-              ],
-            ),
-            const SizedBox(height: AppSizes.space16),
+            ],
+          ),
+          const SizedBox(height: AppSizes.space16),
 
-            // ── Grafik ──────────────────────────────────────────────────
-            SizedBox(
-              height: 200,
-              child: veriAsync.when(
-                loading: () => const BrandLoader(label: 'Yükleniyor…'),
-                error: (e, _) => const Center(
-                  child: Text(
-                    'Veri yüklenemedi',
-                    style: TextStyle(color: AppColors.textMuted),
-                  ),
-                ),
-                data: (veriler) => _SatisLineChart(
-                  veriler: veriler,
-                  formatEtiket: (dt) =>
-                      '${dt.day}/${dt.month}',
+          // ── Grafik ────────────────────────────────────────────────────
+          SizedBox(
+            height: 250,
+            child: veriAsync.when(
+              loading: () => const BrandLoader(label: 'Yükleniyor…'),
+              error: (e, _) => const Center(
+                child: Text(
+                  'Veri yüklenemedi',
+                  style: TextStyle(color: AppColors.textMuted),
                 ),
               ),
-            ),
-          ],
-        ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Aylık Satış Grafiği Kartı
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _MonthlyChartCard extends ConsumerStatefulWidget {
-  const _MonthlyChartCard();
-
-  @override
-  ConsumerState<_MonthlyChartCard> createState() => _MonthlyChartCardState();
-}
-
-class _MonthlyChartCardState extends ConsumerState<_MonthlyChartCard> {
-  int _secilenAy = 6; // Varsayılan: 6 ay
-  final _aySecenekleri = const [3, 6, 12, 24, 36];
-
-  @override
-  Widget build(BuildContext context) {
-    final veriAsync = ref.watch(monthlySalesProvider(_secilenAy));
-
-    return Container(
-      decoration: AppSizes.cardDecoration(),
-      padding: const EdgeInsets.all(AppSizes.cardPadding),
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Başlık + seçici ─────────────────────────────────────────
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '$_secilenAy Aylık Satış',
-                  style: Theme.of(context).textTheme.titleMedium,
+              data: (veriler) => _SatisLineChart(
+                veriler: veriler,
+                formatEtiket: _ggAaYy,
+                // X ekseninde her gün için tarih + gün adı (iki satır).
+                bottomLabelBuilder: (dt) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _ggAaYy(dt),
+                      style: const TextStyle(
+                        fontSize: 8,
+                        height: 1.2,
+                        color: AppColors.textSecondary,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    Text(
+                      _gunKisaltma[dt.weekday - 1],
+                      style: const TextStyle(
+                        fontSize: 8,
+                        height: 1.2,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
                 ),
-                _ChipSecici(
-                  secenekler: _aySecenekleri
-                      .map((a) => (etiket: '$a A', deger: a))
-                      .toList(),
-                  secilen: _secilenAy,
-                  onSecim: (val) => setState(() => _secilenAy = val),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSizes.space16),
-
-            // ── Grafik ──────────────────────────────────────────────────
-            SizedBox(
-              height: 200,
-              child: veriAsync.when(
-                loading: () => const BrandLoader(label: 'Yükleniyor…'),
-                error: (e, _) => const Center(
-                  child: Text(
-                    'Veri yüklenemedi',
-                    style: TextStyle(color: AppColors.textMuted),
-                  ),
-                ),
-                data: (veriler) => _SatisLineChart(
-                  veriler: veriler,
-                  formatEtiket: (dt) {
-                    const aylar = [
-                      'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-                      'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
-                    ];
-                    return "${aylar[dt.month - 1]}'${dt.year % 100}";
-                  },
-                ),
+                bottomReservedSize: 36,
+                showAllBottom: true,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -600,9 +562,22 @@ class _SatisLineChart extends StatelessWidget {
   final List<({DateTime date, num amount})> veriler;
   final String Function(DateTime) formatEtiket;
 
+  /// X ekseni etiketini özel bir widget olarak çizer (ör. tarih + gün adı).
+  /// null ise [formatEtiket] tek satır metin olarak kullanılır.
+  final Widget Function(DateTime)? bottomLabelBuilder;
+
+  /// X ekseni etiket alanı yüksekliği.
+  final double bottomReservedSize;
+
+  /// true ise her veri noktası için etiket gösterilir (seyreltme yapılmaz).
+  final bool showAllBottom;
+
   const _SatisLineChart({
     required this.veriler,
     required this.formatEtiket,
+    this.bottomLabelBuilder,
+    this.bottomReservedSize = 22,
+    this.showAllBottom = false,
   });
 
   @override
@@ -696,23 +671,27 @@ class _SatisLineChart extends StatelessWidget {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 22,
-              interval: adim.toDouble(),
+              reservedSize: bottomReservedSize,
+              interval: showAllBottom ? 1 : adim.toDouble(),
               getTitlesWidget: (val, meta) {
                 final idx = val.round();
                 if (idx < 0 || idx >= veriler.length) {
                   return const SizedBox.shrink();
                 }
-                if (idx % adim != 0) return const SizedBox.shrink();
+                if (!showAllBottom && idx % adim != 0) {
+                  return const SizedBox.shrink();
+                }
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    formatEtiket(veriler[idx].date),
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
+                  child: bottomLabelBuilder != null
+                      ? bottomLabelBuilder!(veriler[idx].date)
+                      : Text(
+                          formatEtiket(veriler[idx].date),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
                 );
               },
             ),
