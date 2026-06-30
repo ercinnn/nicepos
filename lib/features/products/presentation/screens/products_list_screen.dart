@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,7 @@ import '../../application/product_columns_provider.dart';
 import '../../application/products_provider.dart';
 import '../widgets/excel_import_dialog.dart';
 import '../widgets/excel_export.dart';
+import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 
 // ── Ekran ─────────────────────────────────────────────────────────────────────
 
@@ -266,10 +268,28 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         // Arama
         TextField(
           controller: _searchController,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: 'Ürün adı, barkod, stok kodu...',
-            prefixIcon: Icon(Icons.search, size: 18),
+            prefixIcon: const Icon(Icons.search, size: 18),
             isDense: true,
+            // Kamera ile barkod okutma — yalnızca mobil + native
+            // (web'de kamera modalı açılamaz, masaüstünde gizli).
+            suffixIcon: (!kIsWeb && context.isMobile)
+                ? IconButton(
+                    icon: const Icon(Icons.qr_code_scanner),
+                    color: AppColors.primary,
+                    tooltip: 'Barkod tara',
+                    onPressed: () => openBarcodeScanner(context, (value) {
+                      _searchController.text = value.trim();
+                      setState(() {
+                        _query = value.trim();
+                        _page = 0;
+                        _products = [];
+                      });
+                      _loadProducts();
+                    }),
+                  )
+                : null,
           ),
           onChanged: (v) {
             setState(() { _query = v; _page = 0; _products = []; });

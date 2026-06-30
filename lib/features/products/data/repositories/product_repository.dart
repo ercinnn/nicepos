@@ -5,6 +5,34 @@ import '../models/product.dart';
 class ProductRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
+  // Türkçe büyük harf: önce i→İ, ı→I eşle, sonra toUpperCase().
+  // Dart'ın yerleşik toUpperCase'i Türkçe değildir; noktalı/noktasız i'yi yanlış katlar.
+  static String _trUpper(String s) =>
+      s.replaceAll('i', 'İ').replaceAll('ı', 'I').toUpperCase();
+
+  // Türkçe küçük harf: önce I→ı, İ→i eşle, sonra toLowerCase().
+  static String _trLower(String s) =>
+      s.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
+
+  // Arama için PostgREST .or() filtre dizesini kurar.
+  // ilike ASCII'de harf-duyarsızdır ama Türkçe İ/i, I/ı çiftlerinde yanlış
+  // eşleşir; bu yüzden sorguyu {ham, Türkçe-büyük, Türkçe-küçük} varyantlarıyla
+  // genişletip name/barcode/stock_code üzerinde OR'larız. Stored değer büyük
+  // harfliyse büyük varyant, küçük saklıysa küçük varyant ilike ile yakalar.
+  static String _buildSearchOr(String q) {
+    // .or() virgülle ayrılır; sorgudaki , ( ) filtre sözdizimini bozar →
+    // davranışı değiştirmeden bu karakterleri boşlukla sadeleştir.
+    final safe = q.replaceAll(RegExp(r'[,()]'), ' ').trim();
+    final variants = <String>{safe, _trUpper(safe), _trLower(safe)};
+    return variants
+        .expand((v) => [
+              'name.ilike.%$v%',
+              'barcode.ilike.%$v%',
+              'stock_code.ilike.%$v%',
+            ])
+        .join(',');
+  }
+
   Future<List<Product>> fetchAll({String? query, String? groupId}) async {
     // PostgREST sunucu tarafı varsayılan olarak en fazla 1000 satır döndürür.
     // Tüm ürünleri almak için 1000'lik sayfalarla döngüsel çekeriz.
@@ -14,8 +42,7 @@ class ProductRepository {
     while (true) {
       var builder = _client.from('products').select('*, product_groups(name, parent_group:parent_group_id(name))');
       if (query != null && query.trim().isNotEmpty) {
-        final q = query.trim();
-        builder = builder.or('name.ilike.%$q%,barcode.ilike.%$q%,stock_code.ilike.%$q%');
+        builder = builder.or(_buildSearchOr(query.trim()));
       }
       if (groupId != null && groupId.isNotEmpty) {
         builder = builder.eq('group_id', groupId);
@@ -33,8 +60,7 @@ class ProductRepository {
   Future<List<Product>> fetchPaged({String? query, String? groupId, int page = 0, int pageSize = 50}) async {
     var builder = _client.from('products').select('*, product_groups(name, parent_group:parent_group_id(name))');
     if (query != null && query.trim().isNotEmpty) {
-      final q = query.trim();
-      builder = builder.or('name.ilike.%$q%,barcode.ilike.%$q%,stock_code.ilike.%$q%');
+      builder = builder.or(_buildSearchOr(query.trim()));
     }
     if (groupId != null && groupId.isNotEmpty) {
       builder = builder.eq('group_id', groupId);

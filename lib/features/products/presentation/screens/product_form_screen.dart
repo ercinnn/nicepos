@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
@@ -31,6 +32,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late TextEditingController _stockCtrl;
   late TextEditingController _criticalStockCtrl;
   late TextEditingController _vatRateCtrl;
+  late TextEditingController _profitMargin1Ctrl;
   late TextEditingController _unitCtrl;
   late TextEditingController _originCtrl;
   late TextEditingController _stockCodeCtrl;
@@ -51,6 +53,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   bool _loaded = false;
   bool _saving = false;
 
+  /// Senkron metotlarında karşılıklı tetiklenmeyi önleyen yeniden-giriş kilidi.
+  bool _syncing = false;
+
+  /// Ondalık alanlar için ortak girdi filtresi:
+  /// yalnızca rakam ve TEK ondalık ayraç (virgül ya da nokta) kabul edilir.
+  /// `2,50` ve `2.50` desteklenir; `1.234,5` (binlik ayraç) kasıtlı engellenir.
+  final _decimalInputFormatters = <TextInputFormatter>[
+    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+    TextInputFormatter.withFunction(
+      (o, n) => RegExp(r'[.,]').allMatches(n.text).length > 1 ? o : n,
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +78,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _stockCtrl = TextEditingController(text: '0');
     _criticalStockCtrl = TextEditingController(text: '0');
     _vatRateCtrl = TextEditingController(text: '20');
+    _profitMargin1Ctrl = TextEditingController(text: '0');
     _unitCtrl = TextEditingController(text: 'Adet');
     _originCtrl = TextEditingController();
     _stockCodeCtrl = TextEditingController();
@@ -94,6 +110,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _stockCtrl.text = _fmt(p.stockQuantity);
     _criticalStockCtrl.text = _fmt(p.criticalStock);
     _vatRateCtrl.text = _fmt(p.vatRate);
+    // Yüklenen üründen mevcut kâr oranını (Fiyat 1) doldur.
+    _profitMargin1Ctrl.text = _fmtCalc(_profitMargin1);
     _unitCtrl.text = p.unit;
     _originCtrl.text = p.originCountry ?? '';
     _stockCodeCtrl.text = p.stockCode ?? '';
@@ -123,6 +141,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _stockCtrl.dispose();
     _criticalStockCtrl.dispose();
     _vatRateCtrl.dispose();
+    _profitMargin1Ctrl.dispose();
     _unitCtrl.dispose();
     _originCtrl.dispose();
     _stockCodeCtrl.dispose();
@@ -146,6 +165,45 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     final price2 = _num(_price2Ctrl);
     if (purchase == 0) return 0;
     return ((price2 - purchase) / purchase) * 100;
+  }
+
+  /// Hesap sonucunu alana yazmak için: en çok 2 ondalık, gereksiz sondaki
+  /// sıfırları kırpar, binlik ayraç KULLANMAZ (alanlar `_num` ile parse
+  /// edildiğinden nokta-binlik ayracı parse'ı bozardı).
+  String _fmtCalc(double value) {
+    if (!value.isFinite) return '0';
+    var s = value.toStringAsFixed(2);
+    if (s.contains('.')) {
+      s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    }
+    return s.isEmpty ? '0' : s;
+  }
+
+  /// Alış fiyatı veya kâr oranı değişince Fiyat 1'i hesaplar.
+  /// Satış = alış × (1 + kâr / 100). Alış ≤ 0 ise hesap atlanır (0'a bölme yok).
+  void _recalcPrice1FromMargin() {
+    if (_syncing) return;
+    final purchase = _num(_purchasePriceCtrl).toDouble();
+    if (purchase <= 0) return;
+    final margin = _num(_profitMargin1Ctrl).toDouble();
+    final price1 = purchase * (1 + margin / 100);
+    _syncing = true;
+    // Yalnızca KARŞI alana yaz → imleç zıplaması olmaz.
+    _price1Ctrl.text = _fmtCalc(price1);
+    _syncing = false;
+  }
+
+  /// Fiyat 1 elle değişince kâr oranını hesaplar (satışı EZMEZ).
+  /// Kâr% = (satış / alış − 1) × 100. Alış ≤ 0 ise hesap atlanır.
+  void _recalcMarginFromPrice1() {
+    if (_syncing) return;
+    final purchase = _num(_purchasePriceCtrl).toDouble();
+    if (purchase <= 0) return;
+    final price1 = _num(_price1Ctrl).toDouble();
+    final margin = ((price1 / purchase) - 1) * 100;
+    _syncing = true;
+    _profitMargin1Ctrl.text = _fmtCalc(margin);
+    _syncing = false;
   }
 
   /// Kamerayı açar; okunan barkodu alana yazar ve varsa mevcut ürünü getirir
@@ -406,8 +464,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 controller: _price1Ctrl,
                 decoration:
                     const InputDecoration(labelText: 'Fiyat 1 (Satış Fiyatı)'),
-                keyboardType: TextInputType.number,
-                onChanged: (_) => setState(() {}),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+                onChanged: (_) {
+                  // Elle satış girişi kâr oranını günceller, satışı ezmez.
+                  _recalcMarginFromPrice1();
+                  setState(() {});
+                },
               ),
             ),
             const SizedBox(width: 8),
@@ -430,8 +494,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               child: TextFormField(
                 controller: _purchasePriceCtrl,
                 decoration: const InputDecoration(labelText: 'Alış Fiyatı'),
-                keyboardType: TextInputType.number,
-                onChanged: (_) => setState(() {}),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+                onChanged: (_) {
+                  // Alış değişince mevcut kâr oranını koruyup Fiyat 1'i hesapla.
+                  _recalcPrice1FromMargin();
+                  setState(() {});
+                },
               ),
             ),
             const SizedBox(width: 8),
@@ -454,15 +524,27 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
               child: TextFormField(
                 controller: _vatRateCtrl,
                 decoration: const InputDecoration(labelText: 'KDV %'),
-                keyboardType: TextInputType.number,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: InputDecorator(
-                decoration:
-                    const InputDecoration(labelText: 'Kâr Oranı (Fiyat 1)'),
-                child: Text('%${_profitMargin1.toStringAsFixed(2)}'),
+              child: TextFormField(
+                controller: _profitMargin1Ctrl,
+                decoration: const InputDecoration(
+                  labelText: 'Kâr Oranı (Fiyat 1)',
+                  suffixText: '%',
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+                onChanged: (_) {
+                  // Kâr oranı değişince Fiyat 1'i yeniden hesapla.
+                  _recalcPrice1FromMargin();
+                  setState(() {});
+                },
               ),
             ),
           ],
@@ -513,7 +595,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 controller: _stockCtrl,
                 decoration:
                     const InputDecoration(labelText: 'Kalan Stok'),
-                keyboardType: TextInputType.number,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
               ),
             ),
             const SizedBox(width: 12),
@@ -522,7 +606,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 controller: _criticalStockCtrl,
                 decoration:
                     const InputDecoration(labelText: 'Kritik Stok Miktarı'),
-                keyboardType: TextInputType.number,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
               ),
             ),
           ],
@@ -571,7 +657,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 child: TextFormField(
                   controller: _price2Ctrl,
                   decoration: const InputDecoration(labelText: 'Fiyat 2 (Satış Fiyatı 2)'),
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: _decimalInputFormatters,
                   onChanged: (_) => setState(() {}),
                 ),
               ),
@@ -608,7 +695,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 child: TextFormField(
                   controller: _weightCtrl,
                   decoration: const InputDecoration(labelText: 'Ürün Ağırlığı'),
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: _decimalInputFormatters,
                 ),
               ),
               const SizedBox(width: 12),
