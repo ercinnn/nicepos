@@ -133,12 +133,23 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` annotation ile üre
 | `dailyReportProvider` | `autoDispose family` | Günlük rapor |
 | `dashboardRepositoryProvider` | `autoDispose` | Dashboard repository |
 | `todaySummaryProvider` / `yesterdaySummaryProvider` / `monthSummaryProvider` / `lastMonthRevenueProvider` | `autoDispose` | Dashboard stat kartları |
-| `dailySalesProvider(days)` / `monthlySalesProvider(months)` | `autoDispose family` | Dashboard grafikleri (seçilebilir aralık) |
+| `dailySalesProvider(days)` | `autoDispose family` | Dashboard günlük satış grafiği (8/15/30 gün). `monthlySalesProvider` hâlâ tanımlı ama dashboard'da artık kullanılmıyor |
 | `customerSalesProvider(query)` / `customerPaymentsProvider(id)` | `autoDispose family` | Müşteri geçmiş işlemleri |
 
 ### Satış Akışı
 
 `SalesCart` (Riverpod notifier) 5 müşteri sekmesini yönetir.
+
+**Canlı ürün arama (`_LiveProductSearchField`, `sales_screen.dart`):** Üstteki uzun arama
+çubuğu hem web hem mobilde. Tam barkod okutulup Enter'a basılınca ürün doğrudan sepete eklenir
+(`onSubmitted` → `_onBarcodeSubmitted`). Kullanıcı harf/rakam yazdıkça (250 ms debounce) girilen
+metni **içeren** ürünler çubuğun altında açılan canlı listede gösterilir (`OverlayPortal` +
+`CompositedTransformFollower`; `productRepository.fetchAll(query)` substring + Türkçe-duyarlı).
+Listeye dokunmak `TextFieldTapRegion` ile odağı düşürmeden seçimi işler → sepete ekler, alanı
+temizler, odağı geri verir.
+
+**Hızlı ürünler grup sekmeleri (`quick_products_panel.dart`):** Grup (kategori) sekmeleri yatay
+kaydırma yerine **`Wrap`** ile dizilir — sığmayan sekmeler alt satıra geçer (`_GroupChip`).
 
 **Mobil satış ekranı:**
 - Barkod alanı sağında kamera butonu (`mobile_scanner` paketi)
@@ -157,13 +168,27 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` annotation ile üre
 
 Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir satışa tıklayınca açılır; kalemleri + iskontoyu düzenler.
 - **İskonto:** TL (₺) / yüzde (%) `SegmentedButton` ile düzenlenir; **Ara Toplam + İskonto + İndirimli Toplam** birlikte gösterilir. İskonto **birebir** saklanır (bkz. Veritabanı notu).
+- **Barkod gösterimi:** Satılan ürünlerin barkodu görünür (web: tabloda **Barkod** kolonu; mobil: ürün adı altında). `SaleItem.barcode` alanı `sale_items` tablosunda saklanmaz — `fetchItems` sorgusunda `products(barcode)` join'i ile gelir (muhtelif kalemlerde null).
+- **Yazdır (yalnızca web):** Masaüstü dialog'da `kIsWeb` korumalı **Yazdır** butonu → A4 dikey sepet detayını yeni pencerede açıp otomatik yazdırır. `sale_print.dart` conditional export: `sale_print_web.dart` (`package:web` Blob URL + `<body onload>` print) / `sale_print_stub.dart` (mobil no-op). Excel export ile aynı desen.
 - **Satışı Sil:** `SalesRepository.deleteSale()` → stok iadesi (`increment_product_stock` RPC) + satışa bağlı `customer_payments` (borç) silme + sale_items/sales silme. Çağıran ekran `updated == true` ile listeyi yeniler.
 
 ### Dashboard (Anasayfa)
 
 `lib/features/home/.../widgets/dashboard_section.dart` — kısayol kartlarının altında:
-- **4 stat kartı:** Toplam Satış / Net Kazanç (Bugün · Bu Ay) + önceki döneme göre % değişim rozeti
-- **2 çizgi grafik** (`fl_chart`): Günlük Satış (seçilebilir gün) ve Aylık Satış (seçilebilir ay) — `dailySalesProvider(days)` / `monthlySalesProvider(months)`
+- **Hero bandı:** bugünkü ciro (büyük tabular rakam + altın ray) + dünden % değişim rozeti
+- **Stat kartları satırı (`_StatCardsRow`):** Satış Adedi / Aylık Ciro / Aylık Adet. Masaüstünde
+  `IntrinsicHeight(Row(crossAxisAlignment: stretch, [Expanded...]))`.
+  ⚠️ **Önemli:** Bu Row kaydırılabilir sayfada (sınırsız yükseklik) `IntrinsicHeight` olmadan
+  "BoxConstraints forces an infinite height" hatası verir ve **tüm dashboard'u çökertir** (grafik
+  dahil hiçbir şey render olmaz). Stretch'li/Expanded'lı her Row için aynı kural geçerli.
+- **Tek çizgi grafik (`_DailySalesChartCard`, `fl_chart`):** son N günün günlük cirosu —
+  `dailySalesProvider(days)`. Web: 8/15/30 gün seçilebilir (varsayılan 30), grafik ekran
+  genişliğinin %90'ı (`LayoutBuilder + Center + SizedBox(width: maxWidth*0.9)` — `FractionallySizedBox`
+  dikey Column'da sonsuz yükseklik verdiği için kullanılmaz). Mobil (`compact: true`): sabit son
+  8 gün, seçici yok. X ekseninde her gün için **GG/AA/YY** tarihi + altında Türkçe gün kısaltması
+  (Pzt..Pzr, `DateTime.weekday`). Eski Aylık Satış grafiği kaldırıldı.
+- **Regresyon testi:** `test/dashboard_render_test.dart` — masaüstü genişliğinde dashboard'u sahte
+  provider'larla render edip "infinite height" hatası atmadığını + grafiğin göründüğünü doğrular.
 
 ### Müşteri Detayı — Geçmiş İşlem Yönetimi
 
@@ -181,8 +206,13 @@ Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir
 - Sol alt: barkod
 - Sağ: Stok · Alış · Fiyat 1
 - Karta tıkla → `/products/:id` düzenleme ekranı
+- Arama barının sağında **kamera ile barkod okutma** butonu (`mobile_scanner`, `kIsWeb` guard)
 
 Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
+
+**Arama (`ProductRepository`):** `fetchAll(query)` Türkçe-duyarlı (İ/i, I/ı katlaması) — `name`/`barcode`/`stock_code` üzerinde `ilike` OR varyantları (`_buildSearchOr`).
+
+**Ürün formu (`product_form_screen.dart`):** Kâr alanı düzenlenebilir; kâr ↔ satış fiyatı çift yönlü hesaplanır. Sayısal girişlerde virgül **ve** nokta ondalık ayıracı kabul edilir.
 
 ### Excel Export
 
@@ -197,6 +227,9 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
 2. **Tarihsel Rapor** — iki tarih arası ciro
 3. **Ürün Raporları** — ürün arama, zamana göre fiyat ve satış geçmişi
 
+Günlük ve Tarihsel rapor tablolarında iskonto sütunu **`% 82.25`** formatında gösterilir
+(`'% ${s.discountPercent.toStringAsFixed(2)}'`, noktadan sonra 2 hane).
+
 ### Veritabanı (Supabase)
 
 Şema migration'ları: `supabase/migrations/` (DDL anon key ile çalıştırılamaz → Supabase SQL Editor'da uygulanır).
@@ -209,8 +242,19 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
 Site: `https://ercinnn.github.io/nicepos`
 Repo: `https://github.com/ercinnn/nicepos`
 - Branch: `master`, Folder: `/docs`
-- `docs/main.dart.js` build'den sonra mutlaka güncellenmelidir (kod değişikliği sonrası rebuild zorunlu)
+- **Yerel klasör (`C:\Projects\nice-pos`) artık remote'un birebir aynası olan gerçek bir git deposu**
+  (`origin` → nicepos, `core.autocrlf false`). Deploy **doğrudan** bu klasörden yapılır — eski
+  clone+copy+push fallback'ine artık gerek yok. Akış: `flutter build web ...` → `Remove-Item -Recurse
+  -Force docs; Copy-Item -Recurse build\web docs` → `git add -A; git commit; git push origin master`.
+- Push öncesi `git fetch` + `git log origin/master..master` ile fast-forward olduğunu teyit et.
+- `docs/main.dart.js` build'den sonra mutlaka güncellenmelidir (kod değişikliği sonrası rebuild zorunlu).
 - `.gitignore` `/build/*` yoksayar ama `!/build/web` izler → repo HEM `build/web` HEM `docs` tutar; deploy'da ikisi de güncellenir.
+- **PowerShell commit mesajı uyarısı:** Çok satırlı / çift tırnak içeren mesajlarda `git commit -m @'...'@`
+  here-string'i bozulabilir (kapanış `'@` sütun 0'da olmalı; çift tırnak parse'ı bozar). Güvenlisi:
+  tek satırlık `git commit -m '...'` (çift tırnaksız).
+- Service worker önbelleği: kullanıcı yeni deploy'u göremezse genelde tarayıcı/SW cache'idir → hard
+  refresh / SW unregister / gizli pencere. (Ama "göremiyorum" şikâyetinde önce **render hatası**
+  ihtimalini ele: kaydırılabilir sayfada stretch'li Row'lar için yukarıdaki IntrinsicHeight notuna bak.)
 - **Bağımlılık uyarısı:** `supabase_flutter` 2.15.x web'de açılış hatası veriyordu (`passkeys_web`/`ua_client_hints` → `dart:html`). Çalışan sürüm **2.14.2**; `pubspec.lock` bu sürümde tutulmalı.
 
 ## Önemli Konvansiyonlar
@@ -222,3 +266,8 @@ Repo: `https://github.com/ercinnn/nicepos`
 - **Dialog context:** `showDialog(builder: (dialogContext) => ...)` — `Navigator.pop` için her zaman `dialogContext` kullan, parent `context` değil. State güncellemesi pop'tan SONRA yapılmalı.
 - **Kamera:** `mobile_scanner` — `kIsWeb` guard ile sadece native'de gösterilir
 - **CartItem:** `barcode` alanı var — `addProduct` çağrısında `product.barcode` iletilir
+- **Layout (kaydırılabilir sayfa = sınırsız yükseklik):** `SingleChildScrollView > Column` içinde
+  `crossAxisAlignment: stretch` + `Expanded` çocuklu `Row` → "infinite height" hatası; `IntrinsicHeight`
+  ile sar. `FractionallySizedBox` (heightFactor null) dikey Column'da aynı sonsuz yükseklik hatasını
+  verir → genişlik için `LayoutBuilder + SizedBox(width: ...)` kullan. Bu tür render hataları
+  `flutter analyze`'da görünmez; widget testiyle yakalanır.
