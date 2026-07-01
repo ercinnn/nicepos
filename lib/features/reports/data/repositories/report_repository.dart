@@ -21,12 +21,25 @@ class ReportRepository {
 
   Future<DailyReportSummary> _fetchSummary(DateTime start, DateTime end) async {
     // UTC olarak gönderiyoruz: yerel gece yarısı → doğru UTC sınırı (Türkiye UTC+3)
-    final salesRows = await _client
-        .from('sales')
-        .select('*, customers(name), sale_items(quantity, total, product_id, products(purchase_price))')
-        .gte('sale_date', start.toUtc().toIso8601String())
-        .lt('sale_date', end.toUtc().toIso8601String())
-        .order('sale_date', ascending: false);
+    // PostgREST 1000 satır limitini aşmak için sayfalı çekim.
+    const pageSize = 1000;
+    final salesRows = <Map<String, dynamic>>[];
+    var salesFrom = 0;
+    while (true) {
+      final page = await _client
+          .from('sales')
+          .select('*, customers(name), sale_items(quantity, total, product_id, products(purchase_price))')
+          .gte('sale_date', start.toUtc().toIso8601String())
+          .lt('sale_date', end.toUtc().toIso8601String())
+          .order('sale_date', ascending: false)
+          .range(salesFrom, salesFrom + pageSize - 1);
+      final list = (page as List)
+          .map((r) => Map<String, dynamic>.from(r as Map))
+          .toList();
+      salesRows.addAll(list);
+      if (list.length < pageSize) break;
+      salesFrom += pageSize;
+    }
 
     num cashTotal = 0;
     num posTotal = 0;
@@ -35,8 +48,7 @@ class ReportRepository {
     num productCost = 0;
     final sales = <Sale>[];
 
-    for (final row in (salesRows as List)) {
-      final map = Map<String, dynamic>.from(row as Map);
+    for (final map in salesRows) {
       final items = (map['sale_items'] as List?) ?? [];
       var totalProducts = 0;
       for (final item in items) {
@@ -64,16 +76,28 @@ class ReportRepository {
     }
 
     // UTC olarak gönderiyoruz: yerel gece yarısı → doğru UTC sınırı (Türkiye UTC+3)
-    final paymentRows = await _client
-        .from('customer_payments')
-        .select('*, customers(name)')
-        .eq('type', 'odeme')
-        .gte('payment_date', start.toUtc().toIso8601String())
-        .lt('payment_date', end.toUtc().toIso8601String())
-        .order('payment_date', ascending: false);
+    // PostgREST 1000 satır limitini aşmak için sayfalı çekim.
+    final paymentRows = <Map<String, dynamic>>[];
+    var paymentFrom = 0;
+    while (true) {
+      final page = await _client
+          .from('customer_payments')
+          .select('*, customers(name)')
+          .eq('type', 'odeme')
+          .gte('payment_date', start.toUtc().toIso8601String())
+          .lt('payment_date', end.toUtc().toIso8601String())
+          .order('payment_date', ascending: false)
+          .range(paymentFrom, paymentFrom + pageSize - 1);
+      final list = (page as List)
+          .map((r) => Map<String, dynamic>.from(r as Map))
+          .toList();
+      paymentRows.addAll(list);
+      if (list.length < pageSize) break;
+      paymentFrom += pageSize;
+    }
 
-    final receivedPayments = (paymentRows as List)
-        .map((row) => CustomerPayment.fromMap(Map<String, dynamic>.from(row as Map)))
+    final receivedPayments = paymentRows
+        .map((row) => CustomerPayment.fromMap(row))
         .toList();
 
     return DailyReportSummary(

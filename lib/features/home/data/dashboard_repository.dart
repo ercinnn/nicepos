@@ -4,19 +4,47 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class DashboardRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
+  // ── PostgREST 1000 satır limitini aşmak için sayfalı satır çekme ──────────
+  // Verilen tarih aralığındaki tüm `sales` satırlarını sayfa sayfa toplar.
+  Future<List<Map<String, dynamic>>> _fetchAllRows(
+    String columns, {
+    required DateTime start,
+    DateTime? end,
+  }) async {
+    const pageSize = 1000;
+    final all = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      var filter = _client
+          .from('sales')
+          .select(columns)
+          .gte('sale_date', start.toUtc().toIso8601String());
+      if (end != null) {
+        filter = filter.lt('sale_date', end.toUtc().toIso8601String());
+      }
+      final rows = await filter.order('sale_date').range(from, from + pageSize - 1);
+      final list =
+          (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      all.addAll(list);
+      if (list.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  }
+
   // ── Bugünün satış adedi ve tutarını getir ────────────────────────────────
   Future<({int count, num revenue})> fetchTodaySummary() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
-    final rows = await _client
-        .from('sales')
-        .select('total_amount, sale_items(quantity)')
-        .gte('sale_date', start.toUtc().toIso8601String())
-        .lt('sale_date', end.toUtc().toIso8601String());
+    final rows = await _fetchAllRows(
+      'total_amount, sale_items(quantity)',
+      start: start,
+      end: end,
+    );
     num revenue = 0;
     int count = 0;
-    for (final row in (rows as List)) {
+    for (final row in rows) {
       revenue += (row['total_amount'] as num? ?? 0);
       for (final item in (row['sale_items'] as List? ?? [])) {
         count += ((item['quantity'] as num?) ?? 0).round();
@@ -31,14 +59,14 @@ class DashboardRepository {
     final start = DateTime(now.year, now.month, now.day)
         .subtract(const Duration(days: 1));
     final end = start.add(const Duration(days: 1));
-    final rows = await _client
-        .from('sales')
-        .select('total_amount, sale_items(quantity)')
-        .gte('sale_date', start.toUtc().toIso8601String())
-        .lt('sale_date', end.toUtc().toIso8601String());
+    final rows = await _fetchAllRows(
+      'total_amount, sale_items(quantity)',
+      start: start,
+      end: end,
+    );
     num revenue = 0;
     int count = 0;
-    for (final row in (rows as List)) {
+    for (final row in rows) {
       revenue += (row['total_amount'] as num? ?? 0);
       for (final item in (row['sale_items'] as List? ?? [])) {
         count += ((item['quantity'] as num?) ?? 0).round();
@@ -52,14 +80,14 @@ class DashboardRepository {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, 1);
     final end = DateTime(now.year, now.month + 1, 1);
-    final rows = await _client
-        .from('sales')
-        .select('total_amount, sale_items(quantity)')
-        .gte('sale_date', start.toUtc().toIso8601String())
-        .lt('sale_date', end.toUtc().toIso8601String());
+    final rows = await _fetchAllRows(
+      'total_amount, sale_items(quantity)',
+      start: start,
+      end: end,
+    );
     num revenue = 0;
     int count = 0;
-    for (final row in (rows as List)) {
+    for (final row in rows) {
       revenue += (row['total_amount'] as num? ?? 0);
       for (final item in (row['sale_items'] as List? ?? [])) {
         count += ((item['quantity'] as num?) ?? 0).round();
@@ -73,12 +101,12 @@ class DashboardRepository {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month - 1, 1);
     final end = DateTime(now.year, now.month, 1);
-    final rows = await _client
-        .from('sales')
-        .select('total_amount')
-        .gte('sale_date', start.toUtc().toIso8601String())
-        .lt('sale_date', end.toUtc().toIso8601String());
-    return (rows as List).fold<num>(
+    final rows = await _fetchAllRows(
+      'total_amount',
+      start: start,
+      end: end,
+    );
+    return rows.fold<num>(
       0,
       (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
     );
@@ -89,11 +117,10 @@ class DashboardRepository {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: days - 1));
-    final rows = await _client
-        .from('sales')
-        .select('sale_date, total_amount')
-        .gte('sale_date', start.toUtc().toIso8601String())
-        .order('sale_date');
+    final rows = await _fetchAllRows(
+      'sale_date, total_amount',
+      start: start,
+    );
 
     // Gün bazında grupla — tüm günleri sıfırla, sonra doldur
     final Map<String, num> grouped = {};
@@ -103,7 +130,7 @@ class DashboardRepository {
           '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
       grouped[key] = 0;
     }
-    for (final row in (rows as List)) {
+    for (final row in rows) {
       final dt = DateTime.parse(row['sale_date'] as String).toLocal();
       final key =
           '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
@@ -126,12 +153,12 @@ class DashboardRepository {
     for (var i = months - 1; i >= 0; i--) {
       final monthDate = DateTime(now.year, now.month - i, 1);
       final nextMonth = DateTime(monthDate.year, monthDate.month + 1, 1);
-      final rows = await _client
-          .from('sales')
-          .select('total_amount')
-          .gte('sale_date', monthDate.toUtc().toIso8601String())
-          .lt('sale_date', nextMonth.toUtc().toIso8601String());
-      final total = (rows as List).fold<num>(
+      final rows = await _fetchAllRows(
+        'total_amount',
+        start: monthDate,
+        end: nextMonth,
+      );
+      final total = rows.fold<num>(
         0,
         (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
       );
