@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import 'companies_screen.dart';
 import 'product_groups_screen.dart';
 import 'products_list_screen.dart';
 
@@ -10,7 +11,7 @@ class ProductsTabsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           Container(
@@ -22,6 +23,7 @@ class ProductsTabsScreen extends StatelessWidget {
               tabs: [
                 Tab(text: 'Ürünler'),
                 Tab(text: 'Ürün Grupları'),
+                Tab(text: 'Firmalar'),
               ],
             ),
           ),
@@ -30,6 +32,7 @@ class ProductsTabsScreen extends StatelessWidget {
               children: [
                 ProductsListScreen(),
                 ProductGroupsScreen(),
+                CompaniesScreen(),
               ],
             ),
           ),

@@ -4,11 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../data/models/product.dart';
+import '../../data/models/company.dart';
 import '../../application/products_provider.dart';
 
 class ProductFormScreen extends ConsumerStatefulWidget {
@@ -37,8 +40,15 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late TextEditingController _originCtrl;
   late TextEditingController _stockCodeCtrl;
   late TextEditingController _weightCtrl;
-  late TextEditingController _descriptionCtrl;
   late TextEditingController _quickOrderCtrl;
+
+  // "Diğer Detaylar" → Firma / Tarih / Durum.
+  // Ürün Detayı (description) alanı bu üç parçayı ' & ' ayracıyla saklar:
+  //   "$firma & $ggaayy & $statusLetter"  (ör. "PALA & 01/07/26 & Y")
+  late TextEditingController _companyCtrl;
+  late FocusNode _companyFocus;
+  DateTime _detailDate = DateTime.now();
+  String _statusLetter = 'Y'; // 'Y' = Yeni Eklendi, 'G' = Güncellendi
 
   bool _price1VatIncluded = true;
   bool _price2VatIncluded = true;
@@ -83,8 +93,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _originCtrl = TextEditingController();
     _stockCodeCtrl = TextEditingController();
     _weightCtrl = TextEditingController();
-    _descriptionCtrl = TextEditingController();
     _quickOrderCtrl = TextEditingController();
+    _companyCtrl = TextEditingController();
+    _companyFocus = FocusNode();
 
     if (widget.productId != null) {
       _loadProduct(widget.productId!);
@@ -116,7 +127,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _originCtrl.text = p.originCountry ?? '';
     _stockCodeCtrl.text = p.stockCode ?? '';
     _weightCtrl.text = p.weight == null ? '' : _fmt(p.weight!);
-    _descriptionCtrl.text = p.description ?? '';
+    _applyDescription(p.description);
     _quickOrderCtrl.text = p.quickListOrder?.toString() ?? '';
     _price1VatIncluded = p.price1VatIncluded;
     _price2VatIncluded = p.price2VatIncluded;
@@ -129,6 +140,42 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   String _fmt(num value) {
     if (value == value.roundToDouble()) return value.toInt().toString();
     return value.toString();
+  }
+
+  /// Ürün Detayı (description) alanını üç parçaya ayrıştırır:
+  /// firma & GG/AA/YY & durum. Tam 3 parça VE son parça {'Y','G'} ise
+  /// parçalar alanlara dağıtılır; aksi halde eski serbest metin firma olarak
+  /// alınır, tarih=bugün, durum='Y' (geriye dönük uyumluluk).
+  void _applyDescription(String? description) {
+    final raw = description ?? '';
+    final parts = raw.split(' & ');
+    if (parts.length == 3 &&
+        (parts[2] == 'Y' || parts[2] == 'G')) {
+      _companyCtrl.text = parts[0];
+      _detailDate = _parseDate(parts[1]) ?? DateTime.now();
+      _statusLetter = parts[2];
+    } else {
+      _companyCtrl.text = raw;
+      _detailDate = DateTime.now();
+      _statusLetter = 'Y';
+    }
+  }
+
+  /// GG/AA/YY dizesini DateTime'a çevirir; hatalıysa null döner.
+  DateTime? _parseDate(String s) {
+    try {
+      return DateFormat('dd/MM/yy', 'tr_TR').parseStrict(s.trim());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Kayıt için description'ı kurar: "$firma & $ggaayy & $statusLetter".
+  /// Üç parça HER ZAMAN yazılır (firma boş olsa bile ' & ' ayracı korunur).
+  String _composeDescription() {
+    final firma = _companyCtrl.text.trim();
+    final ggaayy = DateFormat('dd/MM/yy', 'tr_TR').format(_detailDate);
+    return '$firma & $ggaayy & $_statusLetter';
   }
 
   @override
@@ -146,8 +193,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _originCtrl.dispose();
     _stockCodeCtrl.dispose();
     _weightCtrl.dispose();
-    _descriptionCtrl.dispose();
     _quickOrderCtrl.dispose();
+    _companyCtrl.dispose();
+    _companyFocus.dispose();
     super.dispose();
   }
 
@@ -204,6 +252,18 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _syncing = true;
     _profitMargin1Ctrl.text = _fmtCalc(margin);
     _syncing = false;
+  }
+
+  /// "Diğer Detaylar" tarih alanı için tarih seçici (Türkçe yerel).
+  Future<void> _pickDetailDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      locale: const Locale('tr'),
+      initialDate: _detailDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _detailDate = picked);
   }
 
   /// Kamerayı açar; okunan barkodu alana yazar ve varsa mevcut ürünü getirir
@@ -266,7 +326,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         price2VatIncluded: _price2VatIncluded,
         vatRate: _num(_vatRateCtrl),
         weight: _weightCtrl.text.trim().isEmpty ? null : _num(_weightCtrl),
-        description: _descriptionCtrl.text.trim().isEmpty ? null : _descriptionCtrl.text.trim(),
+        description: _composeDescription(),
         imageUrl: _imageUrl,
         quickListOrder: int.tryParse(_quickOrderCtrl.text.trim()),
         isOnlineActive: _isOnlineActive,
@@ -710,10 +770,56 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          TextFormField(
-            controller: _descriptionCtrl,
-            decoration: const InputDecoration(labelText: 'Ürün Detayı'),
-            maxLines: 4,
+          // FIRMA (otomatik tamamlama) — satış ekranındaki canlı arama diliyle aynı overlay.
+          _CompanyAutocompleteField(
+            controller: _companyCtrl,
+            focusNode: _companyFocus,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              // TARİH — salt-okunur görünüm; dokununca tarih seçici açılır.
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppSizes.inputRadius),
+                  onTap: _pickDetailDate,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Tarih',
+                      suffixIcon: Icon(Icons.calendar_today, size: 18),
+                    ),
+                    child: Text(
+                      DateFormat('dd/MM/yy', 'tr_TR').format(_detailDate),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // DURUM — Yeni Eklendi (Y) / Güncellendi (G).
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: Text('Durum',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary)),
+                    ),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'Y', label: Text('Yeni Eklendi')),
+                        ButtonSegment(value: 'G', label: Text('Güncellendi')),
+                      ],
+                      selected: {_statusLetter},
+                      onSelectionChanged: (s) =>
+                          setState(() => _statusLetter = s.first),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           SwitchListTile(
@@ -723,6 +829,172 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             onChanged: (v) => setState(() => _isOnlineActive = v),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Firma otomatik tamamlama alanı.
+/// KURAL: girilen önek (starts with, Türkçe-duyarlı) TAM 1 firmayla eşleşirse
+/// overlay o tek öğeyi gösterir; 0 ya da ≥2 eşleşmede overlay HİÇ açılmaz.
+/// Örn. firmalar = {PALA, PERDECİ}: "P"→2 eşleşme→kapalı, "PA"→1→PALA,
+/// "PE"→1→PERDECİ. Seçim/Enter → alan tam firma adıyla dolar.
+/// Overlay görünümü satış ekranındaki _LiveProductSearchField ile aynı
+/// (cardBg yüzey, AppColors.divider hairline, AppSizes.radiusMd).
+class _CompanyAutocompleteField extends ConsumerStatefulWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+
+  const _CompanyAutocompleteField({
+    required this.controller,
+    required this.focusNode,
+  });
+
+  @override
+  ConsumerState<_CompanyAutocompleteField> createState() =>
+      _CompanyAutocompleteFieldState();
+}
+
+class _CompanyAutocompleteFieldState
+    extends ConsumerState<_CompanyAutocompleteField> {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  double _fieldWidth = 320;
+  Company? _match; // önekle eşleşen TEK firma (varsa)
+
+  // Türkçe küçük harf: önce I→ı, İ→i eşle, sonra toLowerCase().
+  // (product_repository.dart'taki katlama mantığının aynısı.)
+  static String _trLower(String s) =>
+      s.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode.removeListener(_onFocusChange);
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!widget.focusNode.hasFocus) _portal.hide();
+  }
+
+  void _onChanged(String value) {
+    final prefix = value.trim();
+    if (prefix.isEmpty) {
+      _match = null;
+      _portal.hide();
+      return;
+    }
+    final companies = ref.read(companiesProvider).value ?? const <Company>[];
+    final needle = _trLower(prefix);
+    // "starts with" önek filtresi (Türkçe-duyarlı).
+    final matches =
+        companies.where((c) => _trLower(c.name).startsWith(needle)).toList();
+    // Overlay yalnızca TAM 1 eşleşmede açılır.
+    if (matches.length == 1) {
+      setState(() => _match = matches.first);
+      if (widget.focusNode.hasFocus) _portal.show();
+    } else {
+      _match = null;
+      _portal.hide();
+    }
+  }
+
+  void _select(Company company) {
+    widget.controller.text = company.name;
+    widget.controller.selection = TextSelection.collapsed(
+      offset: company.name.length,
+    );
+    _match = null;
+    _portal.hide();
+    widget.focusNode.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Firma listesini yükle/aboneliği canlı tut (onChanged ref.read ile okur).
+    ref.watch(companiesProvider);
+    return OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (context) {
+        final match = _match;
+        if (match == null) return const SizedBox.shrink();
+        return CompositedTransformFollower(
+          link: _link,
+          targetAnchor: Alignment.bottomLeft,
+          followerAnchor: Alignment.topLeft,
+          offset: const Offset(0, 4),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: TextFieldTapRegion(
+              child: SizedBox(
+                width: _fieldWidth,
+                child: _buildDropdown(match),
+              ),
+            ),
+          ),
+        );
+      },
+      child: CompositedTransformTarget(
+        link: _link,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth.isFinite) {
+              _fieldWidth = constraints.maxWidth;
+            }
+            return TextField(
+              controller: widget.controller,
+              focusNode: widget.focusNode,
+              decoration: const InputDecoration(labelText: 'Firma'),
+              onChanged: _onChanged,
+              onSubmitted: (_) {
+                final match = _match;
+                if (match != null) _select(match);
+                _portal.hide();
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown(Company match) {
+    return Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+      shadowColor: Colors.black26,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+          border: Border.all(color: AppColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _select(match),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSizes.space12,
+              vertical: AppSizes.space8,
+            ),
+            child: Text(
+              match.name,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
       ),
     );
   }

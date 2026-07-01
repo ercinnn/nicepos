@@ -60,6 +60,40 @@ final productGroupsProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ProductGroupsRef = AutoDisposeFutureProviderRef<List<ProductGroup>>;
+String _$companyRepositoryHash() => r'c86e7056148cee76d008875cb39ed555b231fd03';
+
+/// See also [companyRepository].
+@ProviderFor(companyRepository)
+final companyRepositoryProvider = Provider<CompanyRepository>.internal(
+  companyRepository,
+  name: r'companyRepositoryProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$companyRepositoryHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CompanyRepositoryRef = ProviderRef<CompanyRepository>;
+String _$companiesHash() => r'47b2e5180a43ecaf382a0b9def80a7a840d1c8eb';
+
+/// See also [companies].
+@ProviderFor(companies)
+final companiesProvider = AutoDisposeFutureProvider<List<Company>>.internal(
+  companies,
+  name: r'companiesProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$companiesHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CompaniesRef = AutoDisposeFutureProviderRef<List<Company>>;
 String _$productByIdHash() => r'97ee5f6966e1f971153247c89ad19cd99b10b8f7';
 
 /// Copied from Dart SDK

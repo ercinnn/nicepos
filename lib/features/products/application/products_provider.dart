@@ -1,8 +1,10 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/models/product.dart';
 import '../data/models/product_group.dart';
+import '../data/models/company.dart';
 import '../data/repositories/product_repository.dart';
 import '../data/repositories/product_group_repository.dart';
+import '../data/repositories/company_repository.dart';
 
 part 'products_provider.g.dart';
 
@@ -17,6 +19,15 @@ ProductGroupRepository productGroupRepository(ProductGroupRepositoryRef ref) => 
 @riverpod
 Future<List<ProductGroup>> productGroups(ProductGroupsRef ref) {
   return ref.watch(productGroupRepositoryProvider).fetchAll();
+}
+
+@Riverpod(keepAlive: true)
+CompanyRepository companyRepository(CompanyRepositoryRef ref) =>
+    CompanyRepository();
+
+@riverpod
+Future<List<Company>> companies(CompaniesRef ref) {
+  return ref.watch(companyRepositoryProvider).fetchAll();
 }
 
 @riverpod
