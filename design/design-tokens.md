@@ -44,6 +44,16 @@ durumdadır; hiçbir bölücü/ayraç altın olamaz.
 Altın metin **asla** beyaz üzerine gövde metni olarak kullanılmaz (kontrast düşük) —
 altın yalnızca vurgu, kenarlık ve ray olarak.
 
+**Seri renk paleti (kategorik — çok-serili grafikler için, KARAR v1.4):** Çok yıllı/çok
+serili grafiklerde her seriyi ayırmak için 6 ayrık renk; hepsi **mevcut paletten** alınır
+(yeni hex YOK). Sıra, yıl indeksine göre atanır → `renk = liste[(yıl − 2021) % 6]`:
+1. `primary #1B2A4A` (lacivert) · 2. `success #1B7A45` (yeşil) · 3. `pos #1B6A9A` (çelik mavi) ·
+4. `splitPayment #6B4FA0` (mor) · 5. `gold #C9A84C` (altın) · 6. `danger #C0392B` (kiremit).
+**Kural:** Bu bağlamda renkler **kategorik ayraçtır**, semantik/imza rolü **taşımaz** —
+buradaki altın imza rayı DEĞİL, kırmızı "borç/hata" DEĞİL; yalnızca "hangi yıl" bilgisidir.
+Sadece grafik çizgisi + lejant/renk noktası olarak; **dolgu (area fill) yok** (çizgiler üst
+üste binince çamurlaşmasın). İmza (§4) etkilenmez: grafik çizgisi asla altın ray değildir.
+
 ---
 
 ## 2. Tipografi Rolleri
@@ -137,6 +147,13 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
 - **Rozet/pill:** ödeme türü renkleri (§1), `chipRadius` pill.
 - **Aktif durum:** sidebar/sekme seçili = altın metin (`sidebarTextActive`) — bu, imza
   rayının "aktiflik" diliyle tutarlıdır ama ray DEĞİLDİR (ray yalnızca hero tutara ait).
+- **Çoklu-yıl karşılaştırma grafiği (dashboard, KARAR v1.4):** Günlük satış grafiğinin
+  **altında**, aynı eksen üzerinde Oca–Ara aylık ciro; 2021 → içinde bulunulan yıl her biri
+  ayrı seri (seri renk paleti §1, `renk = liste[(yıl − 2021) % 6]`). Yıllar **aç/kapa toggle
+  chip** ile seçilir (renk noktası + yıl etiketi); birden fazlası açık kalabildiği için bu
+  **radyo değil çoklu-seçimdir**. Bu grafik **HERO değildir** — dashboard'un tek hero'su
+  bugünkü cirodur (§4); altın ray yok. Çizgiler 2px, dolgusuz; ızgara/eksen nötr hairline
+  (§1, grid ~0.15 / eksen ~0.25 alfa). Y ekseni tabular para; X ekseni Türkçe ay kısaltmaları.
 - **Kritik stok durumu (stok listesi imzası, §4):** Stok miktarı, durumuna göre üç dilde gösterilir:
   **tükendi** (stok ≤ 0) en belirgin → `danger` dolu rozet/pill (kırmızı zemin + beyaz metin);
   **kritik** (0 < stok ≤ kritik eşik) → `danger` metin/ince rozet; **normal** (stok > eşik) →

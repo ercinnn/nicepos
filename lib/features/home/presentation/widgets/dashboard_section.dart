@@ -65,6 +65,24 @@ class DashboardSection extends ConsumerWidget {
               );
             },
           ),
+        const SizedBox(height: AppSizes.space16),
+
+        // ── Grafik: Yıllık Ciro Karşılaştırma (çok-yıl, Oca–Ara) ─────────
+        // Genişlik davranışı günlük grafikle aynı: mobilde tam genişlik,
+        // masaüstünde ekran genişliğinin %90'ı (LayoutBuilder + SizedBox).
+        if (context.isMobile)
+          const _YillikKarsilastirmaCard()
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return Center(
+                child: SizedBox(
+                  width: constraints.maxWidth * 0.9,
+                  child: const _YillikKarsilastirmaCard(),
+                ),
+              );
+            },
+          ),
       ],
     );
   }
@@ -761,6 +779,336 @@ class _SatisLineChart extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Yıllık Ciro Karşılaştırma Kartı (çok-yıl, Oca–Ara)
+// ═══════════════════════════════════════════════════════════════════════════
+// design-tokens KARAR v1.4: Günlük satış grafiğinin altında, aynı eksende her
+// yıl ayrı seri. Yıllar aç/kapa toggle chip ile seçilir (çoklu-seçim, radyo
+// DEĞİL). HERO değildir — altın ray/kenarlık yok. Seri renkleri kategorik
+// ayraçtır (semantik/imza rolü taşımaz), sıra: yıl indeksine göre atanır.
+
+const _ayKisaltma = [
+  'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
+  'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+];
+
+const int _baslangicYil = 2021;
+
+/// Seri renk paleti (§1) — yıl indeksine göre kategorik renk atar.
+/// `renk = liste[(yıl − 2021) % liste.length]`.
+Color _yilRengi(int yil) {
+  const palet = [
+    AppColors.primary, // lacivert
+    AppColors.success, // yeşil
+    AppColors.pos, // çelik mavi
+    AppColors.splitPayment, // mor
+    AppColors.gold, // altın (burada imza değil, kategorik)
+    AppColors.danger, // kiremit (burada hata değil, kategorik)
+  ];
+  final idx = ((yil - _baslangicYil) % palet.length + palet.length) %
+      palet.length;
+  return palet[idx];
+}
+
+class _YillikKarsilastirmaCard extends ConsumerStatefulWidget {
+  const _YillikKarsilastirmaCard();
+
+  @override
+  ConsumerState<_YillikKarsilastirmaCard> createState() =>
+      _YillikKarsilastirmaCardState();
+}
+
+class _YillikKarsilastirmaCardState
+    extends ConsumerState<_YillikKarsilastirmaCard> {
+  late final int _buYil = DateTime.now().year;
+  // Varsayılan: bu yıl + geçen yıl açık.
+  late final Set<int> _acikYillar = {_buYil, _buYil - 1};
+
+  @override
+  Widget build(BuildContext context) {
+    final veriAsync = ref.watch(yearlySalesProvider);
+
+    return Container(
+      // HERO değil: yalnızca gölge + yuvarlatma, altın kenarlık/ray YOK.
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        boxShadow: AppSizes.cardShadow,
+      ),
+      padding: const EdgeInsets.all(AppSizes.cardPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Yıllık Ciro Karşılaştırma (Oca–Ara)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSizes.space12),
+
+          // ── Yıl aç/kapa toggle chip'leri (çoklu-seçim) ───────────────
+          veriAsync.maybeWhen(
+            data: (veri) {
+              final yillar = veri.keys.toList()..sort();
+              return Wrap(
+                spacing: AppSizes.space8,
+                runSpacing: AppSizes.space8,
+                children: yillar
+                    .map((yil) => _YilChip(
+                          yil: yil,
+                          renk: _yilRengi(yil),
+                          acik: _acikYillar.contains(yil),
+                          onTap: () => setState(() {
+                            if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
+                          }),
+                        ))
+                    .toList(),
+              );
+            },
+            orElse: () => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: AppSizes.space16),
+
+          // ── Grafik ────────────────────────────────────────────────────
+          SizedBox(
+            height: 300,
+            child: veriAsync.when(
+              loading: () => const BrandLoader(label: 'Yükleniyor…'),
+              error: (e, _) => const Center(
+                child: Text(
+                  'Veri yüklenemedi',
+                  style: TextStyle(color: AppColors.textMuted),
+                ),
+              ),
+              data: (veri) {
+                final acik = _acikYillar.toList()..sort();
+                if (acik.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'Karşılaştırmak için en az bir yıl seçin',
+                      style: TextStyle(color: AppColors.textMuted),
+                    ),
+                  );
+                }
+                return _YillikLineChart(veri: veri, acikYillar: acik);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Yıl toggle chip'i (renk noktası + yıl etiketi) ──────────────────────────
+
+class _YilChip extends StatelessWidget {
+  final int yil;
+  final Color renk;
+  final bool acik;
+  final VoidCallback onTap;
+
+  const _YilChip({
+    required this.yil,
+    required this.renk,
+    required this.acik,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12,
+          vertical: AppSizes.space6,
+        ),
+        decoration: BoxDecoration(
+          color: acik ? renk.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+          border: Border.all(
+            color: acik ? renk : AppColors.textMuted.withValues(alpha: 0.30),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Renk noktası — kapalıyken soluk.
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: acik ? renk : renk.withValues(alpha: 0.30),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: AppSizes.space6),
+            Text(
+              '$yil',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: acik ? FontWeight.w700 : FontWeight.w500,
+                color: acik ? AppColors.textPrimary : AppColors.textMuted,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Çok-serili yıllık çizgi grafik ──────────────────────────────────────────
+
+class _YillikLineChart extends StatelessWidget {
+  final Map<int, List<num>> veri;
+  final List<int> acikYillar;
+
+  const _YillikLineChart({required this.veri, required this.acikYillar});
+
+  @override
+  Widget build(BuildContext context) {
+    // Y ekseni max — yalnızca açık yılların değerlerinden.
+    var maxY = 0.0;
+    for (final yil in acikYillar) {
+      for (final v in (veri[yil] ?? const <num>[])) {
+        final d = v.toDouble();
+        if (d > maxY) maxY = d;
+      }
+    }
+    final yMax = maxY == 0 ? 100.0 : maxY * 1.2;
+
+    // Her açık yıl için bir çizgi (dolgusuz, 2px, kategorik renk).
+    final barlar = acikYillar.map((yil) {
+      final aylik = veri[yil] ?? List<num>.filled(12, 0);
+      final spots = [
+        for (var ay = 0; ay < 12; ay++)
+          FlSpot(ay.toDouble(), aylik[ay].toDouble()),
+      ];
+      final renk = _yilRengi(yil);
+      return LineChartBarData(
+        spots: spots,
+        isCurved: true,
+        curveSmoothness: 0.25,
+        preventCurveOverShooting: true,
+        color: renk,
+        barWidth: 2,
+        isStrokeCapRound: true,
+        dotData: const FlDotData(show: false),
+        belowBarData: BarAreaData(show: false), // dolgu YOK
+      );
+    }).toList();
+
+    return LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: 11,
+        minY: 0,
+        maxY: yMax,
+
+        // Izgara (nötr hairline ~0.15)
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: yMax / 4,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: AppColors.textMuted.withValues(alpha: 0.15),
+            strokeWidth: 1,
+          ),
+        ),
+
+        // Eksen kenarlığı (nötr ~0.25)
+        borderData: FlBorderData(
+          show: true,
+          border: Border(
+            bottom: BorderSide(
+                color: AppColors.textMuted.withValues(alpha: 0.25)),
+            left: BorderSide(
+                color: AppColors.textMuted.withValues(alpha: 0.25)),
+          ),
+        ),
+
+        titlesData: FlTitlesData(
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 50,
+              interval: yMax / 4,
+              getTitlesWidget: (val, meta) {
+                if (val == 0) return const SizedBox.shrink();
+                final etiket = val >= 1000
+                    ? '${(val / 1000).toStringAsFixed(1)}K'
+                    : val.toStringAsFixed(0);
+                return Text(
+                  etiket,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: AppColors.textMuted,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 22,
+              interval: 1,
+              getTitlesWidget: (val, meta) {
+                final idx = val.round();
+                if (idx < 0 || idx >= 12) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    _ayKisaltma[idx],
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+
+        // Tooltip: yıl + ay + tutar (her açık seri için).
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => AppColors.primary.withValues(alpha: 0.90),
+            getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
+              final ay = s.x.round().clamp(0, 11);
+              // barIndex → açık yıl sırası ile eşleşir.
+              final yil = (s.barIndex >= 0 && s.barIndex < acikYillar.length)
+                  ? acikYillar[s.barIndex]
+                  : null;
+              final onEk = yil != null ? '$yil · ' : '';
+              return LineTooltipItem(
+                '$onEk${_ayKisaltma[ay]}\n${_currencyFmt.format(s.y)}',
+                TextStyle(
+                  color: yil != null ? _yilRengi(yil) : Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+
+        lineBarsData: barlar,
       ),
     );
   }

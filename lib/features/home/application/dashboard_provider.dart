@@ -40,3 +40,9 @@ Future<List<({DateTime date, num amount})>> dailySales(
 Future<List<({DateTime date, num amount})>> monthlySales(
         MonthlySalesRef ref, int months) =>
     ref.watch(dashboardRepositoryProvider).fetchMonthlySales(months);
+
+/// Yıllara göre aylık satış verileri (çok-yıl karşılaştırma grafiği).
+/// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
+@riverpod
+Future<Map<int, List<num>>> yearlySales(YearlySalesRef ref) =>
+    ref.watch(dashboardRepositoryProvider).fetchYearlyMonthlySales();

@@ -145,6 +145,40 @@ class DashboardRepository {
       ..sort((a, b) => a.date.compareTo(b.date));
   }
 
+  // ── Yıllara göre aylık satış tutarlarını getir (çok-yıl karşılaştırma) ────
+  // startYear..endYear (dahil) arası her yıl için 12 elemanlı aylık toplam
+  // listesi döner (index 0=Ocak..11=Aralık). Veri olmayan ay 0; hiç satışı
+  // olmayan yıl 12×0 olarak yine anahtar bulunur. endYear verilmezse bu yıl.
+  Future<Map<int, List<num>>> fetchYearlyMonthlySales({
+    int startYear = 2021,
+    int? endYear,
+  }) async {
+    endYear ??= DateTime.now().year;
+    final start = DateTime(startYear, 1, 1);
+    final end = DateTime(endYear + 1, 1, 1);
+
+    // Tüm yılları önceden 12×0 ile doldur.
+    final Map<int, List<num>> grouped = {
+      for (var y = startYear; y <= endYear; y++)
+        y: List<num>.filled(12, 0, growable: false),
+    };
+
+    final rows = await _fetchAllRows(
+      'sale_date, total_amount',
+      start: start,
+      end: end,
+    );
+
+    for (final row in rows) {
+      final dt = DateTime.parse(row['sale_date'] as String).toLocal();
+      final list = grouped[dt.year];
+      if (list == null) continue; // aralık dışı (güvenlik)
+      list[dt.month - 1] += ((row['total_amount'] as num?) ?? 0);
+    }
+
+    return grouped;
+  }
+
   // ── Son N ayın aylık satış tutarlarını getir ─────────────────────────────
   Future<List<({DateTime date, num amount})>> fetchMonthlySales(
       int months) async {

@@ -409,5 +409,26 @@ class _MonthlySalesProviderElement
   int get months => (origin as MonthlySalesProvider).months;
 }
 
+String _$yearlySalesHash() => r'4bc188e5ef8599db9a3c7730317648a42aeb0347';
+
+/// Yıllara göre aylık satış verileri (çok-yıl karşılaştırma grafiği).
+/// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
+///
+/// Copied from [yearlySales].
+@ProviderFor(yearlySales)
+final yearlySalesProvider =
+    AutoDisposeFutureProvider<Map<int, List<num>>>.internal(
+      yearlySales,
+      name: r'yearlySalesProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$yearlySalesHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef YearlySalesRef = AutoDisposeFutureProviderRef<Map<int, List<num>>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
