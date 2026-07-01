@@ -256,6 +256,23 @@ Repo: `https://github.com/ercinnn/nicepos`
   refresh / SW unregister / gizli pencere. (Ama "göremiyorum" şikâyetinde önce **render hatası**
   ihtimalini ele: kaydırılabilir sayfada stretch'li Row'lar için yukarıdaki IntrinsicHeight notuna bak.)
 - **Bağımlılık uyarısı:** `supabase_flutter` 2.15.x web'de açılış hatası veriyordu (`passkeys_web`/`ua_client_hints` → `dart:html`). Çalışan sürüm **2.14.2**; `pubspec.lock` bu sürümde tutulmalı.
+- **⚠️ Ortam izolasyonu — agent yazma engeli (GÜNCEL, deploy bunu izler):** Bu oturumlarda paylaşılan
+  checkout'a **doğrudan yazma engellidir** (parent oturum ve arka plan alt-agent'lar dahil; hata:
+  "hasn't isolated its changes yet"). Bu yüzden her değişiklik + deploy **iki aşamalı** yürütülür:
+  1. **Kod/doküman değişikliği:** `isolation: "worktree"` ile bir alt-agent yapar ve değişikliği kendi
+     worktree dalına **commit** eder (build/push YAPMAZ). Dal: `worktree-agent-<id>`, yol:
+     `.claude/worktrees/agent-<id>`.
+  2. **Deploy (ayrı alt-agent, ana checkout'ta master):** `git checkout master` →
+     `git merge worktree-agent-<id>` (fast-forward beklenir, çakışmada DUR) →
+     `git worktree remove .claude/worktrees/agent-<id>` → `flutter analyze` →
+     `flutter build web --release --base-href /nicepos/ --dart-define=SUPABASE_URL=... "--dart-define=SUPABASE_ANON_KEY=..."`
+     → `Remove-Item -Recurse -Force docs; Copy-Item -Recurse build\web docs` →
+     `git add -A; git commit -m '...'` (tek satır, çift tırnaksız) → `git fetch; git log origin/master..master`
+     (fast-forward teyidi) → `git push origin master`.
+  - Yalnızca **markdown/doküman** değişikliğinde (kod yok) web rebuild gerekmez: merge + `git push origin master`
+    yeterlidir (docs değişmez).
+  - Alternatif: `.claude/settings.json` → `"worktree": {"bgIsolation": "none"}` engeli kapatır; ancak
+    build+push gerçek repo/remote'u değiştirdiğinden **worktree akışı tercih edilir**.
 
 ## Önemli Konvansiyonlar
 
