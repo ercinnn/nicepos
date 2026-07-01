@@ -61,10 +61,13 @@ class SalesRepository {
     required num discountPercent,
     num discountAmount = 0,
     String discountType = 'percent',
+    required PaymentType paymentType,
     required num paidAmount,
     required num cashAmount,
     required num cardAmount,
     required num remainingDebt,
+    String? customerId,
+    String saleCode = '',
   }) async {
     await _client.from('sale_items').delete().eq('sale_id', saleId);
 
@@ -79,6 +82,7 @@ class SalesRepository {
       'discount_percent': discountPercent,
       'discount_amount': discountAmount,
       'discount_type': discountType,
+      'payment_type': paymentType.dbValue,
       'paid_amount': paidAmount,
       'cash_amount': cashAmount,
       'card_amount': cardAmount,
@@ -95,6 +99,27 @@ class SalesRepository {
       if (item.productId != null) {
         await _productRepository.decrementStock(item.productId!, item.quantity);
       }
+    }
+
+    // ── Müşteri borç hareketi mutabakatı (completeSale/deleteSale ile tutarlı) ──
+    // 1. Bu satışa ait otomatik borç hareketini temizle. completeSale bu satışa
+    //    sale_id'li tek bir 'borc' hareketi ekliyordu; ödeme türü değiştiğinde
+    //    (ör. açık hesap → nakit) eski borç kaydı silinmeli, aksi halde
+    //    customer_balances görünümünde hayalet borç kalır.
+    await _client.from('customer_payments').delete().eq('sale_id', saleId);
+
+    // 2. Yeni ödeme türüne göre kalan borç varsa yeni borç hareketi ekle.
+    //    Müşteri yoksa (Perakende) borç sales.remaining_debt'te kalır ama
+    //    müşteri hareketi eklenmez — completeSale davranışıyla aynı.
+    if (customerId != null && remainingDebt > 0) {
+      await _customerRepository.addPayment(CustomerPayment(
+        customerId: customerId,
+        saleId: saleId,
+        type: CustomerPaymentType.borc,
+        amount: remainingDebt,
+        note: 'Satış: $saleCode',
+        paymentDate: DateTime.now(),
+      ));
     }
   }
 

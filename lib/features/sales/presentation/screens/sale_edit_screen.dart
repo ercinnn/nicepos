@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../features/products/application/products_provider.dart';
@@ -40,6 +41,13 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
   late num _discountValue;
   late DiscountType _discountType;
 
+  // ── Ödeme türü durumu ───────────────────────────────────────────────────────
+  // Satış düzenlenirken ödeme türü (Nakit/Pos/Açık Hesap/Parçalı) değiştirilebilir.
+  // Parçalı seçildiğinde nakit + kart tutarları ayrı ayrı girilir.
+  late PaymentType _paymentType;
+  final _cashCtrl = TextEditingController();
+  final _cardCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -51,11 +59,19 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
         : widget.sale.discountPercent;
     _discountController.text =
         _discountValue == 0 ? '' : formatNumber(_discountValue);
+    _paymentType = widget.sale.paymentType;
+    // Parçalı için kayıtlı nakit/kart tutarlarını yükle (0 ise boş bırak).
+    _cashCtrl.text =
+        widget.sale.cashAmount == 0 ? '' : formatNumber(widget.sale.cashAmount);
+    _cardCtrl.text =
+        widget.sale.cardAmount == 0 ? '' : formatNumber(widget.sale.cardAmount);
   }
 
   @override
   void dispose() {
     _discountController.dispose();
+    _cashCtrl.dispose();
+    _cardCtrl.dispose();
     super.dispose();
   }
 
@@ -84,6 +100,37 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
       _discountValue = 0;
       _discountController.clear();
     });
+  }
+
+  // ── Ödeme türü hesapları ────────────────────────────────────────────────────
+  /// Parçalı için girilen nakit tutarı (virgül/nokta ondalık kabul eder).
+  num get _cashInput =>
+      num.tryParse(_cashCtrl.text.replaceAll(',', '.')) ?? 0;
+
+  /// Parçalı için girilen kart/POS tutarı.
+  num get _cardInput =>
+      num.tryParse(_cardCtrl.text.replaceAll(',', '.')) ?? 0;
+
+  /// Seçili ödeme türüne göre kalan borç.
+  /// - nakit/pos: borç yok (net toplam tamamen ödenir)
+  /// - açık hesap: net toplamın tamamı borç
+  /// - parçalı: net toplam − (nakit + kart), 0'ın altına inmez
+  num get _remainingDebtPreview {
+    switch (_paymentType) {
+      case PaymentType.nakit:
+      case PaymentType.pos:
+        return 0;
+      case PaymentType.acikHesap:
+        return _netTotal;
+      case PaymentType.parcali:
+        return (_netTotal - _cashInput - _cardInput)
+            .clamp(0, double.infinity);
+    }
+  }
+
+  void _setPaymentType(PaymentType type) {
+    if (_paymentType == type) return;
+    setState(() => _paymentType = type);
   }
 
   Future<void> _addMiscItem() async {
@@ -257,10 +304,44 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
       // uyumluluk / raporlar için).
       final discountPercentToSave =
           subtotal > 0 ? (discountAmount / subtotal * 100) : 0;
-      // total_amount net (iskontolu) tutar olarak yazılır; remaining_debt yeni
-      // net toplam üzerinden hesaplanır (completeSale ile tutarlı).
-      final remainingDebt = (netTotal - widget.sale.cashAmount - widget.sale.cardAmount)
-          .clamp(0, double.infinity);
+      // total_amount net (iskontolu) tutar olarak yazılır. Ödeme tutarları
+      // seçili ödeme türüne göre net toplam üzerinden YENİDEN hesaplanır:
+      //  - nakit  → cash=net, card=0,   paid=net, debt=0
+      //  - pos    → cash=0,   card=net, paid=net, debt=0
+      //  - açık h.→ cash=0,   card=0,   paid=0,   debt=net
+      //  - parçalı→ cash=girilen, card=girilen, paid=cash+card,
+      //             debt=(net − paid).clamp(0, ∞)
+      num cashAmount;
+      num cardAmount;
+      num paidAmount;
+      num remainingDebt;
+      switch (_paymentType) {
+        case PaymentType.nakit:
+          cashAmount = netTotal;
+          cardAmount = 0;
+          paidAmount = netTotal;
+          remainingDebt = 0;
+          break;
+        case PaymentType.pos:
+          cashAmount = 0;
+          cardAmount = netTotal;
+          paidAmount = netTotal;
+          remainingDebt = 0;
+          break;
+        case PaymentType.acikHesap:
+          cashAmount = 0;
+          cardAmount = 0;
+          paidAmount = 0;
+          remainingDebt = netTotal;
+          break;
+        case PaymentType.parcali:
+          cashAmount = _cashInput;
+          cardAmount = _cardInput;
+          paidAmount = cashAmount + cardAmount;
+          remainingDebt =
+              (netTotal - paidAmount).clamp(0, double.infinity);
+          break;
+      }
       await repo.updateSale(
         saleId: widget.sale.id,
         oldItems: widget.initialItems,
@@ -269,10 +350,13 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
         discountPercent: discountPercentToSave,
         discountAmount: discountAmount,
         discountType: _discountType == DiscountType.tl ? 'tl' : 'percent',
-        paidAmount: widget.sale.paidAmount,
-        cashAmount: widget.sale.cashAmount,
-        cardAmount: widget.sale.cardAmount,
+        paymentType: _paymentType,
+        paidAmount: paidAmount,
+        cashAmount: cashAmount,
+        cardAmount: cardAmount,
         remainingDebt: remainingDebt,
+        customerId: widget.sale.customerId,
+        saleCode: widget.sale.saleCode,
       );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -322,6 +406,109 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  // ── Ödeme türü seçici (mobil ve masaüstü ortak) ─────────────────────────────
+  // §5 "Ödeme türü butonu": seçili değilken nötr beyaz zemin + ince hairline;
+  // tür kimliği sol renk şeridi + ikon/etiket; seçiliyken o türün renginde dolgu.
+  // Satış ekranındaki payment_panel.dart buton diliyle aynı görünüm.
+  Widget _buildPaymentTypeSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _PaymentTypeButton(
+                label: 'Nakit',
+                icon: Icons.payments_outlined,
+                color: AppColors.cash,
+                selected: _paymentType == PaymentType.nakit,
+                onTap: _saving ? null : () => _setPaymentType(PaymentType.nakit),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _PaymentTypeButton(
+                label: 'Pos',
+                icon: Icons.credit_card_outlined,
+                color: AppColors.pos,
+                selected: _paymentType == PaymentType.pos,
+                onTap: _saving ? null : () => _setPaymentType(PaymentType.pos),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _PaymentTypeButton(
+                label: 'Açık Hesap',
+                icon: Icons.account_balance_wallet_outlined,
+                color: AppColors.openAccount,
+                selected: _paymentType == PaymentType.acikHesap,
+                onTap: _saving
+                    ? null
+                    : () => _setPaymentType(PaymentType.acikHesap),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _PaymentTypeButton(
+                label: 'Parçalı',
+                icon: Icons.call_split_outlined,
+                color: AppColors.splitPayment,
+                selected: _paymentType == PaymentType.parcali,
+                onTap: _saving
+                    ? null
+                    : () => _setPaymentType(PaymentType.parcali),
+              ),
+            ),
+          ],
+        ),
+        // Parçalı seçiliyken nakit + kart tutarı girişleri.
+        if (_paymentType == PaymentType.parcali) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _cashCtrl,
+                  enabled: !_saving,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                  ],
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Nakit Tutarı',
+                    suffixText: '₺',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _cardCtrl,
+                  enabled: !_saving,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                  ],
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Kart/POS Tutarı',
+                    suffixText: '₺',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 
   // ── İskonto girişi + toplam özeti (mobil ve masaüstü ortak) ─────────────────
@@ -380,6 +567,10 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
           bold: true,
           size: 16,
         ),
+        // Seçili ödeme türüne göre kalan borç önizlemesi (borç varsa).
+        if (_remainingDebtPreview > 0)
+          _totalLine('Kalan Borç', _remainingDebtPreview,
+              color: AppColors.danger),
       ],
     );
   }
@@ -559,8 +750,19 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                     ),
                   ),
                   const SizedBox(width: 24),
-                  // Sağ: iskonto girişi + toplamlar
-                  SizedBox(width: 300, child: _buildDiscountTotals()),
+                  // Sağ: ödeme türü + iskonto girişi + toplamlar
+                  SizedBox(
+                    width: 300,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildPaymentTypeSelector(),
+                        const SizedBox(height: 14),
+                        _buildDiscountTotals(),
+                      ],
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -743,6 +945,9 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Ödeme türü seçici
+                  _buildPaymentTypeSelector(),
+                  const SizedBox(height: 12),
                   // İskonto girişi + toplam özeti
                   _buildDiscountTotals(),
                   const SizedBox(height: 12),
@@ -800,6 +1005,96 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Ödeme türü butonu — design-tokens §5.
+/// Seçili değilken zemin nötr beyaz (`cardBg`) + ince altın hairline kenarlık;
+/// tür kimliği SOL renk şeridi + ikon/etiket ile taşınır. Seçiliyken o türün
+/// renginde dolgu + beyaz metin. payment_panel.dart'taki buton diliyle aynıdır.
+class _PaymentTypeButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _PaymentTypeButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    // §1: altın metin açık zemine yazılmaz → açık hesap seçili değilken etiket/ikon
+    // lacivert (primary). Diğer türler kendi renginde okunur.
+    final isGold = color == AppColors.openAccount;
+    final bg = selected ? color : AppColors.cardBg;
+    final fg = selected
+        ? Colors.white
+        : disabled
+            ? AppColors.textMuted
+            : isGold
+                ? AppColors.primary
+                : color;
+    final borderColor = selected
+        ? color
+        : disabled
+            ? AppColors.divider
+            : AppColors.goldBorder;
+    final stripColor = disabled
+        ? AppColors.textMuted
+        : selected
+            ? Colors.white
+            : color;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+          border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Tür kimliği — sol renk şeridi
+              Container(width: 4, color: stripColor),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      vertical: AppSizes.space12, horizontal: AppSizes.space6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, color: fg, size: 20),
+                      const SizedBox(height: AppSizes.space4),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: fg,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
