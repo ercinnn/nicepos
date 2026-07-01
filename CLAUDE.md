@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -166,8 +166,10 @@ kaydırma yerine **`Wrap`** ile dizilir — sığmayan sekmeler alt satıra geç
 
 ### Satış Düzenleme & Silme (`SaleEditScreen`)
 
-Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir satışa tıklayınca açılır; kalemleri + iskontoyu düzenler.
+Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir satışa tıklayınca açılır; kalemleri + iskontoyu + **ödeme türünü** düzenler.
 - **İskonto:** TL (₺) / yüzde (%) `SegmentedButton` ile düzenlenir; **Ara Toplam + İskonto + İndirimli Toplam** birlikte gösterilir. İskonto **birebir** saklanır (bkz. Veritabanı notu).
+- **Ödeme türü:** Nakit / Pos / Açık Hesap / Parçalı `_PaymentTypeButton` ile seçilir (satış ekranı `payment_panel.dart` buton dili birebir tekrar; design-tokens §5 — nötr beyaz zemin + sol renk şeridi, seçiliyken türün renginde dolgu). Parçalı seçiliyken "Nakit Tutarı" + "Kart/POS Tutarı" ayrı girilir. Net toplam (`_netTotal`) seçili türe göre yeniden dağıtılır: nakit→cash=net · pos→card=net · açık hesap→debt=net · parçalı→cash/card girilen, debt=(net−paid).clamp(0,∞). "Kalan Borç" önizlemesi borç varsa `AppColors.danger` ile gösterilir. Hem web (sağ kolon) hem mobil (alt çubuk). `updateSale`'e `paymentType` (+ `customerId`, `saleCode`) geçer.
+- **Borç mutabakatı (`updateSale`):** `sales.payment_type` güncellenir. Önce bu satışa ait otomatik borç hareketi silinir (`customer_payments.delete().eq('sale_id', saleId)`) — ödeme türü değişince (ör. açık hesap → nakit) hayalet borç kalmaz. Sonra `customerId != null && remainingDebt > 0` ise yeni `borc` hareketi eklenir (`completeSale`/`deleteSale` ile tutarlı; müşteri yoksa borç sadece `sales.remaining_debt`'te kalır).
 - **Barkod gösterimi:** Satılan ürünlerin barkodu görünür (web: tabloda **Barkod** kolonu; mobil: ürün adı altında). `SaleItem.barcode` alanı `sale_items` tablosunda saklanmaz — `fetchItems` sorgusunda `products(barcode)` join'i ile gelir (muhtelif kalemlerde null).
 - **Yazdır (yalnızca web):** Masaüstü dialog'da `kIsWeb` korumalı **Yazdır** butonu → A4 dikey sepet detayını yeni pencerede açıp otomatik yazdırır. `sale_print.dart` conditional export: `sale_print_web.dart` (`package:web` Blob URL + `<body onload>` print) / `sale_print_stub.dart` (mobil no-op). Excel export ile aynı desen.
 - **Satışı Sil:** `SalesRepository.deleteSale()` → stok iadesi (`increment_product_stock` RPC) + satışa bağlı `customer_payments` (borç) silme + sale_items/sales silme. Çağıran ekran `updated == true` ile listeyi yeniler.
