@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/link.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_sizes.dart';
@@ -448,43 +449,57 @@ class _SidebarTileState extends State<_SidebarTile> {
     final iconColor = widget.selected ? AppColors.sidebarTextActive : AppColors.sidebarText;
     final textColor = widget.selected ? AppColors.sidebarTextActive : AppColors.sidebarText;
 
+    // Web'de gerçek <a href> üretmek için Link ile sarıyoruz: sağ tık / orta tık /
+    // Ctrl(Cmd)+tık tarayıcının native "yeni sekmede aç" davranışını verir. Sol tık ise
+    // followLink üzerinden uygulama içi (SPA) navigasyona düşer — tam sayfa yenilenmez.
+    //
+    // uri: Uri(path: route) → url_launcher href'i aktif URL stratejisiyle hesaplar
+    // (prepareExternalUrl). Proje HASH stratejisi + base-href /nicepos/ kullandığından
+    // href '/nicepos/#/sales' biçiminde üretilir; yeni sekmede doğru ekran açılır.
+    //
+    // Görünüm birebir korunur: Link'in yerleştirdiği saydam <a> platform view'ı
+    // PlatformViewHitTestBehavior.transparent olduğundan hover/tap alttaki widget'a geçer;
+    // MouseRegion hover highlight ve seçili altın şerit aynen çalışır.
     return Tooltip(
       message: widget.expanded ? '' : widget.item.label,
       preferBelow: false,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: () => context.go(widget.item.route),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(6),
-              border: widget.selected
-                  ? const Border(left: BorderSide(color: AppColors.goldLight, width: 3))
-                  : null,
-            ),
-            child: Row(
-              children: [
-                Icon(widget.item.icon, color: iconColor, size: 20),
-                if (widget.expanded) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      widget.item.label,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: textColor,
-                        fontWeight: widget.selected ? FontWeight.w600 : FontWeight.normal,
+      child: Link(
+        uri: Uri(path: widget.item.route),
+        builder: (context, followLink) => MouseRegion(
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: followLink,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(6),
+                border: widget.selected
+                    ? const Border(left: BorderSide(color: AppColors.goldLight, width: 3))
+                    : null,
+              ),
+              child: Row(
+                children: [
+                  Icon(widget.item.icon, color: iconColor, size: 20),
+                  if (widget.expanded) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        widget.item.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: textColor,
+                          fontWeight: widget.selected ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),

@@ -36,6 +36,9 @@ dependencies:
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
   go_router: ^17.3.0
+  # Masaüstü sidebar nav öğelerini gerçek <a href> ile sarmak için (sağ/orta tık →
+  # "yeni sekmede aç"). pubspec.lock'ta zaten transitive 6.3.2 mevcut; sürüm çakışması yok.
+  url_launcher: ^6.3.2
   intl: ^0.20.2
   excel: ^4.0.6
   file_picker: ^11.0.2
