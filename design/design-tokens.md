@@ -190,10 +190,13 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     renk/altın yok — mevcut rapor token'ları.
 - **Sepet kalıcı-fiyat kontrolü + satır-içi başarı bildirimi (Satış ekranı, KARAR v1.6):**
   Sepet satırında birim fiyat **elle düzenlenebilir** (tabular, `formatters` para). Fiyatın
-  yanında açıkça etiketli **"Fiyat1 yap"** kontrolü (kullanıcının istediği radyo affordance'ı);
-  basılınca ürünün **kalıcı satış fiyatı** (`products.price1`) DB'de güncellenir.
-  - **Kaza koruması:** kontrol **açık etiketli** (çıplak radyo değil) — satış ekranından kalıcı
-    fiyat değişimi riskli; yalnız `productId != null` satırlarda görünür (serbest kalem hariç).
+  yanında **çıplak radyo butonu** (KARAR v1.6.1 — kullanıcı görünür "Fiyat1 yap" etiketini
+  kaldırdı; radyo doğrudan **fiyat hanesinin yanında** durur). Basılınca ürünün **kalıcı satış
+  fiyatı** (`products.price1`) DB'de güncellenir.
+  - **Kaza koruması:** etiket kaldırıldığı için keşfedilebilirlik + kaza azaltımı **hover
+    tooltip "Fiyat1 yap"** ile taşınır (görünür etiket değil, ipucu); yalnız `productId != null`
+    satırlarda görünür (serbest kalem hariç). Kalıcı fiyat değişimi geri alınamaz — radyo
+    işaretlenince hemen yeşil onay bildirimi verilir (aşağıda).
   - **Onay bildirimi:** aksiyondan hemen sonra o satırda **yeşil** (`color.positive #1B7A45`)
     kısa süreli pill "Fiyat güncellendi" (`radiusPill`, `type.utility`). Bu, success semantiğinin
     (§1) satır-içi geri bildirim kullanımıdır; **altın DEĞİL**, imza rayıyla karışmaz. Hem web
