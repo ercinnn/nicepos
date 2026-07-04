@@ -11,6 +11,8 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../features/products/application/products_provider.dart';
 import '../../../../features/products/data/models/product.dart';
+import '../../application/barcode_cache.dart';
+import '../../application/barcode_focus_notifier.dart';
 import '../../application/sales_cart_notifier.dart';
 import '../widgets/barcode_scanner_modal.dart';
 import '../widgets/cart_table.dart';
@@ -31,6 +33,14 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
   final _barcodeFocusNode = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    // Barkod → Product bellek indeksini bir kez prefetch et (keepAlive cache;
+    // her ekran açılışında yeniden çekmez). Okutmada ağ turu beklemeden ekleme.
+    ref.read(barcodeCacheProvider).ensureLoaded();
+  }
+
+  @override
   void dispose() {
     _barcodeController.dispose();
     _barcodeFocusNode.dispose();
@@ -41,8 +51,21 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     final query = value.trim();
     if (query.isEmpty) return;
 
+    // ÖNCE bellek cache'i: hit ise ağ beklemeden anında ekle (senkron).
+    final cache = ref.read(barcodeCacheProvider);
+    final cached = cache.lookup(query);
+    if (cached != null) {
+      HapticFeedback.lightImpact();
+      ref.read(salesCartProvider.notifier).addProduct(cached);
+      _barcodeController.clear();
+      _barcodeFocusNode.requestFocus();
+      return;
+    }
+
+    // Miss → mevcut ağ fallback'i aynen korunur (yeni/bilinmeyen barkod da çalışır).
     final product = await ref.read(productRepositoryProvider).fetchByBarcode(query);
     if (product != null) {
+      cache.put(product); // bulunan ürünü cache'e yaz
       HapticFeedback.lightImpact();
       ref.read(salesCartProvider.notifier).addProduct(product);
       _barcodeController.clear();
@@ -52,6 +75,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
 
     final matches = await ref.read(productRepositoryProvider).fetchAll(query: query);
     if (matches.length == 1) {
+      cache.put(matches.first); // bulunan ürünü cache'e yaz
       HapticFeedback.lightImpact();
       ref.read(salesCartProvider.notifier).addProduct(matches.first);
       _barcodeController.clear();
@@ -85,6 +109,14 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
 
   Widget _buildDesktop() {
     final isReturnMode = ref.watch(salesCartProvider).isReturnMode;
+
+    // Satış başarıyla tamamlanınca (payment_panel tick'i artırır) barkod alanına
+    // otomatik odak ver — kullanıcı elini klavyeden çekmeden yeni ürün okutabilsin.
+    // Yalnızca masaüstü layout'ta dinlenir (mobilde ödeme bottom sheet ile; orada
+    // klavye istenmeden açılmasın diye odak zorlanmaz).
+    ref.listen(barcodeFocusRequestProvider, (_, _) {
+      _barcodeFocusNode.requestFocus();
+    });
 
     return Focus(
       autofocus: true,
@@ -611,7 +643,7 @@ class _LiveProductSearchFieldState
     final token = ++_queryToken;
     setState(() => _loading = true);
     if (!_portal.isShowing) _portal.show();
-    _debounce = Timer(const Duration(milliseconds: 250), () async {
+    _debounce = Timer(const Duration(milliseconds: 150), () async {
       try {
         final results =
             await ref.read(productRepositoryProvider).fetchAll(query: query);

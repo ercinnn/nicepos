@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/utils/responsive.dart';
+import '../../application/barcode_focus_notifier.dart';
 import '../../application/payment_input_notifier.dart';
 import '../../application/sales_cart_notifier.dart';
 import '../../data/models/sale.dart';
@@ -243,6 +245,14 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
     );
   }
 
+  // Satış başarıyla tamamlanınca masaüstü barkod alanına odak sinyali gönder
+  // (decoupled tick). Yalnızca masaüstü: mobilde ödeme bottom sheet ile yapılır
+  // ve klavye istenmeden açılmamalı, o yüzden odak zorlanmaz.
+  void _requestBarcodeFocusIfDesktop() {
+    if (!mounted || context.isMobile) return;
+    ref.read(barcodeFocusRequestProvider.notifier).requestFocus();
+  }
+
   Future<void> _completeReturn(CustomerTabState tab, PaymentType type) async {
     if (tab.items.isEmpty) return;
 
@@ -292,6 +302,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
 
       ref.read(salesCartProvider.notifier).clearActiveTab();
       ref.read(paymentInputProvider.notifier).reset();
+      _requestBarcodeFocusIfDesktop();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -338,6 +349,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
 
       ref.read(salesCartProvider.notifier).clearActiveTab();
       ref.read(paymentInputProvider.notifier).reset();
+      _requestBarcodeFocusIfDesktop();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
