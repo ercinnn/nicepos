@@ -356,7 +356,7 @@ class _BestSellersMobileList extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: AppSizes.space2),
+                    const SizedBox(height: AppSizes.space4),
                     Text(
                       [
                         if (hasBarcode) r.barcode!,
@@ -386,7 +386,7 @@ class _BestSellersMobileList extends StatelessWidget {
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
-                  const SizedBox(height: AppSizes.space2),
+                  const SizedBox(height: AppSizes.space4),
                   Text(
                     formatCurrency(r.price1),
                     style: const TextStyle(

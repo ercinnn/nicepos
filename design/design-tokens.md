@@ -176,6 +176,28 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   - **Daraltılmış sidebar (56px, ikon-only):** çift-bölge **kapalı** → tüm öğe = aynı sekme.
     Yeni-sekme bölgesi yalnız **genişletilmiş** modda görünür (1/5 ≈ 9px tıklanamaz olurdu).
   - **Mobil:** etkilenmez (drawer + bottom nav; yeni-sekme bölgesi yoktur).
+- **En Çok Satanlar sekmesi (Raporlar 4. sekme, KARAR v1.6):** Raporlar tasarım dilinin
+  uzantısı; **tarama/analiz** ekranı → **HERO YOK** (Ürün raporu ile aynı, §4 v1.3 gerekçesi).
+  - **Kolonlar:** Sıra `#` · Ürün (+ barkod) · **Birim Fiyat** (ürünün güncel `price1`'i) ·
+    **Adet** (seçili aralıkta satılan toplam miktar) · **Son Satış Tarihi**. *(Toplam Gelir
+    kolonu YOK — adet × fiyat türevi, gereksiz.)*
+  - **Sıralama:** Adet **azalan** (en çok satandan en aza).
+  - **Filtreler:** (1) **Tarih aralığı** — default **2026-01-01 → bugün** (Tarihsel Rapor tarih
+    seçici deseni). (2) **Min. fiyat** — default **50 TL**, **elle düzenlenebilir** alan; yalnız
+    `price1 ≥ girilen değer` ürünler listelenir (fiyat sınıfına göre karşılaştırma).
+  - **Görünüm:** web `cardDecoration()` + `goldBg` başlık tablosu, tüm rakamlar Inter tabular,
+    sayısal kolonlar sağa dayalı; mobil kart listesi (diğer rapor sekmelerinin deseni). Yeni
+    renk/altın yok — mevcut rapor token'ları.
+- **Sepet kalıcı-fiyat kontrolü + satır-içi başarı bildirimi (Satış ekranı, KARAR v1.6):**
+  Sepet satırında birim fiyat **elle düzenlenebilir** (tabular, `formatters` para). Fiyatın
+  yanında açıkça etiketli **"Fiyat1 yap"** kontrolü (kullanıcının istediği radyo affordance'ı);
+  basılınca ürünün **kalıcı satış fiyatı** (`products.price1`) DB'de güncellenir.
+  - **Kaza koruması:** kontrol **açık etiketli** (çıplak radyo değil) — satış ekranından kalıcı
+    fiyat değişimi riskli; yalnız `productId != null` satırlarda görünür (serbest kalem hariç).
+  - **Onay bildirimi:** aksiyondan hemen sonra o satırda **yeşil** (`color.positive #1B7A45`)
+    kısa süreli pill "Fiyat güncellendi" (`radiusPill`, `type.utility`). Bu, success semantiğinin
+    (§1) satır-içi geri bildirim kullanımıdır; **altın DEĞİL**, imza rayıyla karışmaz. Hem web
+    (satır içi) hem mobil (adet/fiyat dialog'u içinde) aynı dil.
 - **Kritik stok durumu (stok listesi imzası, §4):** Stok miktarı, durumuna göre üç dilde gösterilir:
   **tükendi** (stok ≤ 0) en belirgin → `danger` dolu rozet/pill (kırmızı zemin + beyaz metin);
   **kritik** (0 < stok ≤ kritik eşik) → `danger` metin/ince rozet; **normal** (stok > eşik) →
