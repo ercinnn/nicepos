@@ -160,7 +160,8 @@ class CartTable extends ConsumerWidget {
   // ürün sütununa nefes kalır.
   //
   // Fiyat sütunu 160px'e genişletildi (KARAR v1.6): birim fiyat artık elle
-  // düzenlenebilir bir alan + altında "Fiyat1 yap" kontrolü / yeşil onay pill'i taşır.
+  // düzenlenebilir bir alan + yanında çıplak "Fiyat1 yap" radyosu (KARAR v1.6.1) /
+  // altında yeşil onay pill'i taşır.
 
   static const double _wDisc       = 96;
   static const double _wQty        = 116;
@@ -1082,12 +1083,12 @@ enum _PriceStatus { idle, saving, success, error }
 
 // ── Satır içi birim fiyat kontrolü (elle düzenlenebilir + "Fiyat1 yap") ────
 //
-// design-tokens §5, KARAR v1.6. Üstte elle düzenlenebilir fiyat alanı: her tuş
-// vuruşunda satır tutarı anında güncellenir (ondalık destekli). Altında, yalnız
-// `productId != null` satırlarda, açıkça etiketli "Fiyat1 yap" kontrolü (radyo
-// affordance + etiket) → ürünün kalıcı satış fiyatını (products.price1) DB'de
-// günceller. Başarıda ~2.5 sn yeşil "Fiyat güncellendi" pill'i (success, §1 —
-// altın DEĞİL); hatada kırmızı kısa uyarı.
+// design-tokens §5, KARAR v1.6.1. Solda elle düzenlenebilir fiyat alanı: her tuş
+// vuruşunda satır tutarı anında güncellenir (ondalık destekli). Fiyat hanesinin
+// HEMEN yanında, yalnız `productId != null` satırlarda, çıplak "Fiyat1 yap"
+// radyosu (etiketsiz; keşif için hover tooltip'i) → ürünün kalıcı satış fiyatını
+// (products.price1) DB'de günceller. Başarıda ~2.5 sn yeşil "Fiyat güncellendi"
+// pill'i fiyatın ALTINDA (success, §1 — altın DEĞİL); hatada kırmızı kısa uyarı.
 class _UnitPriceControl extends StatefulWidget {
   final num unitPrice;
   final String? productId;
@@ -1167,34 +1168,66 @@ class _UnitPriceControlState extends State<_UnitPriceControl> {
 
   @override
   Widget build(BuildContext context) {
+    // Fiyat hanesi + hemen sağında çıplak "Fiyat1 yap" radyosu (yalnız gerçek
+    // ürün + idle). Saving/success/error bildirimleri fiyatın ALTINDA kalır.
+    final showRadio =
+        widget.productId != null && _status == _PriceStatus.idle;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
       children: [
-        TextField(
-          controller: _ctrl,
-          textAlign: TextAlign.right,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            isDense: true,
-            prefixText: '₺ ',
-            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-          ),
-          style: const TextStyle(
-            fontSize: 13,
-            fontFeatures: [FontFeature.tabularFigures()],
-          ),
-          onChanged: _onChanged,
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                textAlign: TextAlign.right,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  prefixText: '₺ ',
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                ),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+                onChanged: _onChanged,
+              ),
+            ),
+            if (showRadio) _buildPrice1Radio(),
+          ],
         ),
-        if (widget.productId != null) ...[
+        if (widget.productId != null && _status != _PriceStatus.idle) ...[
           const SizedBox(height: AppSizes.space4),
-          _buildSecondSlot(),
+          _buildStatusPill(),
         ],
       ],
     );
   }
 
-  Widget _buildSecondSlot() {
+  // Çıplak "Fiyat1 yap" radyosu — fiyat hanesinin hemen yanında, etiketsiz;
+  // keşif için yalnız hover tooltip'i (KARAR v1.6.1). Rengi textSecondary.
+  Widget _buildPrice1Radio() {
+    return Tooltip(
+      message: 'Fiyat1 yap',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        onTap: _setPrice1,
+        child: const Padding(
+          padding: EdgeInsets.all(AppSizes.space4),
+          child: Icon(Icons.radio_button_unchecked,
+              size: 18, color: AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  // Kalıcı fiyat güncelleme bildirimi (fiyatın altında): spinner / yeşil onay
+  // pill'i / kırmızı hata. Idle'da hiçbir şey göstermez (radyo yukarıda).
+  Widget _buildStatusPill() {
     switch (_status) {
       case _PriceStatus.saving:
         return const SizedBox(
@@ -1218,30 +1251,7 @@ class _UnitPriceControlState extends State<_UnitPriceControl> {
           color: AppColors.danger,
         );
       case _PriceStatus.idle:
-        return InkWell(
-          borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-          onTap: _setPrice1,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSizes.space4, vertical: AppSizes.space2),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.radio_button_unchecked,
-                    size: 14, color: AppColors.textSecondary),
-                SizedBox(width: AppSizes.space4),
-                Text(
-                  'Fiyat1 yap',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+        return const SizedBox.shrink();
     }
   }
 }
@@ -1418,27 +1428,41 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
             ],
           ),
           const SizedBox(height: 16),
-          // ── Birim fiyat (elle düzenlenebilir) ────────────────────────
-          TextField(
-            controller: _priceCtrl,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Birim Fiyat',
-              prefixText: '₺ ',
-              isDense: true,
-            ),
-            style: const TextStyle(
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-            onChanged: _onPriceChanged,
+          // ── Birim fiyat (elle düzenlenebilir) + bitişik Fiyat1 radyosu ──
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _priceCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Birim Fiyat',
+                    prefixText: '₺ ',
+                    isDense: true,
+                  ),
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                  onChanged: _onPriceChanged,
+                ),
+              ),
+              // Çıplak "Fiyat1 yap" radyosu — fiyat alanının hemen yanında
+              // (etiketsiz; hover tooltip). Yalnız gerçek ürün + idle.
+              if (widget.productId != null &&
+                  _status == _PriceStatus.idle) ...[
+                const SizedBox(width: AppSizes.space8),
+                _buildPrice1Radio(),
+              ],
+            ],
           ),
-          // ── "Fiyat1 yap" — yalnız gerçek ürün satırında ──────────────
-          if (widget.productId != null) ...[
+          // Kalıcı fiyat bildirimi (spinner/success/error) fiyatın altında.
+          if (widget.productId != null && _status != _PriceStatus.idle) ...[
             const SizedBox(height: AppSizes.space8),
             Align(
               alignment: Alignment.centerLeft,
-              child: _buildPrice1Control(),
+              child: _buildStatusPill(),
             ),
           ],
           const SizedBox(height: 16),
@@ -1466,7 +1490,26 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
     );
   }
 
-  Widget _buildPrice1Control() {
+  // Çıplak "Fiyat1 yap" radyosu — fiyat alanının hemen yanında, etiketsiz;
+  // keşif için yalnız hover tooltip'i (KARAR v1.6.1). Rengi textSecondary.
+  Widget _buildPrice1Radio() {
+    return Tooltip(
+      message: 'Fiyat1 yap',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        onTap: _setPrice1,
+        child: const Padding(
+          padding: EdgeInsets.all(AppSizes.space6),
+          child: Icon(Icons.radio_button_unchecked,
+              size: 22, color: AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  // Kalıcı fiyat güncelleme bildirimi (fiyatın altında): spinner / yeşil onay
+  // pill'i / kırmızı hata. Idle'da hiçbir şey göstermez (radyo yanda).
+  Widget _buildStatusPill() {
     switch (_status) {
       case _PriceStatus.saving:
         return const SizedBox(
@@ -1490,30 +1533,7 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
           color: AppColors.danger,
         );
       case _PriceStatus.idle:
-        return InkWell(
-          borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-          onTap: _setPrice1,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: AppSizes.space4, vertical: AppSizes.space4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.radio_button_unchecked,
-                    size: 16, color: AppColors.textSecondary),
-                SizedBox(width: AppSizes.space6),
-                Text(
-                  'Fiyat1 yap',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+        return const SizedBox.shrink();
     }
   }
 }
