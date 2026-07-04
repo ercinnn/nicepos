@@ -154,6 +154,26 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   **radyo değil çoklu-seçimdir**. Bu grafik **HERO değildir** — dashboard'un tek hero'su
   bugünkü cirodur (§4); altın ray yok. Çizgiler 2px, dolgusuz; ızgara/eksen nötr hairline
   (§1, grid ~0.15 / eksen ~0.25 alfa). Y ekseni tabular para; X ekseni Türkçe ay kısaltmaları.
+- **Nav öğesi — çift-bölge "yeni sekmede aç" (masaüstü sidebar, KARAR v1.5):** Masaüstü
+  sidebar nav öğeleri (`_SidebarTile`) iki **bitişik tıklama bölgesine** ayrılır ama **tek
+  buton gibi** görünür (0px gap; ortak zemin, ortak hover/seçili görünümü, ortak radius).
+  - **Sol ~4/5:** öğeyi **aynı sekmede** açar (mevcut SPA navigasyon).
+  - **Sağ ~1/5:** öğeyi **yeni sekmede** açar (web'de `_blank`).
+  - **Altın ekonomisi (kritik):** Sağ 1/5 bölgesinin altını **kalıcı DEĞİLdir** — yoksa
+    5 buton = "altın duvar" ve §4 imza rayı + seçili-durum altını sulanır (bkz. "Altın
+    ekonomisi" maddesi). Kural:
+    - **Dinlenme:** sağ bölge sakin → ince **nötr** dikey ayraç (`divider` hairline, §1) +
+      soluk **↗ ikonu** (`Icons.open_in_new`), `sidebarText` renginde, düşük opaklık. Altın YOK.
+    - **Hover (yalnız o öğe):** sağ 1/5 zemini altına döner (`gold`/`goldLight` düşük-orta
+      alfa fill) + ↗ ikonu `sidebarTextActive` (altın). Sol 4/5 mevcut hover davranışını korur.
+      Tooltip: "Yeni sekmede aç".
+    - Böylece altın yalnız **etkileşimde** (hover = geçici aktif durum) parlar; bu altının
+      izinli rolüyle tutarlıdır, dinlenmedeki sidebar sakin kalır.
+  - **Seçili öğe:** mevcut sol altın şerit + altın metin **korunur**; sağ bölge yine yalnız
+    hover'da altınlanır (seçiliyken de kalıcı altın sağ şerit yok).
+  - **Daraltılmış sidebar (56px, ikon-only):** çift-bölge **kapalı** → tüm öğe = aynı sekme.
+    Yeni-sekme bölgesi yalnız **genişletilmiş** modda görünür (1/5 ≈ 9px tıklanamaz olurdu).
+  - **Mobil:** etkilenmez (drawer + bottom nav; yeni-sekme bölgesi yoktur).
 - **Kritik stok durumu (stok listesi imzası, §4):** Stok miktarı, durumuna göre üç dilde gösterilir:
   **tükendi** (stok ≤ 0) en belirgin → `danger` dolu rozet/pill (kırmızı zemin + beyaz metin);
   **kritik** (0 < stok ≤ kritik eşik) → `danger` metin/ince rozet; **normal** (stok > eşik) →
