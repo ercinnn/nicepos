@@ -162,8 +162,10 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   - **Altın ekonomisi (kritik):** Sağ 1/5 bölgesinin altını **kalıcı DEĞİLdir** — yoksa
     5 buton = "altın duvar" ve §4 imza rayı + seçili-durum altını sulanır (bkz. "Altın
     ekonomisi" maddesi). Kural:
-    - **Dinlenme:** sağ bölge sakin → ince **nötr** dikey ayraç (`divider` hairline, §1) +
-      soluk **↗ ikonu** (`Icons.open_in_new`), `sidebarText` renginde, düşük opaklık. Altın YOK.
+    - **Dinlenme:** sağ bölge sakin → soluk **↗ ikonu** (`Icons.open_in_new`), `sidebarText`
+      renginde, düşük opaklık. Altın YOK. **Dikey ayraç YOK** (v1.5.1 — `divider` hairline açık
+      zemin için; lacivert sidebar üstünde beyaz çizgi gibi duruyordu ve "tek buton" hissini
+      bozuyordu; iki bölgeyi ↗ ikonu + hover altını zaten ayırt ettirir).
     - **Hover (yalnız o öğe):** sağ 1/5 zemini altına döner (`gold`/`goldLight` düşük-orta
       alfa fill) + ↗ ikonu `sidebarTextActive` (altın). Sol 4/5 mevcut hover davranışını korur.
       Tooltip: "Yeni sekmede aç".
