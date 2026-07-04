@@ -201,6 +201,20 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     kısa süreli pill "Fiyat güncellendi" (`radiusPill`, `type.utility`). Bu, success semantiğinin
     (§1) satır-içi geri bildirim kullanımıdır; **altın DEĞİL**, imza rayıyla karışmaz. Hem web
     (satır içi) hem mobil (adet/fiyat dialog'u içinde) aynı dil.
+- **Sepet satır-içi muhtelif ekleme (Satış ekranı, masaüstü, KARAR v1.6.2):** Masaüstü sepette
+  ayrı **"+Muhtelif" footer butonu KALDIRILDI**; yerine ekleme, tablonun **sıradaki boş satırında**
+  (son ürünün altındaki satır; sepet boşsa 1. satır) yapılır:
+  - **Toplanmış (varsayılan):** o satırda **Ürün sütununun en solunda** sade bir **"+" ikonu**
+    (`Icons.add`, `color.ink`/`textSecondary`, tooltip "Muhtelif ürün ekle"). Diğer sütunlar boş.
+  - **Açık (+'ya basınca):** aynı satır **kolon hizasını koruyarak** düzenlenir → **Ürün adı** alanı
+    Ürün sütunu altında (autofocus), **Fiyat** alanı **Fiyat sütunu altında** (İskonto/Miktar
+    sütunları boş); Tutar sütununda onay (✓), Sil sütununda vazgeç (✕). Enter/✓ → `addMiscItem`
+    (ad = not, fiyat, adet 1) → kalem normal satır olur, "+" satırı **bir alt satıra iner** ve
+    toplanmış hâle döner.
+  - **"+" yalnız TEK satırda** (sıradaki boş satır) bulunur; ürün eklendikçe aşağı kayar.
+  - Yeni renk/altın yok; alanlar tabular + `formatters`. Kolon genişlikleri mevcut tablo ölçüleri
+    (Ürün esnek · İskonto 96 · Miktar 116 · Fiyat 160 · Tutar 88 · Sil 40) ile birebir hizalı.
+  - **Mobil** bu karardan etkilenmez (mobil footer "Muhtelif" butonu korunur — kullanıcı "webde" dedi).
 - **Kritik stok durumu (stok listesi imzası, §4):** Stok miktarı, durumuna göre üç dilde gösterilir:
   **tükendi** (stok ≤ 0) en belirgin → `danger` dolu rozet/pill (kırmızı zemin + beyaz metin);
   **kritik** (0 < stok ≤ kritik eşik) → `danger` metin/ince rozet; **normal** (stok > eşik) →
