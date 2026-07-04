@@ -436,38 +436,37 @@ class _SidebarTile extends StatefulWidget {
 }
 
 class _SidebarTileState extends State<_SidebarTile> {
-  bool _hovered = false;
+  // Sol (aynı sekme) ve sağ (yeni sekme) bölge hover'ı AYRI izlenir: altın SADECE
+  // sağ bölge hover olunca çıksın diye (KARAR v1.5 — altın ekonomisi). Sol bölge
+  // hover'ı yalnızca mevcut sidebarHover zeminini verir.
+  bool _leftHovered = false;
+  bool _rightHovered = false;
 
   @override
   Widget build(BuildContext context) {
+    // Daraltılmış sidebar (56px, ikon-only): çift-bölge KAPALI → tek Link (aynı
+    // sekme). Yeni-sekme bölgesi yalnız genişletilmiş modda görünür (1/5 ≈ 9px
+    // tıklanamaz olurdu). KARAR v1.5.
+    return widget.expanded ? _buildExpanded() : _buildCollapsed();
+  }
+
+  // Daraltılmış: tek buton, tek Link, ikon-only (eski davranış birebir).
+  Widget _buildCollapsed() {
     final bgColor = widget.selected
         ? AppColors.sidebarSelectedBg
-        : _hovered
+        : _leftHovered
             ? AppColors.sidebarHover
             : Colors.transparent;
-
     final iconColor = widget.selected ? AppColors.sidebarTextActive : AppColors.sidebarText;
-    final textColor = widget.selected ? AppColors.sidebarTextActive : AppColors.sidebarText;
 
-    // Web'de gerçek <a href> üretmek için Link ile sarıyoruz: sağ tık / orta tık /
-    // Ctrl(Cmd)+tık tarayıcının native "yeni sekmede aç" davranışını verir. Sol tık ise
-    // followLink üzerinden uygulama içi (SPA) navigasyona düşer — tam sayfa yenilenmez.
-    //
-    // uri: Uri(path: route) → url_launcher href'i aktif URL stratejisiyle hesaplar
-    // (prepareExternalUrl). Proje HASH stratejisi + base-href /nicepos/ kullandığından
-    // href '/nicepos/#/sales' biçiminde üretilir; yeni sekmede doğru ekran açılır.
-    //
-    // Görünüm birebir korunur: Link'in yerleştirdiği saydam <a> platform view'ı
-    // PlatformViewHitTestBehavior.transparent olduğundan hover/tap alttaki widget'a geçer;
-    // MouseRegion hover highlight ve seçili altın şerit aynen çalışır.
     return Tooltip(
-      message: widget.expanded ? '' : widget.item.label,
+      message: widget.item.label,
       preferBelow: false,
       child: Link(
         uri: Uri(path: widget.item.route),
         builder: (context, followLink) => MouseRegion(
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() => _hovered = false),
+          onEnter: (_) => setState(() => _leftHovered = true),
+          onExit: (_) => setState(() => _leftHovered = false),
           child: GestureDetector(
             onTap: followLink,
             child: AnimatedContainer(
@@ -481,26 +480,126 @@ class _SidebarTileState extends State<_SidebarTile> {
                     ? const Border(left: BorderSide(color: AppColors.goldLight, width: 3))
                     : null,
               ),
-              child: Row(
-                children: [
-                  Icon(widget.item.icon, color: iconColor, size: 20),
-                  if (widget.expanded) ...[
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        widget.item.label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: textColor,
-                          fontWeight: widget.selected ? FontWeight.w600 : FontWeight.normal,
+              child: Icon(widget.item.icon, color: iconColor, size: 20),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Genişletilmiş: çift-bölge. Tek radius'lu ortak kapsayıcı (seçili altın sol
+  // şerit + ortak zemin) içinde 0px gap ile iki bitişik tıklama bölgesi → "tek
+  // buton" hissi. ClipRRect ile köşeler ortak; IntrinsicHeight ile sağ bölge sol
+  // bölgenin yüksekliğine uzar (gold hover fill boşluksuz dolar).
+  //
+  // Her iki bölge de Link (url_launcher) ile gerçek <a href> üretir:
+  //  - Sol (varsayılan target): followLink → uygulama içi (SPA) navigasyon; tam
+  //    sayfa yenilenmez. uri: Uri(path: route) → HASH stratejisi + base-href
+  //    /nicepos/ ile href '/nicepos/#/sales' üretilir.
+  //  - Sağ (target: LinkTarget.blank): <a target="_blank"> → sol tık da sağ tık da
+  //    native "yeni sekmede aç" verir.
+  Widget _buildExpanded() {
+    final iconColor = widget.selected ? AppColors.sidebarTextActive : AppColors.sidebarText;
+    final textColor = iconColor;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: widget.selected ? AppColors.sidebarSelectedBg : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        border: widget.selected
+            ? const Border(left: BorderSide(color: AppColors.goldLight, width: 3))
+            : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // --- Sol ~4/5: aynı sekmede aç (mevcut SPA navigasyon) ---
+              Expanded(
+                flex: 4,
+                child: Link(
+                  uri: Uri(path: widget.item.route),
+                  builder: (context, followLink) => MouseRegion(
+                    onEnter: (_) => setState(() => _leftHovered = true),
+                    onExit: (_) => setState(() => _leftHovered = false),
+                    child: GestureDetector(
+                      onTap: followLink,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        // Seçili değilken sol hover → sidebarHover; seçiliyken ortak
+                        // kapsayıcının sidebarSelectedBg zemini korunur (altın YOK).
+                        color: (_leftHovered && !widget.selected)
+                            ? AppColors.sidebarHover
+                            : Colors.transparent,
+                        child: Row(
+                          children: [
+                            Icon(widget.item.icon, color: iconColor, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                widget.item.label,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: textColor,
+                                  fontWeight:
+                                      widget.selected ? FontWeight.w600 : FontWeight.normal,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ],
-                ],
+                  ),
+                ),
               ),
-            ),
+              // --- Sağ ~1/5: yeni sekmede aç (web'de _blank) ---
+              // Dinlenme: nötr dikey ayraç (divider) + soluk ↗ ikonu, altın YOK.
+              // Hover: sağ bölge zemini düşük alfa altına döner + ↗ altına döner.
+              Expanded(
+                flex: 1,
+                child: Tooltip(
+                  message: 'Yeni sekmede aç',
+                  preferBelow: false,
+                  child: Link(
+                    target: LinkTarget.blank,
+                    uri: Uri(path: widget.item.route),
+                    builder: (context, followLink) => MouseRegion(
+                      onEnter: (_) => setState(() => _rightHovered = true),
+                      onExit: (_) => setState(() => _rightHovered = false),
+                      child: GestureDetector(
+                        onTap: followLink,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: _rightHovered
+                                ? AppColors.gold.withValues(alpha: 0.20)
+                                : Colors.transparent,
+                            border: const Border(
+                              left: BorderSide(color: AppColors.divider, width: 1),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.open_in_new,
+                            size: 15,
+                            color: _rightHovered
+                                ? AppColors.sidebarTextActive
+                                : AppColors.sidebarText.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
