@@ -208,19 +208,24 @@ class CartTable extends ConsumerWidget {
                     _buildHeaderRow(productWidth),
                     const Divider(height: 1),
                     Expanded(
-                      child: tab.items.isEmpty
-                          ? const EmptyState(
-                              icon: Icons.shopping_cart_outlined,
-                              title: 'Sepet boş',
-                              message: 'Barkod okutun veya sağdan ürün seçin',
-                            )
-                          : ListView.separated(
-                              itemCount: tab.items.length,
-                              separatorBuilder: (_, _) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (ctx, index) => _buildItemRow(
-                                productWidth, index, tab.items[index], notifier),
-                            ),
+                      // Son satır DAİMA satır-içi "+" muhtelif ekleme satırıdır
+                      // (KARAR v1.6.2): itemCount = kalem sayısı + 1. Sepet boşsa
+                      // itemCount=1 → yalnız "+" satırı (keşif ipucuyla) görünür;
+                      // ürün eklendikçe "+" satırı otomatik bir alt satıra iner.
+                      child: ListView.separated(
+                        itemCount: tab.items.length + 1,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (ctx, index) {
+                          if (index < tab.items.length) {
+                            return _buildItemRow(productWidth, index,
+                                tab.items[index], notifier);
+                          }
+                          return _AddMiscRow(
+                            productWidth: productWidth,
+                            showHint: tab.items.isEmpty,
+                          );
+                        },
+                      ),
                     ),
                   ],
                 ),
@@ -373,12 +378,9 @@ class CartTable extends ConsumerWidget {
               vertical: AppSizes.space8, horizontal: AppSizes.space12),
           child: Row(
             children: [
-              OutlinedButton.icon(
-                onPressed: () => _showAddMiscDialog(context, ref),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Muhtelif'),
-              ),
-              const SizedBox(width: AppSizes.space16),
+              // Masaüstü "+Muhtelif" footer butonu KALDIRILDI (KARAR v1.6.2);
+              // ekleme artık tablodaki satır-içi "+" satırından yapılır. Mobil
+              // footer butonu ve _showAddMiscDialog korunur.
               _CompactDiscountCell(
                 value: tab.discountValue,
                 type: tab.discountType,
@@ -475,6 +477,206 @@ class CartTable extends ConsumerWidget {
     ref
         .read(salesCartProvider.notifier)
         .addMiscItem(amount, note: noteCtrl.text);
+  }
+}
+
+// ── Satır-içi muhtelif ürün ekleme satırı (yalnız masaüstü) ────────────────
+//
+// design-tokens §5, KARAR v1.6.2. Tablonun sıradaki boş satırında (son ürünün
+// altında; sepet boşsa 1. satır) durur. Header/item satırlarıyla BİREBİR aynı
+// kolon genişlikleri + aynı Padding → kolon hizası korunur.
+//
+// Toplanmış (varsayılan): Ürün sütununun en solunda sade bir "+" ikonu
+// (tooltip "Muhtelif ürün ekle"); sepet boşsa yanında muted keşif ipucu. Diğer
+// sütunlar boş. Açık (+'ya basınca): Ürün adı alanı Ürün sütununda (autofocus),
+// Fiyat alanı Fiyat sütununda; İskonto/Miktar sütunları boş kalır. Onay (✓)
+// Tutar sütununda, vazgeç (✕) Sil sütununda. Onayda addMiscItem(fiyat, not=ad)
+// çağrılır → kalem normal satır olur, "+" satırı bir alta iner ve toplanır.
+class _AddMiscRow extends ConsumerStatefulWidget {
+  final double productWidth;
+  final bool showHint;
+
+  const _AddMiscRow({
+    required this.productWidth,
+    required this.showHint,
+  });
+
+  @override
+  ConsumerState<_AddMiscRow> createState() => _AddMiscRowState();
+}
+
+class _AddMiscRowState extends ConsumerState<_AddMiscRow> {
+  bool _expanded = false;
+  final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _priceCtrl = TextEditingController();
+  final FocusNode _nameFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _priceCtrl.dispose();
+    _nameFocus.dispose();
+    super.dispose();
+  }
+
+  void _open() {
+    setState(() => _expanded = true);
+    // Ad alanına autofocus (satır açıldıktan sonra frame'de).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
+  }
+
+  void _cancel() {
+    _nameCtrl.clear();
+    _priceCtrl.clear();
+    setState(() => _expanded = false);
+  }
+
+  void _confirm() {
+    final price = num.tryParse(_priceCtrl.text.replaceAll(',', '.'));
+    // Fiyat boş/0/geçersiz → sessizce yok say (alan açık kalır).
+    if (price == null || price <= 0) return;
+    final name = _nameCtrl.text.trim();
+    ref.read(salesCartProvider.notifier).addMiscItem(
+          price,
+          note: name.isEmpty ? 'Muhtelif' : name,
+        );
+    _nameCtrl.clear();
+    _priceCtrl.clear();
+    setState(() => _expanded = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space6),
+      child: _expanded ? _buildExpanded() : _buildCollapsed(),
+    );
+  }
+
+  // Toplanmış: Ürün sütununda "+" ikonu (+ opsiyonel ipucu); kalan sütunlar boş.
+  Widget _buildCollapsed() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: widget.productWidth,
+          child: Row(
+            children: [
+              Tooltip(
+                message: 'Muhtelif ürün ekle',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                  onTap: _open,
+                  child: const Padding(
+                    padding: EdgeInsets.all(AppSizes.space4),
+                    child:
+                        Icon(Icons.add, size: 20, color: AppColors.primary),
+                  ),
+                ),
+              ),
+              if (widget.showHint) ...[
+                const SizedBox(width: AppSizes.space8),
+                const Flexible(
+                  child: Text(
+                    'Barkod okutun veya + ile muhtelif ekleyin',
+                    style: TextStyle(
+                        fontSize: 12, color: AppColors.textMuted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: CartTable._wDisc),
+        const SizedBox(width: CartTable._wQty),
+        const SizedBox(width: CartTable._wPrice),
+        const SizedBox(width: CartTable._wTotal),
+        const SizedBox(width: CartTable._wDel),
+      ],
+    );
+  }
+
+  // Açık: Ürün adı (Ürün sütunu) · Fiyat (Fiyat sütunu) · ✓ (Tutar) · ✕ (Sil).
+  Widget _buildExpanded() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // ── Ürün adı ─────────────────────────────────────────────────────
+        SizedBox(
+          width: widget.productWidth,
+          child: TextField(
+            controller: _nameCtrl,
+            focusNode: _nameFocus,
+            decoration: const InputDecoration(
+              isDense: true,
+              hintText: 'Ürün adı',
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            ),
+            style: const TextStyle(fontSize: 13),
+            textInputAction: TextInputAction.next,
+          ),
+        ),
+        // ── İskonto / Miktar sütunları boş (hizayı korur) ────────────────
+        const SizedBox(width: CartTable._wDisc),
+        const SizedBox(width: CartTable._wQty),
+        // ── Fiyat ────────────────────────────────────────────────────────
+        SizedBox(
+          width: CartTable._wPrice,
+          child: TextField(
+            controller: _priceCtrl,
+            textAlign: TextAlign.right,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              isDense: true,
+              prefixText: '₺ ',
+              hintText: '0',
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            ),
+            style: const TextStyle(
+              fontSize: 13,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+            onSubmitted: (_) => _confirm(),
+          ),
+        ),
+        // ── Onay (Tutar sütunu) ──────────────────────────────────────────
+        SizedBox(
+          width: CartTable._wTotal,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              icon: const Icon(Icons.check,
+                  size: 20, color: AppColors.success),
+              tooltip: 'Ekle',
+              onPressed: _confirm,
+              padding: EdgeInsets.zero,
+              constraints:
+                  const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          ),
+        ),
+        // ── Vazgeç (Sil sütunu) ──────────────────────────────────────────
+        SizedBox(
+          width: CartTable._wDel,
+          child: IconButton(
+            icon: const Icon(Icons.close,
+                size: 18, color: AppColors.textMuted),
+            tooltip: 'Vazgeç',
+            onPressed: _cancel,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ),
+      ],
+    );
   }
 }
 
