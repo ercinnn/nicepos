@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../widgets/old_sales_import_dialog.dart';
+import 'best_sellers_tab.dart';
 import 'daily_report_screen.dart';
 import 'historical_report_tab.dart';
 import 'product_report_tab.dart';
@@ -13,7 +14,7 @@ class ReportsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -56,6 +57,9 @@ class ReportsScreen extends StatelessWidget {
                 Tab(
                     icon: Icon(Icons.inventory_2_outlined, size: 18),
                     text: 'Ürün Raporları'),
+                Tab(
+                    icon: Icon(Icons.leaderboard_outlined, size: 18),
+                    text: 'En Çok Satanlar'),
               ],
             ),
           ),
@@ -66,6 +70,7 @@ class ReportsScreen extends StatelessWidget {
                 DailyReportScreen(),
                 HistoricalReportTab(),
                 ProductReportTab(),
+                BestSellersTab(),
               ],
             ),
           ),

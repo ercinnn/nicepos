@@ -96,6 +96,14 @@ class ProductRepository {
     await _client.from('products').update(product.toInsertMap()).eq('id', id);
   }
 
+  // Yalnızca satış fiyatını (price1) kalıcı olarak günceller — satış ekranındaki
+  // "Fiyat1 yap" kontrolü kullanır (design-tokens §5, KARAR v1.6). PK: 'id'.
+  Future<void> updatePrice1(String productId, num newPrice) async {
+    await _client
+        .from('products')
+        .update({'price1': newPrice}).eq('id', productId);
+  }
+
   Future<void> upsertByBarcode(Product product) async {
     if (product.barcode == null || product.barcode!.isEmpty) {
       await create(product);

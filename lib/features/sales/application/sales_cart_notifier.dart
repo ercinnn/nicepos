@@ -137,6 +137,17 @@ class SalesCart extends _$SalesCart {
     });
   }
 
+  // Sepet satırının birim fiyatını elle günceller — satır tutarı anında yenilenir
+  // (design-tokens §5, KARAR v1.6). Kalıcı ürün fiyatı (products.price1) DEĞİL,
+  // yalnızca bu satışın satır fiyatıdır; kalıcılık "Fiyat1 yap" ile ayrıca yapılır.
+  void updateItemUnitPrice(int index, num unitPrice) {
+    _updateActive((tab) {
+      final items = [...tab.items];
+      items[index] = items[index].copyWith(unitPrice: unitPrice);
+      return tab.copyWith(items: items);
+    });
+  }
+
   void updateItemNote(int index, String note) {
     _updateActive((tab) {
       final items = [...tab.items];

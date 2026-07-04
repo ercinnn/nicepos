@@ -164,5 +164,165 @@ class _DailyReportProviderElement
   DateTime get date => (origin as DailyReportProvider).date;
 }
 
+String _$bestSellersHash() => r'98cc74f13e4d9b922c48797f62bfbac532847c58';
+
+/// See also [bestSellers].
+@ProviderFor(bestSellers)
+const bestSellersProvider = BestSellersFamily();
+
+/// See also [bestSellers].
+class BestSellersFamily extends Family<AsyncValue<List<BestSellerRecord>>> {
+  /// See also [bestSellers].
+  const BestSellersFamily();
+
+  /// See also [bestSellers].
+  BestSellersProvider call({
+    required DateTime start,
+    required DateTime end,
+    required num minPrice,
+  }) {
+    return BestSellersProvider(start: start, end: end, minPrice: minPrice);
+  }
+
+  @override
+  BestSellersProvider getProviderOverride(
+    covariant BestSellersProvider provider,
+  ) {
+    return call(
+      start: provider.start,
+      end: provider.end,
+      minPrice: provider.minPrice,
+    );
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'bestSellersProvider';
+}
+
+/// See also [bestSellers].
+class BestSellersProvider
+    extends AutoDisposeFutureProvider<List<BestSellerRecord>> {
+  /// See also [bestSellers].
+  BestSellersProvider({
+    required DateTime start,
+    required DateTime end,
+    required num minPrice,
+  }) : this._internal(
+         (ref) => bestSellers(
+           ref as BestSellersRef,
+           start: start,
+           end: end,
+           minPrice: minPrice,
+         ),
+         from: bestSellersProvider,
+         name: r'bestSellersProvider',
+         debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+             ? null
+             : _$bestSellersHash,
+         dependencies: BestSellersFamily._dependencies,
+         allTransitiveDependencies:
+             BestSellersFamily._allTransitiveDependencies,
+         start: start,
+         end: end,
+         minPrice: minPrice,
+       );
+
+  BestSellersProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.start,
+    required this.end,
+    required this.minPrice,
+  }) : super.internal();
+
+  final DateTime start;
+  final DateTime end;
+  final num minPrice;
+
+  @override
+  Override overrideWith(
+    FutureOr<List<BestSellerRecord>> Function(BestSellersRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: BestSellersProvider._internal(
+        (ref) => create(ref as BestSellersRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        start: start,
+        end: end,
+        minPrice: minPrice,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<List<BestSellerRecord>> createElement() {
+    return _BestSellersProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is BestSellersProvider &&
+        other.start == start &&
+        other.end == end &&
+        other.minPrice == minPrice;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, start.hashCode);
+    hash = _SystemHash.combine(hash, end.hashCode);
+    hash = _SystemHash.combine(hash, minPrice.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin BestSellersRef on AutoDisposeFutureProviderRef<List<BestSellerRecord>> {
+  /// The parameter `start` of this provider.
+  DateTime get start;
+
+  /// The parameter `end` of this provider.
+  DateTime get end;
+
+  /// The parameter `minPrice` of this provider.
+  num get minPrice;
+}
+
+class _BestSellersProviderElement
+    extends AutoDisposeFutureProviderElement<List<BestSellerRecord>>
+    with BestSellersRef {
+  _BestSellersProviderElement(super.provider);
+
+  @override
+  DateTime get start => (origin as BestSellersProvider).start;
+  @override
+  DateTime get end => (origin as BestSellersProvider).end;
+  @override
+  num get minPrice => (origin as BestSellersProvider).minPrice;
+}
+
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

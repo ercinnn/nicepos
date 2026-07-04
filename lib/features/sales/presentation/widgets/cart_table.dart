@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/empty_state.dart';
+import '../../../products/data/repositories/product_repository.dart';
 import '../../application/sales_cart_notifier.dart';
 
 class CartTable extends ConsumerWidget {
@@ -52,6 +55,8 @@ class CartTable extends ConsumerWidget {
                       index: index,
                       onQuantityChanged: (q) =>
                           notifier.updateItemQuantity(index, q),
+                      onUnitPriceChanged: (p) =>
+                          notifier.updateItemUnitPrice(index, p),
                       onDiscountChanged: (v, t) =>
                           notifier.updateItemDiscount(index, v, t),
                       onRemove: () => notifier.removeItem(index),
@@ -146,17 +151,20 @@ class CartTable extends ConsumerWidget {
 
   // ─── Masaüstü sabit genişlikli tablo ─────────────────────────────────────
   //
-  // Kolon genişlikleri (px): İskonto 96 · Miktar 116 · Fiyat 88 · Tutar 88 · Sil 40
+  // Kolon genişlikleri (px): İskonto 96 · Miktar 116 · Fiyat 160 · Tutar 88 · Sil 40
   // Ürün sütunu kalan alanı alır; ancak en az _wProductMin korunur. Toplam genişlik
   // panele sığmazsa tablo yatay kaydırılır (kırpma/çökme yok).
   //
   // İskonto sütunu eskiden 175px'lik satır içi alan idi; kompakt rozet + düzenleme
   // dialog'una (_CompactDiscountCell) taşındığı için 96px'e indi → dar panelde
   // ürün sütununa nefes kalır.
+  //
+  // Fiyat sütunu 160px'e genişletildi (KARAR v1.6): birim fiyat artık elle
+  // düzenlenebilir bir alan + altında "Fiyat1 yap" kontrolü / yeşil onay pill'i taşır.
 
   static const double _wDisc       = 96;
   static const double _wQty        = 116;
-  static const double _wPrice      = 88;
+  static const double _wPrice      = 160;
   static const double _wTotal      = 88;
   static const double _wDel        = 40;
   static const double _wProductMin = 220; // ürün adının dikey karaktere çökmesini önler
@@ -308,16 +316,14 @@ class CartTable extends ConsumerWidget {
               onChanged: (q) => notifier.updateItemQuantity(index, q),
             ),
           ),
-          // ── Birim fiyat ──────────────────────────────────────────────────
+          // ── Birim fiyat (elle düzenlenebilir + "Fiyat1 yap") ─────────────
           SizedBox(
             width: _wPrice,
-            child: Text(
-              formatCurrency(item.unitPrice),
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 13,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
+            child: _UnitPriceControl(
+              key: ValueKey('price-$index'),
+              unitPrice: item.unitPrice,
+              productId: item.productId,
+              onChanged: (p) => notifier.updateItemUnitPrice(index, p),
             ),
           ),
           // ── Satır tutarı ─────────────────────────────────────────────────
@@ -479,6 +485,7 @@ class _MobileCartItem extends StatelessWidget {
   final dynamic item;   // CartItem
   final int index;
   final ValueChanged<num> onQuantityChanged;
+  final ValueChanged<num> onUnitPriceChanged;
   final void Function(num value, DiscountType type) onDiscountChanged;
   final VoidCallback onRemove;
 
@@ -486,20 +493,25 @@ class _MobileCartItem extends StatelessWidget {
     required this.item,
     required this.index,
     required this.onQuantityChanged,
+    required this.onUnitPriceChanged,
     required this.onDiscountChanged,
     required this.onRemove,
   });
 
   Future<void> _editQuantity(BuildContext context) async {
-    final result = await showDialog<num>(
+    final result = await showDialog<(num, num)>(
       context: context,
       builder: (dialogContext) => _MobileQtyDialog(
         initialQuantity: item.quantity,
         unitPrice: item.unitPrice,
+        productId: item.productId as String?,
       ),
     );
-    // State güncellemesi dialog kapandıktan SONRA yapılır.
-    if (result != null) onQuantityChanged(result);
+    // State güncellemesi dialog kapandıktan SONRA yapılır: adet + birim fiyat.
+    if (result != null) {
+      onQuantityChanged(result.$1);
+      onUnitPriceChanged(result.$2);
+    }
   }
 
   @override
@@ -1065,17 +1077,229 @@ class _QtyBtn extends StatelessWidget {
   }
 }
 
+// ── Satır içi "Fiyat1 yap" onay durumu ─────────────────────────────────────
+enum _PriceStatus { idle, saving, success, error }
+
+// ── Satır içi birim fiyat kontrolü (elle düzenlenebilir + "Fiyat1 yap") ────
+//
+// design-tokens §5, KARAR v1.6. Üstte elle düzenlenebilir fiyat alanı: her tuş
+// vuruşunda satır tutarı anında güncellenir (ondalık destekli). Altında, yalnız
+// `productId != null` satırlarda, açıkça etiketli "Fiyat1 yap" kontrolü (radyo
+// affordance + etiket) → ürünün kalıcı satış fiyatını (products.price1) DB'de
+// günceller. Başarıda ~2.5 sn yeşil "Fiyat güncellendi" pill'i (success, §1 —
+// altın DEĞİL); hatada kırmızı kısa uyarı.
+class _UnitPriceControl extends StatefulWidget {
+  final num unitPrice;
+  final String? productId;
+  final ValueChanged<num> onChanged;
+
+  const _UnitPriceControl({
+    super.key,
+    required this.unitPrice,
+    required this.productId,
+    required this.onChanged,
+  });
+
+  @override
+  State<_UnitPriceControl> createState() => _UnitPriceControlState();
+}
+
+class _UnitPriceControlState extends State<_UnitPriceControl> {
+  late TextEditingController _ctrl;
+  _PriceStatus _status = _PriceStatus.idle;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: _qtyText(widget.unitPrice));
+  }
+
+  @override
+  void didUpdateWidget(covariant _UnitPriceControl old) {
+    super.didUpdateWidget(old);
+    // Dışarıdan gelen fiyat (ör. başka akış) alandakinden farklıysa metni
+    // güncelle; kullanıcı yazarken (değerler eşitken) dokunma → imleç kaymasın.
+    final current = num.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (widget.unitPrice != current) {
+      _ctrl.text = _qtyText(widget.unitPrice);
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  // Her tuş vuruşunda: geçerli (>= 0) değeri notifier'a ilet → satır tutarı anında.
+  void _onChanged(String v) {
+    final parsed = num.tryParse(v.replaceAll(',', '.'));
+    if (parsed != null && parsed >= 0) {
+      widget.onChanged(parsed);
+    }
+  }
+
+  Future<void> _setPrice1() async {
+    final productId = widget.productId;
+    if (productId == null) return;
+    final price = num.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (price == null || price < 0) return;
+    setState(() => _status = _PriceStatus.saving);
+    try {
+      await ProductRepository().updatePrice1(productId, price);
+      if (!mounted) return;
+      setState(() => _status = _PriceStatus.success);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _status = _PriceStatus.error);
+    }
+    _scheduleReset();
+  }
+
+  void _scheduleReset() {
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted) setState(() => _status = _PriceStatus.idle);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _ctrl,
+          textAlign: TextAlign.right,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            isDense: true,
+            prefixText: '₺ ',
+            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          ),
+          style: const TextStyle(
+            fontSize: 13,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+          onChanged: _onChanged,
+        ),
+        if (widget.productId != null) ...[
+          const SizedBox(height: AppSizes.space4),
+          _buildSecondSlot(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSecondSlot() {
+    switch (_status) {
+      case _PriceStatus.saving:
+        return const SizedBox(
+          height: 20,
+          width: 20,
+          child: Padding(
+            padding: EdgeInsets.all(3),
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      case _PriceStatus.success:
+        return const _PriceStatusPill(
+          label: 'Fiyat güncellendi',
+          icon: Icons.check,
+          color: AppColors.success,
+        );
+      case _PriceStatus.error:
+        return const _PriceStatusPill(
+          label: 'Güncellenemedi',
+          icon: Icons.error_outline,
+          color: AppColors.danger,
+        );
+      case _PriceStatus.idle:
+        return InkWell(
+          borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+          onTap: _setPrice1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space4, vertical: AppSizes.space2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.radio_button_unchecked,
+                    size: 14, color: AppColors.textSecondary),
+                SizedBox(width: AppSizes.space4),
+                Text(
+                  'Fiyat1 yap',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    }
+  }
+}
+
+// Kısa süreli durum pill'i (yeşil onay / kırmızı hata). type.utility.
+class _PriceStatusPill extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _PriceStatusPill({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space8, vertical: AppSizes.space2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.white),
+          const SizedBox(width: AppSizes.space4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Mobil miktar düzenleme dialog'u ────────────────────────────────────────
 //
 // -/+ butonları ve metin alanı; her değişimde satır toplamı canlı güncellenir.
-// "Tamam" ile seçilen miktar Navigator.pop ile geri döner (state pop'tan sonra).
+// Ayrıca elle düzenlenebilir birim fiyat + "Fiyat1 yap" kontrolü (KARAR v1.6).
+// "Tamam" ile seçilen miktar + fiyat Navigator.pop ile geri döner (state sonra).
 class _MobileQtyDialog extends StatefulWidget {
   final num initialQuantity;
   final num unitPrice;
+  final String? productId;
 
   const _MobileQtyDialog({
     required this.initialQuantity,
     required this.unitPrice,
+    required this.productId,
   });
 
   @override
@@ -1084,18 +1308,26 @@ class _MobileQtyDialog extends StatefulWidget {
 
 class _MobileQtyDialogState extends State<_MobileQtyDialog> {
   late TextEditingController _ctrl;
+  late TextEditingController _priceCtrl;
   late num _qty;
+  late num _price;
+  _PriceStatus _status = _PriceStatus.idle;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _qty = widget.initialQuantity;
+    _price = widget.unitPrice;
     _ctrl = TextEditingController(text: _qtyText(_qty));
+    _priceCtrl = TextEditingController(text: _qtyText(_price));
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _ctrl.dispose();
+    _priceCtrl.dispose();
     super.dispose();
   }
 
@@ -1119,13 +1351,40 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
     }
   }
 
+  void _onPriceChanged(String v) {
+    final parsed = num.tryParse(v.replaceAll(',', '.'));
+    if (parsed != null && parsed >= 0) {
+      setState(() => _price = parsed);
+    }
+  }
+
+  Future<void> _setPrice1() async {
+    final productId = widget.productId;
+    if (productId == null) return;
+    setState(() => _status = _PriceStatus.saving);
+    try {
+      await ProductRepository().updatePrice1(productId, _price);
+      if (!mounted) return;
+      setState(() => _status = _PriceStatus.success);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _status = _PriceStatus.error);
+    }
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted) setState(() => _status = _PriceStatus.idle);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Adet'),
+      title: const Text('Adet & Fiyat'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Adet ──────────────────────────────────────────────────────
           Row(
             children: [
               _QtyBtn(
@@ -1143,7 +1402,7 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
                   keyboardType: const TextInputType.numberWithOptions(
                       decimal: true),
                   decoration: const InputDecoration(
-                    hintText: 'Adet giriniz',
+                    labelText: 'Adet',
                     isDense: true,
                   ),
                   onChanged: _onChanged,
@@ -1159,8 +1418,32 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
             ],
           ),
           const SizedBox(height: 16),
+          // ── Birim fiyat (elle düzenlenebilir) ────────────────────────
+          TextField(
+            controller: _priceCtrl,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Birim Fiyat',
+              prefixText: '₺ ',
+              isDense: true,
+            ),
+            style: const TextStyle(
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+            onChanged: _onPriceChanged,
+          ),
+          // ── "Fiyat1 yap" — yalnız gerçek ürün satırında ──────────────
+          if (widget.productId != null) ...[
+            const SizedBox(height: AppSizes.space8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _buildPrice1Control(),
+            ),
+          ],
+          const SizedBox(height: 16),
           Text(
-            'Satır Toplamı: ${formatCurrency(_qty * widget.unitPrice)}',
+            'Satır Toplamı: ${formatCurrency(_qty * _price)}',
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 15,
@@ -1176,10 +1459,61 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
           child: const Text('Vazgeç'),
         ),
         ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(_qty),
+          onPressed: () => Navigator.of(context).pop((_qty, _price)),
           child: const Text('Tamam'),
         ),
       ],
     );
+  }
+
+  Widget _buildPrice1Control() {
+    switch (_status) {
+      case _PriceStatus.saving:
+        return const SizedBox(
+          height: 20,
+          width: 20,
+          child: Padding(
+            padding: EdgeInsets.all(3),
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      case _PriceStatus.success:
+        return const _PriceStatusPill(
+          label: 'Fiyat güncellendi',
+          icon: Icons.check,
+          color: AppColors.success,
+        );
+      case _PriceStatus.error:
+        return const _PriceStatusPill(
+          label: 'Güncellenemedi',
+          icon: Icons.error_outline,
+          color: AppColors.danger,
+        );
+      case _PriceStatus.idle:
+        return InkWell(
+          borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+          onTap: _setPrice1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space4, vertical: AppSizes.space4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.radio_button_unchecked,
+                    size: 16, color: AppColors.textSecondary),
+                SizedBox(width: AppSizes.space6),
+                Text(
+                  'Fiyat1 yap',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+    }
   }
 }

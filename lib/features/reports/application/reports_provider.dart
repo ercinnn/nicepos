@@ -1,4 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../data/models/best_seller_record.dart';
 import '../data/models/daily_report_summary.dart';
 import '../data/models/product_sale_record.dart';
 import '../data/repositories/report_repository.dart';
@@ -11,6 +12,20 @@ ReportRepository reportRepository(ReportRepositoryRef ref) => ReportRepository()
 @riverpod
 Future<DailyReportSummary> dailyReport(DailyReportRef ref, DateTime date) {
   return ref.watch(reportRepositoryProvider).fetchDailyReport(date);
+}
+
+// ─── En Çok Satanlar (Raporlar 4. sekme) ─────────────────────────────────────
+// Tarih aralığı + min. fiyat parametreli; adet azalan sıralı liste.
+@riverpod
+Future<List<BestSellerRecord>> bestSellers(
+  BestSellersRef ref, {
+  required DateTime start,
+  required DateTime end,
+  required num minPrice,
+}) {
+  return ref
+      .watch(reportRepositoryProvider)
+      .fetchBestSellers(start: start, end: end, minPrice: minPrice);
 }
 
 // ─── Tarihsel rapor için parametre sınıfı ────────────────────────────────────
