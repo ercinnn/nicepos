@@ -876,7 +876,38 @@ class _YillikKarsilastirmaCardState
           SizedBox(
             height: 300,
             child: veriAsync.when(
-              loading: () => const BrandLoader(label: 'Yükleniyor…'),
+              // Artımlı yükleme: tam-alan loader yerine boş grafik iskeleti
+              // (ızgara + eksen + ay etiketleri) anında; sağ üstte küçük ipucu.
+              loading: () => Stack(
+                children: [
+                  _YillikLineChart(veri: const {}, acikYillar: const []),
+                  const Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        SizedBox(width: AppSizes.space6),
+                        Text(
+                          'Yükleniyor…',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               error: (e, _) => const Center(
                 child: Text(
                   'Veri yüklenemedi',
