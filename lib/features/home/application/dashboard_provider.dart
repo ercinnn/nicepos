@@ -44,13 +44,23 @@ Future<List<({DateTime date, num amount})>> monthlySales(
         MonthlySalesRef ref, int months) =>
     ref.watch(dashboardRepositoryProvider).fetchMonthlySales(months);
 
-/// Yıllara göre aylık satış verileri (çok-yıl karşılaştırma grafiği).
+/// Cari yılın aylık satış verileri (çok-yıl karşılaştırma grafiğinin HIZLI ilk
+/// çizimi için). Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi.
+/// Küçük aralık sorgusu → grafik cari yıl çizgisini hemen gösterebilsin diye
+/// geçmiş yıllardan ayrıldı.
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Tradeoff: yeni satış eklenince cari yıl otomatik yenilenmez;
+/// gerekirse `ref.invalidate(currentYearMonthlyProvider)` ile elle tazelenir.
+@Riverpod(keepAlive: true)
+Future<Map<int, List<num>>> currentYearMonthly(CurrentYearMonthlyRef ref) =>
+    ref.watch(dashboardRepositoryProvider).fetchCurrentYearMonthly();
+
+/// Geçmiş yılların (y < cari yıl) aylık satış verileri — grafiğe ARKADAN dolar.
 /// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
 /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
 /// çekilmez. Ayrıca geçmiş yıllar `DashboardRepository` içinde process-ömürlü
 /// static cache'te tutulur; provider invalidate edilse bile geçmiş yıllar
-/// yeniden çekilmez, yalnız cari yıl canlı gelir. Tradeoff: yeni satış eklenince
-/// cari yıl otomatik yenilenmez; gerekirse `ref.invalidate(yearlySalesProvider)`.
+/// yeniden çekilmez. Geçmiş yıllar değişmediği için keepAlive risksizdir.
 @Riverpod(keepAlive: true)
-Future<Map<int, List<num>>> yearlySales(YearlySalesRef ref) =>
-    ref.watch(dashboardRepositoryProvider).fetchYearlyMonthlySales();
+Future<Map<int, List<num>>> historicalYearly(HistoricalYearlyRef ref) =>
+    ref.watch(dashboardRepositoryProvider).fetchHistoricalYearlyMonthly();

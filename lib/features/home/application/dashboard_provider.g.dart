@@ -424,30 +424,55 @@ class _MonthlySalesProviderElement
   int get months => (origin as MonthlySalesProvider).months;
 }
 
-String _$yearlySalesHash() => r'4e0c67a51de0c9651476e778a65581101b407a18';
+String _$currentYearMonthlyHash() =>
+    r'd0e2723fa1b32a7f25703be23d89171a3a62e5e1';
 
-/// Yıllara göre aylık satış verileri (çok-yıl karşılaştırma grafiği).
-/// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
+/// Cari yılın aylık satış verileri (çok-yıl karşılaştırma grafiğinin HIZLI ilk
+/// çizimi için). Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi.
+/// Küçük aralık sorgusu → grafik cari yıl çizgisini hemen gösterebilsin diye
+/// geçmiş yıllardan ayrıldı.
 /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Ayrıca geçmiş yıllar `DashboardRepository` içinde process-ömürlü
-/// static cache'te tutulur; provider invalidate edilse bile geçmiş yıllar
-/// yeniden çekilmez, yalnız cari yıl canlı gelir. Tradeoff: yeni satış eklenince
-/// cari yıl otomatik yenilenmez; gerekirse `ref.invalidate(yearlySalesProvider)`.
+/// çekilmez. Tradeoff: yeni satış eklenince cari yıl otomatik yenilenmez;
+/// gerekirse `ref.invalidate(currentYearMonthlyProvider)` ile elle tazelenir.
 ///
-/// Copied from [yearlySales].
-@ProviderFor(yearlySales)
-final yearlySalesProvider = FutureProvider<Map<int, List<num>>>.internal(
-  yearlySales,
-  name: r'yearlySalesProvider',
+/// Copied from [currentYearMonthly].
+@ProviderFor(currentYearMonthly)
+final currentYearMonthlyProvider = FutureProvider<Map<int, List<num>>>.internal(
+  currentYearMonthly,
+  name: r'currentYearMonthlyProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$yearlySalesHash,
+      : _$currentYearMonthlyHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef YearlySalesRef = FutureProviderRef<Map<int, List<num>>>;
+typedef CurrentYearMonthlyRef = FutureProviderRef<Map<int, List<num>>>;
+String _$historicalYearlyHash() => r'de73cacbc1d5a090b7009780481845dc7050dc56';
+
+/// Geçmiş yılların (y < cari yıl) aylık satış verileri — grafiğe ARKADAN dolar.
+/// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Ayrıca geçmiş yıllar `DashboardRepository` içinde process-ömürlü
+/// static cache'te tutulur; provider invalidate edilse bile geçmiş yıllar
+/// yeniden çekilmez. Geçmiş yıllar değişmediği için keepAlive risksizdir.
+///
+/// Copied from [historicalYearly].
+@ProviderFor(historicalYearly)
+final historicalYearlyProvider = FutureProvider<Map<int, List<num>>>.internal(
+  historicalYearly,
+  name: r'historicalYearlyProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$historicalYearlyHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef HistoricalYearlyRef = FutureProviderRef<Map<int, List<num>>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

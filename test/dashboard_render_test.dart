@@ -32,9 +32,11 @@ void main() {
           dailySalesProvider(30).overrideWith((ref) => sample),
           dailySalesProvider(8).overrideWith((ref) => sample.take(8).toList()),
           dailySalesProvider(15).overrideWith((ref) => sample.take(15).toList()),
-          yearlySalesProvider.overrideWith((ref) => {
-                2025: List<num>.generate(12, (i) => (i % 5) * 1000.0),
+          currentYearMonthlyProvider.overrideWith((ref) => {
                 2026: List<num>.generate(12, (i) => (i % 3) * 1500.0),
+              }),
+          historicalYearlyProvider.overrideWith((ref) => {
+                2025: List<num>.generate(12, (i) => (i % 5) * 1000.0),
               }),
         ],
         child: const MaterialApp(

@@ -830,7 +830,24 @@ class _YillikKarsilastirmaCardState
 
   @override
   Widget build(BuildContext context) {
-    final veriAsync = ref.watch(yearlySalesProvider);
+    // Cari yıl AYRI (küçük/hızlı sorgu → hemen gelir), geçmiş yıllar AYRI
+    // (arkadan yüklenip içeri dolar). İki provider bağımsız izlenir.
+    final currentAsync = ref.watch(currentYearMonthlyProvider);
+    final historicalAsync = ref.watch(historicalYearlyProvider);
+
+    // Birleştirilmiş veri: geçmiş + cari. Cari yıl anahtarı DAİMA current'tan
+    // gelir (spread sırası: current en sonda → çakışmada o kazanır).
+    final merged = <int, List<num>>{
+      ...?historicalAsync.valueOrNull,
+      ...?currentAsync.valueOrNull,
+    };
+
+    // Chip'ler artımlı belirir: yalnız merged'te olan yıllar için görünür
+    // (cari yıl hızlı gelir; geçmiş yıllar geçmiş sorgusu bitince eklenir).
+    final mevcutYillar = merged.keys.toList()..sort();
+
+    final historicalYukleniyor = historicalAsync.isLoading;
+    final ikisiDeHata = currentAsync.hasError && historicalAsync.hasError;
 
     return Container(
       // HERO değil: yalnızca gölge + yuvarlatma, altın kenarlık/ray YOK.
@@ -850,82 +867,117 @@ class _YillikKarsilastirmaCardState
           const SizedBox(height: AppSizes.space12),
 
           // ── Yıl aç/kapa toggle chip'leri (çoklu-seçim) ───────────────
-          veriAsync.maybeWhen(
-            data: (veri) {
-              final yillar = veri.keys.toList()..sort();
-              return Wrap(
-                spacing: AppSizes.space8,
-                runSpacing: AppSizes.space8,
-                children: yillar
-                    .map((yil) => _YilChip(
-                          yil: yil,
-                          renk: _yilRengi(yil),
-                          acik: _acikYillar.contains(yil),
-                          onTap: () => setState(() {
-                            if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
-                          }),
-                        ))
-                    .toList(),
-              );
-            },
-            orElse: () => const SizedBox.shrink(),
+          Wrap(
+            spacing: AppSizes.space8,
+            runSpacing: AppSizes.space8,
+            children: mevcutYillar
+                .map((yil) => _YilChip(
+                      yil: yil,
+                      renk: _yilRengi(yil),
+                      acik: _acikYillar.contains(yil),
+                      onTap: () => setState(() {
+                        if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
+                      }),
+                    ))
+                .toList(),
           ),
           const SizedBox(height: AppSizes.space16),
 
           // ── Grafik ────────────────────────────────────────────────────
           SizedBox(
             height: 300,
-            child: veriAsync.when(
-              // Artımlı yükleme: tam-alan loader yerine boş grafik iskeleti
-              // (ızgara + eksen + ay etiketleri) anında; sağ üstte küçük ipucu.
-              loading: () => Stack(
-                children: [
-                  _YillikLineChart(veri: const {}, acikYillar: const []),
-                  const Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                        SizedBox(width: AppSizes.space6),
-                        Text(
-                          'Yükleniyor…',
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              error: (e, _) => const Center(
-                child: Text(
-                  'Veri yüklenemedi',
-                  style: TextStyle(color: AppColors.textMuted),
-                ),
-              ),
-              data: (veri) {
-                final acik = _acikYillar.toList()..sort();
-                if (acik.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'Karşılaştırmak için en az bir yıl seçin',
-                      style: TextStyle(color: AppColors.textMuted),
-                    ),
-                  );
-                }
-                return _YillikLineChart(veri: veri, acikYillar: acik);
-              },
+            child: _grafikAlani(
+              merged: merged,
+              historicalYukleniyor: historicalYukleniyor,
+              ikisiDeHata: ikisiDeHata,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Grafik alanının durum mantığı (kademeli veri yükleme).
+  Widget _grafikAlani({
+    required Map<int, List<num>> merged,
+    required bool historicalYukleniyor,
+    required bool ikisiDeHata,
+  }) {
+    // ── Henüz hiç veri yok ────────────────────────────────────────────────
+    if (merged.isEmpty) {
+      // İkisi de hata → veri yüklenemedi. Aksi halde (biri/ikisi yükleniyor)
+      // boş grafik iskeleti + "Yükleniyor…" ipucu.
+      if (ikisiDeHata) {
+        return const Center(
+          child: Text(
+            'Veri yüklenemedi',
+            style: TextStyle(color: AppColors.textMuted),
+          ),
+        );
+      }
+      return Stack(
+        children: const [
+          _YillikLineChart(veri: {}, acikYillar: []),
+          _YukleniyorIpucu(),
+        ],
+      );
+    }
+
+    // ── Veri var → yalnız merged'te bulunan açık yılları çiz ──────────────
+    // (merged'te OLMAYAN açık yılı filtrele → null liste hatası olmasın.)
+    final acik = _acikYillar.where(merged.containsKey).toList()..sort();
+    if (acik.isEmpty) {
+      return const Center(
+        child: Text(
+          'Karşılaştırmak için en az bir yıl seçin',
+          style: TextStyle(color: AppColors.textMuted),
+        ),
+      );
+    }
+
+    final grafik = _YillikLineChart(veri: merged, acikYillar: acik);
+    // Geçmiş yıllar HÂLÂ yükleniyorsa: cari yıl çizgisi hemen görünür, sağ
+    // üstte küçük "Yükleniyor…" ipucu korunur (geçmiş gelince fl_chart
+    // animasyonuyla içeri dolar, ipucu kalkar).
+    if (historicalYukleniyor) {
+      return Stack(
+        children: [
+          grafik,
+          const _YukleniyorIpucu(),
+        ],
+      );
+    }
+    return grafik;
+  }
+}
+
+// ── Grafik sağ üstünde küçük "Yükleniyor…" ipucu (kademeli yükleme) ──────────
+
+class _YukleniyorIpucu extends StatelessWidget {
+  const _YukleniyorIpucu();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Positioned(
+      top: 0,
+      right: 0,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppColors.textMuted,
+            ),
+          ),
+          SizedBox(width: AppSizes.space6),
+          Text(
+            'Yükleniyor…',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
             ),
           ),
         ],

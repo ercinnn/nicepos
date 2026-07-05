@@ -163,25 +163,41 @@ class DashboardRepository {
       ..sort((a, b) => a.date.compareTo(b.date));
   }
 
-  // ── Yıllara göre aylık satış tutarlarını getir (çok-yıl karşılaştırma) ────
-  // startYear..endYear (dahil) arası her yıl için 12 elemanlı aylık toplam
-  // listesi döner (index 0=Ocak..11=Aralık). Veri olmayan ay 0; hiç satışı
-  // olmayan yıl 12×0 olarak yine anahtar bulunur. endYear verilmezse bu yıl.
-  Future<Map<int, List<num>>> fetchYearlyMonthlySales({
+  // ── Cari yılın aylık satış tutarları (yalnız bu yıl) ──────────────────────
+  // Yıllık karşılaştırma grafiğinin HIZLI ilk çizimi için: yalnız cari yıl
+  // (`DateTime.now().year`) küçük aralık sorgusuyla çekilir. Cari yıl satış
+  // eklendikçe değiştiği için CACHE'LENMEZ (geçmiş yıllardan farklı olarak).
+  // Dönüş: `{currentYear: 12'lik aylık toplam listesi}` (0=Ocak..11=Aralık).
+  Future<Map<int, List<num>>> fetchCurrentYearMonthly() async {
+    final currentYear = DateTime.now().year;
+    final rows = await _fetchAllRows(
+      'sale_date, total_amount',
+      start: DateTime(currentYear, 1, 1),
+      end: DateTime(currentYear + 1, 1, 1),
+    );
+    final list = List<num>.filled(12, 0, growable: false);
+    for (final row in rows) {
+      final dt = DateTime.parse(row['sale_date'] as String).toLocal();
+      if (dt.year != currentYear) continue; // aralık dışı (güvenlik)
+      list[dt.month - 1] += ((row['total_amount'] as num?) ?? 0);
+    }
+    return {currentYear: list};
+  }
+
+  // ── Geçmiş yılların aylık satış tutarları (yalnız y < currentYear) ────────
+  // startYear..(currentYear-1) arası her yıl için 12 elemanlı aylık toplam
+  // listesi döner (index 0=Ocak..11=Aralık). Geçmiş yıllar DEĞİŞMEZ → static
+  // `_pastYearsCache` ile oturum ömrü boyunca en fazla bir kez çekilir: cache'te
+  // olanlar doğrudan alınır, eksikler tek toplu sorguyla çekilip cache'lenir.
+  // Cari yıl bilinçli olarak DIŞARIDA bırakılır (bkz. fetchCurrentYearMonthly).
+  Future<Map<int, List<num>>> fetchHistoricalYearlyMonthly({
     int startYear = 2021,
-    int? endYear,
   }) async {
     final currentYear = DateTime.now().year;
-    endYear ??= currentYear;
-
     final Map<int, List<num>> grouped = {};
 
-    // ── 1) Geçmiş yıllar (y < currentYear): değişmez → static cache ─────────
-    // Cache'te olanlar doğrudan alınır; eksikler tek toplu sorguyla çekilip
-    // cache'e yazılır. Böylece geçmiş yıllar oturum ömrü boyunca en fazla bir
-    // kez Supabase'den okunur (asıl kazanç burada).
     final missingPast = <int>[]; // artan sırada dolar
-    for (var y = startYear; y <= endYear && y < currentYear; y++) {
+    for (var y = startYear; y < currentYear; y++) {
       final cached = _pastYearsCache[y];
       if (cached != null) {
         grouped[y] = cached;
@@ -213,26 +229,6 @@ class DashboardRepository {
       for (final y in missingPast) {
         _pastYearsCache[y] = fetched[y]!;
         grouped[y] = fetched[y]!;
-      }
-    }
-
-    // ── 2) Cari yıl (ve endYear >= currentYear ise) — HER ZAMAN canlı ──────
-    // Cari yıl güncellenmeye devam ettiği için cache'lenmez; hafif bir sorgu
-    // ile (yalnız currentYear..endYear aralığı) taze çekilir.
-    if (endYear >= currentYear) {
-      final liveRows = await _fetchAllRows(
-        'sale_date, total_amount',
-        start: DateTime(currentYear, 1, 1),
-        end: DateTime(endYear + 1, 1, 1),
-      );
-      for (var y = currentYear; y <= endYear; y++) {
-        grouped[y] = List<num>.filled(12, 0, growable: false);
-      }
-      for (final row in liveRows) {
-        final dt = DateTime.parse(row['sale_date'] as String).toLocal();
-        final list = grouped[dt.year];
-        if (list == null) continue; // aralık dışı (güvenlik)
-        list[dt.month - 1] += ((row['total_amount'] as num?) ?? 0);
       }
     }
 
