@@ -221,3 +221,5 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   nötr `textPrimary` tabular, vurgu yok. Satır bazında çok hafif `danger` tint opsiyonel; tablo
   "kırmızı duvar"a dönmemeli — yalnızca riskli satırlar konuşur, kalan sakin durur. Altın bu
   durumda KULLANILMAZ (kritik sinyal semantik kırmızıdır, imza altın rayı yalnız hero'ya ait).
+
+- **Hafta sonu gün işaretçileri (günlük satış grafiği, KARAR v1.7):** Günlük satış çizgi grafiğinde (`_SatisLineChart`) o güne denk gelen **dikey düşük-alfa bant** çizilir (fl_chart `rangeAnnotations.verticalRangeAnnotations`): **Cumartesi = altın** (`gold`, ~0.09 alfa), **Pazar = kızıl** (`danger`, ~0.09 alfa). Bantlar **kategorik/bilgi amaçlıdır** (KARAR v1.4 emsali) — §4 imza rayı DEĞİL, "kötü gün" semantiği DEĞİL; yalnız "bu gün hafta sonu" bilgisidir. Kural: solid dolgu YOK (faint wash, alfa ≤ 0.10), çizgi lacivert kalır, bu kartta başka altın kullanılmaz (grafik zaten HERO değildir). Bant yalnız bu grafikte; yıllık karşılaştırma grafiğine uygulanmaz.

@@ -27,17 +27,16 @@ class DashboardSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
+    final mobil = context.isMobile;
+
+    // Tüm dashboard içeriği tek bir Column'da; hero · stat kartları · günlük
+    // grafik · yıllık grafik hepsi AYNI genişlikte hizalı. Masaüstünde dış
+    // container %90 genişliği yönetir (grafiklerde ayrı sarmalayıcı YOK);
+    // mobilde tam genişlik kalır.
+    final icerik = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Bölüm başlığı (Manrope — type.title)
-        Text(
-          'Dashboard',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: AppSizes.space16),
-
-        // ── İmza: Tam-genişlik hero bandı (bugünkü ciro) ─────────────────
+        // ── İmza: Hero bandı (bugünkü ciro) ──────────────────────────────
         const _HeroBand(),
         const SizedBox(height: AppSizes.space16),
 
@@ -46,44 +45,22 @@ class DashboardSection extends ConsumerWidget {
         const SizedBox(height: AppSizes.space16),
 
         // ── Grafik: Günlük Satış Grafiği ─────────────────────────────────
-        // Web: 8/15/30 gün seçilebilir (varsayılan 30), grafik ekran
-        // genişliğinin %90'ı. Mobil: sabit son 8 gün, seçici yok.
-        if (context.isMobile)
-          const _DailySalesChartCard(compact: true)
-        else
-          // Grafik ekran genişliğinin %90'ı, ortalanmış.
-          // Not: FractionallySizedBox dikey Column içinde (heightFactor null +
-          // sınırsız yükseklik) sonsuz yükseklik hatası verir; bu yüzden
-          // genişliği LayoutBuilder ile hesaplayıp sabit SizedBox kullanıyoruz.
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return Center(
-                child: SizedBox(
-                  width: constraints.maxWidth * 0.9,
-                  child: const _DailySalesChartCard(compact: false),
-                ),
-              );
-            },
-          ),
+        // Web: 8/15/30 gün seçilebilir (varsayılan 30). Mobil: sabit 8 gün.
+        // Genişlik dış container tarafından yönetilir.
+        _DailySalesChartCard(compact: mobil),
         const SizedBox(height: AppSizes.space16),
 
         // ── Grafik: Yıllık Ciro Karşılaştırma (çok-yıl, Oca–Ara) ─────────
-        // Genişlik davranışı günlük grafikle aynı: mobilde tam genişlik,
-        // masaüstünde ekran genişliğinin %90'ı (LayoutBuilder + SizedBox).
-        if (context.isMobile)
-          const _YillikKarsilastirmaCard()
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              return Center(
-                child: SizedBox(
-                  width: constraints.maxWidth * 0.9,
-                  child: const _YillikKarsilastirmaCard(),
-                ),
-              );
-            },
-          ),
+        const _YillikKarsilastirmaCard(),
       ],
+    );
+
+    // Mobilde sarma; masaüstünde tek ortalanmış %90 max-genişlik container.
+    if (mobil) return icerik;
+    return LayoutBuilder(
+      builder: (ctx, c) => Center(
+        child: SizedBox(width: c.maxWidth * 0.9, child: icerik),
+      ),
     );
   }
 }
@@ -642,12 +619,34 @@ class _SatisLineChart extends StatelessWidget {
     // X etiketi gösterim adımı — çok kalabalık olmasın
     final adim = (veriler.length / 6).ceil().clamp(1, veriler.length);
 
+    // Hafta sonu bantları (KARAR v1.7): Cumartesi = altın, Pazar = kızıl,
+    // her ikisi de düşük-alfa faint wash (bilgi amaçlı, imza rayı DEĞİL).
+    // Bantlar çizgilerin ALTINDA (arka planda) kalır; 0.5 taşmayı grafik kırpar.
+    final haftaSonuBantlari = <VerticalRangeAnnotation>[
+      for (var idx = 0; idx < veriler.length; idx++)
+        if (veriler[idx].date.weekday == DateTime.saturday ||
+            veriler[idx].date.weekday == DateTime.sunday)
+          VerticalRangeAnnotation(
+            x1: idx - 0.5,
+            x2: idx + 0.5,
+            color: (veriler[idx].date.weekday == DateTime.saturday
+                    ? AppColors.gold
+                    : AppColors.danger)
+                .withValues(alpha: 0.09),
+          ),
+    ];
+
     return LineChart(
       LineChartData(
         minX: 0,
         maxX: (veriler.length - 1).toDouble(),
         minY: 0,
         maxY: yMax,
+
+        // Hafta sonu dikey bantları (arka plan).
+        rangeAnnotations: RangeAnnotations(
+          verticalRangeAnnotations: haftaSonuBantlari,
+        ),
 
         // Grid
         gridData: FlGridData(

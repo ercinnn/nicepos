@@ -11,12 +11,6 @@ class HomeScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Anasayfa',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-
           // ── Dashboard Bölümü ───────────────────────────────────────────
           const DashboardSection(),
         ],
