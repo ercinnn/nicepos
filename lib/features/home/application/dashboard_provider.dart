@@ -30,7 +30,10 @@ Future<num> lastMonthRevenue(LastMonthRevenueRef ref) =>
     ref.watch(dashboardRepositoryProvider).fetchLastMonthRevenue();
 
 /// Son [days] günün günlük satış verileri.
-@riverpod
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
+/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
+@Riverpod(keepAlive: true)
 Future<List<({DateTime date, num amount})>> dailySales(
         DailySalesRef ref, int days) =>
     ref.watch(dashboardRepositoryProvider).fetchDailySales(days);
@@ -43,6 +46,11 @@ Future<List<({DateTime date, num amount})>> monthlySales(
 
 /// Yıllara göre aylık satış verileri (çok-yıl karşılaştırma grafiği).
 /// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
-@riverpod
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Ayrıca geçmiş yıllar `DashboardRepository` içinde process-ömürlü
+/// static cache'te tutulur; provider invalidate edilse bile geçmiş yıllar
+/// yeniden çekilmez, yalnız cari yıl canlı gelir. Tradeoff: yeni satış eklenince
+/// cari yıl otomatik yenilenmez; gerekirse `ref.invalidate(yearlySalesProvider)`.
+@Riverpod(keepAlive: true)
 Future<Map<int, List<num>>> yearlySales(YearlySalesRef ref) =>
     ref.watch(dashboardRepositoryProvider).fetchYearlyMonthlySales();
