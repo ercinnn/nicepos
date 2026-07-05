@@ -109,7 +109,7 @@ final lastMonthRevenueProvider = AutoDisposeFutureProvider<num>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef LastMonthRevenueRef = AutoDisposeFutureProviderRef<num>;
-String _$dailySalesHash() => r'4878beab527d4f745e39e068c1663752c980109b';
+String _$dailySalesHash() => r'e8254c7773e76085b0967828bee531f9177f1c64';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -133,22 +133,34 @@ class _SystemHash {
 }
 
 /// Son [days] günün günlük satış verileri.
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
+/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
 ///
 /// Copied from [dailySales].
 @ProviderFor(dailySales)
 const dailySalesProvider = DailySalesFamily();
 
 /// Son [days] günün günlük satış verileri.
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
+/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
 ///
 /// Copied from [dailySales].
 class DailySalesFamily
     extends Family<AsyncValue<List<({DateTime date, num amount})>>> {
   /// Son [days] günün günlük satış verileri.
+  /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+  /// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
+  /// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
   ///
   /// Copied from [dailySales].
   const DailySalesFamily();
 
   /// Son [days] günün günlük satış verileri.
+  /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+  /// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
+  /// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
   ///
   /// Copied from [dailySales].
   DailySalesProvider call(int days) {
@@ -178,11 +190,17 @@ class DailySalesFamily
 }
 
 /// Son [days] günün günlük satış verileri.
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
+/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
 ///
 /// Copied from [dailySales].
 class DailySalesProvider
-    extends AutoDisposeFutureProvider<List<({DateTime date, num amount})>> {
+    extends FutureProvider<List<({DateTime date, num amount})>> {
   /// Son [days] günün günlük satış verileri.
+  /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+  /// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
+  /// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
   ///
   /// Copied from [dailySales].
   DailySalesProvider(int days)
@@ -232,8 +250,7 @@ class DailySalesProvider
   }
 
   @override
-  AutoDisposeFutureProviderElement<List<({DateTime date, num amount})>>
-  createElement() {
+  FutureProviderElement<List<({DateTime date, num amount})>> createElement() {
     return _DailySalesProviderElement(this);
   }
 
@@ -253,15 +270,13 @@ class DailySalesProvider
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin DailySalesRef
-    on AutoDisposeFutureProviderRef<List<({DateTime date, num amount})>> {
+mixin DailySalesRef on FutureProviderRef<List<({DateTime date, num amount})>> {
   /// The parameter `days` of this provider.
   int get days;
 }
 
 class _DailySalesProviderElement
-    extends
-        AutoDisposeFutureProviderElement<List<({DateTime date, num amount})>>
+    extends FutureProviderElement<List<({DateTime date, num amount})>>
     with DailySalesRef {
   _DailySalesProviderElement(super.provider);
 
@@ -409,26 +424,30 @@ class _MonthlySalesProviderElement
   int get months => (origin as MonthlySalesProvider).months;
 }
 
-String _$yearlySalesHash() => r'4bc188e5ef8599db9a3c7730317648a42aeb0347';
+String _$yearlySalesHash() => r'4e0c67a51de0c9651476e778a65581101b407a18';
 
 /// Yıllara göre aylık satış verileri (çok-yıl karşılaştırma grafiği).
 /// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
+/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
+/// çekilmez. Ayrıca geçmiş yıllar `DashboardRepository` içinde process-ömürlü
+/// static cache'te tutulur; provider invalidate edilse bile geçmiş yıllar
+/// yeniden çekilmez, yalnız cari yıl canlı gelir. Tradeoff: yeni satış eklenince
+/// cari yıl otomatik yenilenmez; gerekirse `ref.invalidate(yearlySalesProvider)`.
 ///
 /// Copied from [yearlySales].
 @ProviderFor(yearlySales)
-final yearlySalesProvider =
-    AutoDisposeFutureProvider<Map<int, List<num>>>.internal(
-      yearlySales,
-      name: r'yearlySalesProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$yearlySalesHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
+final yearlySalesProvider = FutureProvider<Map<int, List<num>>>.internal(
+  yearlySales,
+  name: r'yearlySalesProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$yearlySalesHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef YearlySalesRef = AutoDisposeFutureProviderRef<Map<int, List<num>>>;
+typedef YearlySalesRef = FutureProviderRef<Map<int, List<num>>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
