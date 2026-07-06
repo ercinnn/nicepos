@@ -12,6 +12,7 @@ import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/customers/presentation/screens/customer_detail_screen.dart';
 import '../features/customers/presentation/screens/customers_list_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
+import '../features/kasa/presentation/screens/kasa_screen.dart';
 import '../features/products/presentation/screens/product_form_screen.dart';
 import '../features/products/presentation/screens/products_tabs_screen.dart';
 import '../features/reports/presentation/screens/reports_screen.dart';
@@ -143,6 +144,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/reports',
             pageBuilder: (context, state) =>
                 _fadeThroughPage(state, const ReportsScreen()),
+          ),
+          GoRoute(
+            path: '/kasa',
+            pageBuilder: (context, state) =>
+                _fadeThroughPage(state, const KasaScreen()),
           ),
         ],
       ),

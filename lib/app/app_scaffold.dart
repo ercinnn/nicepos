@@ -27,6 +27,7 @@ const _navItems = [
   _NavItem('Anasayfa', Icons.dashboard_outlined, Icons.dashboard, '/home'),
   _NavItem('Satış Yap', Icons.point_of_sale_outlined, Icons.point_of_sale, '/sales'),
   _NavItem('Raporlar', Icons.bar_chart_outlined, Icons.insert_chart, '/reports'),
+  _NavItem('Kasa', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, '/kasa'),
   _NavItem('Müşteriler', Icons.people_outline, Icons.people, '/customers'),
   _NavItem('Ürünler', Icons.inventory_2_outlined, Icons.inventory_2, '/products'),
 ];
