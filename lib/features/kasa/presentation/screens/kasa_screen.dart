@@ -666,7 +666,10 @@ class _GelirSekmesiState extends ConsumerState<_GelirSekmesi> {
               seritRenk: AppColors.pos,
               // POS mutabakat rozeti sadece son (3.) bankanın altında bir kez —
               // taban 3 bankanın TOPLAMI olduğundan tek yerde gösterilir.
+              // Kapsam öneki ("POS toplamı"), farkın tek bankaya değil 3 banka
+              // toplamına ait olduğunu netleştirir.
               recon: i == _posBanks.length - 1 ? _posRecon : null,
+              reconKapsam: 'POS toplamı',
             ),
             const SizedBox(height: AppSizes.space12),
           ],
@@ -709,11 +712,17 @@ class _KanalGelirAlani extends StatelessWidget {
   final Color seritRenk;
   final KasaReconcileResult? recon;
 
+  /// Rozet kapsam öneki (ör. 'POS toplamı') — sistem tabanı birden çok alanın
+  /// toplamıysa farkın tek alana ait olmadığını belirtir. Tek kanallı alanda
+  /// (Nakit) null bırakılır.
+  final String? reconKapsam;
+
   const _KanalGelirAlani({
     required this.controller,
     required this.etiket,
     required this.seritRenk,
     this.recon,
+    this.reconKapsam,
   });
 
   @override
@@ -778,7 +787,7 @@ class _KanalGelirAlani extends StatelessWidget {
               left: 16,
               top: AppSizes.space8,
             ),
-            child: _MutabakatRozeti(recon: recon!),
+            child: _MutabakatRozeti(recon: recon!, kapsam: reconKapsam),
           ),
       ],
     );
@@ -792,7 +801,12 @@ class _KanalGelirAlani extends StatelessWidget {
 class _MutabakatRozeti extends StatelessWidget {
   final KasaReconcileResult recon;
 
-  const _MutabakatRozeti({required this.recon});
+  /// Kapsam öneki (ör. 'POS toplamı') — sistem tabanı birden çok alanın
+  /// (İş + Akbank + Garanti) toplamı olduğunda farkın tek alana ait
+  /// olmadığını netleştirir. Null ise önek basılmaz (Nakit tek kanal).
+  final String? kapsam;
+
+  const _MutabakatRozeti({required this.recon, this.kapsam});
 
   @override
   Widget build(BuildContext context) {
@@ -817,6 +831,8 @@ class _MutabakatRozeti extends StatelessWidget {
       metin =
           'İade ${formatCurrency(fark)} · sistem ${formatCurrency(recon.systemBase)}';
     }
+    // Kapsam öneki: "POS toplamı: İade −₺110,00 · sistem ₺31.000,00".
+    final gosterilen = kapsam == null ? metin : '$kapsam: $metin';
 
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -834,7 +850,7 @@ class _MutabakatRozeti extends StatelessWidget {
           const SizedBox(width: AppSizes.space6),
           Flexible(
             child: Text(
-              metin,
+              gosterilen,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
