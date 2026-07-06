@@ -12,15 +12,20 @@ class DashboardRepository {
   // `static` (örnek düzeyinde değil, sınıf/process düzeyinde) tutulur.
   // Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
   //
-  // İDEAL çözüm sunucu-taraf GROUP BY olurdu (ör. aşağıdaki gibi bir view/RPC),
-  // ancak DDL anon key ile uygulanamaz (Supabase SQL Editor gerekir) → bu PR'da
-  // tamamen Dart-taraf cache ile çözülür. İleride uygulanabilecek örnek:
-  //   create view yearly_monthly_sales as
-  //     select extract(year from sale_date)::int  as yil,
-  //            extract(month from sale_date)::int as ay,
-  //            sum(total_amount)                   as toplam
-  //     from sales group by 1, 2;
+  // NOT: Aylık toplama artık sunucuda `sales_monthly_totals` görünümünde yapılır
+  // (bkz. supabase/migrations/0010_sales_monthly_totals.sql). İstemci yıl×ay
+  // başına tek satır çeker; binlerce `sales` satırını taşımaz. Bu cache yine de
+  // korunur: geçmiş yıllar değişmediği için oturum boyunca tekrar sorgu atmayı
+  // engeller.
   static final Map<int, List<num>> _pastYearsCache = {};
+
+  // PostgREST numeric alanları (ör. görünümdeki sum) num veya String olarak
+  // gelebilir; ikisini de güvenle sayıya çevirir.
+  num _asNum(Object? v) {
+    if (v is num) return v;
+    if (v is String) return num.tryParse(v) ?? 0;
+    return 0;
+  }
 
   // ── PostgREST 1000 satır limitini aşmak için sayfalı satır çekme ──────────
   // Verilen tarih aralığındaki tüm `sales` satırlarını sayfa sayfa toplar.
@@ -165,21 +170,22 @@ class DashboardRepository {
 
   // ── Cari yılın aylık satış tutarları (yalnız bu yıl) ──────────────────────
   // Yıllık karşılaştırma grafiğinin HIZLI ilk çizimi için: yalnız cari yıl
-  // (`DateTime.now().year`) küçük aralık sorgusuyla çekilir. Cari yıl satış
-  // eklendikçe değiştiği için CACHE'LENMEZ (geçmiş yıllardan farklı olarak).
+  // (`DateTime.now().year`) `sales_monthly_totals` görünümünden çekilir (yıl
+  // başına en fazla 12 satır). Cari yıl satış eklendikçe değiştiği için
+  // CACHE'LENMEZ (geçmiş yıllardan farklı olarak).
   // Dönüş: `{currentYear: 12'lik aylık toplam listesi}` (0=Ocak..11=Aralık).
   Future<Map<int, List<num>>> fetchCurrentYearMonthly() async {
     final currentYear = DateTime.now().year;
-    final rows = await _fetchAllRows(
-      'sale_date, total_amount',
-      start: DateTime(currentYear, 1, 1),
-      end: DateTime(currentYear + 1, 1, 1),
-    );
+    final rows = await _client
+        .from('sales_monthly_totals')
+        .select('year, month, total')
+        .eq('year', currentYear);
     final list = List<num>.filled(12, 0, growable: false);
-    for (final row in rows) {
-      final dt = DateTime.parse(row['sale_date'] as String).toLocal();
-      if (dt.year != currentYear) continue; // aralık dışı (güvenlik)
-      list[dt.month - 1] += ((row['total_amount'] as num?) ?? 0);
+    for (final row in (rows as List)) {
+      final map = Map<String, dynamic>.from(row as Map);
+      final month = _asNum(map['month']).toInt();
+      if (month < 1 || month > 12) continue; // güvenlik
+      list[month - 1] = _asNum(map['total']);
     }
     return {currentYear: list};
   }
@@ -207,24 +213,28 @@ class DashboardRepository {
     }
 
     if (missingPast.isNotEmpty) {
-      // Eksik geçmiş yılların tam aralığı (ilk..son) tek sorguda çekilir;
-      // yalnız gerçekten eksik olan yıllar hesaplanıp cache'lenir.
+      // Eksik geçmiş yılların tam aralığı (ilk..son) `sales_monthly_totals`
+      // görünümünden tek sorguda çekilir; yalnız gerçekten eksik olan yıllar
+      // hesaplanıp cache'lenir.
       final firstMissing = missingPast.first;
       final lastMissing = missingPast.last;
-      final rows = await _fetchAllRows(
-        'sale_date, total_amount',
-        start: DateTime(firstMissing, 1, 1),
-        end: DateTime(lastMissing + 1, 1, 1),
-      );
+      final rows = await _client
+          .from('sales_monthly_totals')
+          .select('year, month, total')
+          .gte('year', firstMissing)
+          .lte('year', lastMissing);
       final Map<int, List<num>> fetched = {
         for (final y in missingPast)
           y: List<num>.filled(12, 0, growable: false),
       };
-      for (final row in rows) {
-        final dt = DateTime.parse(row['sale_date'] as String).toLocal();
-        final list = fetched[dt.year];
+      for (final row in (rows as List)) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final y = _asNum(map['year']).toInt();
+        final month = _asNum(map['month']).toInt();
+        final list = fetched[y];
         if (list == null) continue; // aralıktaki ama eksik-olmayan yıl (güvenlik)
-        list[dt.month - 1] += ((row['total_amount'] as num?) ?? 0);
+        if (month < 1 || month > 12) continue; // güvenlik
+        list[month - 1] = _asNum(map['total']);
       }
       for (final y in missingPast) {
         _pastYearsCache[y] = fetched[y]!;
