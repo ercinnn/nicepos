@@ -62,11 +62,13 @@ class KasaReconciliationService {
   /// Nakit taban = Σ(satış cash_amount) + Σ(nakit borç tahsilatları).
   /// POS taban   = Σ(satış card_amount) + Σ(POS borç tahsilatları).
   ///
-  /// ⚠️ BORÇ TAHSİLATI KANAL BİLGİSİ YOK: `customer_payments` tablosunda bir
-  /// tahsilatın nakit mi POS mu olduğunu belirten alan (method/channel)
-  /// YOKTUR. Bu yüzden TÜM açık hesap borç tahsilatları (type='odeme') NAKİT
-  /// sayılır; POS tabanına borç tahsilatı EKLENMEZ. Kanal ayrımı DB'ye
-  /// eklenirse bu varsayım güncellenmelidir.
+  /// BORÇ TAHSİLATI KANALI: `customer_payments.channel` ('nakit'|'pos', 0012
+  /// migration) tahsilatın hangi kanaldan alındığını tutar. Müşteri açık hesap
+  /// borcunu HEM nakit HEM POS ile ödeyebildiği için tahsilat doğru tabana
+  /// eklenir:
+  ///   • Nakit tabanı: channel='nakit' VEYA channel IS NULL (eski kayıtlar
+  ///     geriye dönük NAKİT sayılır).
+  ///   • POS tabanı:   channel='pos'.
   Future<num> computeSystemBase(
     int fiscalYear,
     DateTime date,
@@ -99,27 +101,33 @@ class KasaReconciliationService {
     }
 
     // 2. O gün yapılan açık hesap borç tahsilatları (type='odeme').
-    //    Kanal bilgisi olmadığından tümü NAKİT sayılır → yalnız nakit tabanına
-    //    eklenir. POS kanalında borç tahsilatı katkısı 0'dır.
+    //    channel'a göre doğru tabana eklenir (0012 migration):
+    //      • Nakit tabanı → channel='nakit' VEYA channel IS NULL (eski kayıt).
+    //      • POS tabanı   → channel='pos'.
     num debtCollectionSum = 0;
-    if (channel == KasaChannel.nakit) {
-      var payFrom = 0;
-      while (true) {
-        final page = await _client
-            .from('customer_payments')
-            .select('amount')
-            .eq('type', 'odeme')
-            .gte('payment_date', bounds.start)
-            .lt('payment_date', bounds.end)
-            .range(payFrom, payFrom + _pageSize - 1);
-        final list = page as List;
-        for (final r in list) {
-          final map = Map<String, dynamic>.from(r as Map);
-          debtCollectionSum += _asNum(map['amount']);
-        }
-        if (list.length < _pageSize) break;
-        payFrom += _pageSize;
+    var payFrom = 0;
+    while (true) {
+      var q = _client
+          .from('customer_payments')
+          .select('amount')
+          .eq('type', 'odeme')
+          .gte('payment_date', bounds.start)
+          .lt('payment_date', bounds.end);
+      if (channel == KasaChannel.nakit) {
+        // Nakit: kanalı 'nakit' olan VEYA hiç kanal atanmamış (eski) tahsilatlar.
+        q = q.or('channel.eq.nakit,channel.is.null');
+      } else {
+        // POS: yalnız kanalı 'pos' olan tahsilatlar.
+        q = q.eq('channel', 'pos');
       }
+      final page = await q.range(payFrom, payFrom + _pageSize - 1);
+      final list = page as List;
+      for (final r in list) {
+        final map = Map<String, dynamic>.from(r as Map);
+        debtCollectionSum += _asNum(map['amount']);
+      }
+      if (list.length < _pageSize) break;
+      payFrom += _pageSize;
     }
 
     return salesChannelSum + debtCollectionSum;

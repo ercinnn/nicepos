@@ -1236,7 +1236,7 @@ class _GiderSatiri extends StatelessWidget {
                   ),
                 ),
                 if (altBilgi.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: AppSizes.space4),
                   Text(
                     altBilgi,
                     style: const TextStyle(
@@ -1411,7 +1411,10 @@ class _FirmaAramaAlaniState extends ConsumerState<_FirmaAramaAlani> {
     return Material(
       elevation: 8,
       borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-      shadowColor: Colors.black26,
+      // §Gölge: siyah yerine lacivert-tint (palet token'ı AppColors.primary).
+      // Material.shadowColor tek renk alır; cardShadow/elevatedShadow bir
+      // BoxShadow listesi olduğundan doğrudan atanamaz → tint tek renkle taşınır.
+      shadowColor: AppColors.primary.withValues(alpha: 0.20),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 280),
         child: Container(
@@ -1603,7 +1606,7 @@ class _AcilisBakiyesiBolumu extends ConsumerWidget {
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: AppSizes.space4),
                   Text(
                     'Gelir ${formatCurrency(acilis?.openingIncome ?? 0)} · '
                     'Gider ${formatCurrency(acilis?.openingExpense ?? 0)}',

@@ -17,6 +17,11 @@ class CustomerPayment {
   final String? note;
   final DateTime paymentDate;
 
+  /// Tahsilat kanalı: 'nakit' | 'pos' (yalnız type='odeme' tahsilatlarında dolu).
+  /// Borç ekleme (type='borc') ve eski kayıtlarda null; null → mutabakatta NAKİT
+  /// sayılır (bkz. 0012 migration, [KasaReconciliationService.computeSystemBase]).
+  final String? channel;
+
   const CustomerPayment({
     this.id = '',
     required this.customerId,
@@ -26,6 +31,7 @@ class CustomerPayment {
     required this.amount,
     this.note,
     required this.paymentDate,
+    this.channel,
   });
 
   factory CustomerPayment.fromMap(Map<String, dynamic> map) {
@@ -43,6 +49,7 @@ class CustomerPayment {
       type: CustomerPaymentTypeX.fromDb(map['type'] as String),
       amount: map['amount'] as num? ?? 0,
       note: map['note'] as String?,
+      channel: map['channel'] as String?,
       // Supabase UTC timestamp'i yerel saate (Türkiye UTC+3) çeviriyoruz
       paymentDate: DateTime.parse(map['payment_date'] as String).toLocal(),
     );
@@ -55,6 +62,8 @@ class CustomerPayment {
       'type': type.dbValue,
       'amount': amount,
       'note': note,
+      // Tahsilat kanalı; borç kayıtlarında null kalır (nullable kolon, 0012).
+      'channel': channel,
       // UTC olarak gönderiyoruz — Supabase timestamptz alanı UTC saklar
       'payment_date': paymentDate.toUtc().toIso8601String(),
     };

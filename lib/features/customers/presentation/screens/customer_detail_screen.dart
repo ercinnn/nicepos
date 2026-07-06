@@ -431,6 +431,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     final isOdeme = type == CustomerPaymentType.odeme;
     // Semantik renk: ödeme borcu azaltır (success), borç artırır (danger).
     final semantic = isOdeme ? AppColors.success : AppColors.danger;
+    // Tahsilat kanalı — yalnız ödeme (tahsilat) girişinde sorulur. Varsayılan nakit.
+    // Değer DB'ye 'nakit'|'pos' olarak yazılır (0012 migration).
+    var selectedChannel = 'nakit';
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -464,6 +467,50 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                   keyboardType: TextInputType.number,
                   autofocus: true,
                 ),
+                // ── Tahsilat kanalı (yalnız ödeme/tahsilat) ──────────────────
+                // Müşteri eski borcunu nakit veya POS ile ödeyebilir; seçim
+                // Kasa mutabakatında doğru kanala eklenir (§5 ödeme türü butonu
+                // dili: nötr beyaz zemin + sol renk şeridi, seçili = tür rengi).
+                if (isOdeme) ...[
+                  const SizedBox(height: AppSizes.space16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Tahsilat Kanalı',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.space8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ChannelButton(
+                          label: 'Nakit',
+                          icon: Icons.payments_outlined,
+                          color: AppColors.cash,
+                          selected: selectedChannel == 'nakit',
+                          onTap: () =>
+                              setDialogState(() => selectedChannel = 'nakit'),
+                        ),
+                      ),
+                      const SizedBox(width: AppSizes.space8),
+                      Expanded(
+                        child: _ChannelButton(
+                          label: 'POS',
+                          icon: Icons.credit_card,
+                          color: AppColors.pos,
+                          selected: selectedChannel == 'pos',
+                          onTap: () =>
+                              setDialogState(() => selectedChannel = 'pos'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: AppSizes.space16),
                 TextField(
                   controller: noteCtrl,
@@ -523,6 +570,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
           amount: amount,
           note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
           paymentDate: selectedDate,
+          // Kanal yalnız tahsilatta anlamlı; borç ekleme kayıtlarında null kalır.
+          channel: isOdeme ? selectedChannel : null,
         ));
 
     ref.invalidate(customerByIdProvider(widget.customerId));
@@ -1153,6 +1202,78 @@ class _PaymentsTable extends StatelessWidget {
             )),
           ]);
         }).toList(),
+      ),
+    );
+  }
+}
+
+/// Tahsilat kanalı seçim butonu (nakit / POS).
+///
+/// design-tokens §5 "Ödeme türü butonu" dilinin kompakt (yatay) sürümü:
+/// seçili değilken nötr beyaz zemin + hairline kenarlık, tür kimliği SOL renk
+/// şeridi + ikon/etiket ile taşınır; seçiliyken o türün renginde dolgu.
+class _ChannelButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ChannelButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = selected ? color : AppColors.cardBg;
+    final fg = selected ? Colors.white : color;
+    final borderColor = selected ? color : AppColors.goldBorder;
+    // Sol şerit: seçiliyken dolgu üstünde beyaz aksan, değilken tür rengi.
+    final stripColor = selected ? Colors.white : color;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+          border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(width: 4, color: stripColor),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      vertical: AppSizes.space12, horizontal: AppSizes.space8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, color: fg, size: 18),
+                      const SizedBox(width: AppSizes.space8),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: fg,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
