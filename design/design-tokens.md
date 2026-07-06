@@ -114,6 +114,10 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   - Müşteri kayıtları (LİSTE) → **Toplam Kalan Borç** hero (KARAR v1.1 — **ONAYLANDI**). Agregat
     borç esnafın manşet metriği; ray `danger` (net alacak fazlası varsa `positive`). Liste
     tablosu/kartlar sakin destek. Detay ekranındaki bakiye hero'su ile aynı dil (borç/alacak).
+  - Kasa (gelir-gider defteri) → **birikimli yıl kasası (₺)** hero (KARAR v1.9 — **ONAYLANDI**).
+    = açılış geliri + o güne kadar Nakit+POS gelir (yıl bazlı, `fiscal_year`). Para metriği →
+    **ray altın** (imza korunur). Seçili günün Nakit+POS kırılımı + açılış = **sakin destek**
+    (`type.body` tabular, ray YOK). Gider hero'ya karışmaz — tek hero kuralı (§4.1).
 - **Nasıl uygulanır (kural):**
   1. Ekran başına **yalnızca bir** hero tutar. İkinci bir tutarı bu boyutta gösterme.
   2. Altın ray **sadece** hero tutarın altında belirir — başka yerde süs çizgisi yok.
