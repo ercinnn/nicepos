@@ -3,12 +3,20 @@ import '../data/models/kasa_entry.dart';
 import '../data/models/kasa_expense_category.dart';
 import '../data/models/kasa_opening_balance.dart';
 import '../data/repositories/kasa_repository.dart';
+import '../data/repositories/kasa_reconciliation_service.dart';
 
 part 'kasa_provider.g.dart';
 
 /// Kasa repository provider — tekil örüntü, oturum boyunca aynı örnek.
 @Riverpod(keepAlive: true)
 KasaRepository kasaRepository(KasaRepositoryRef ref) => KasaRepository();
+
+/// Kasa mutabakat motoru (Faz C) provider — tekil örüntü.
+@Riverpod(keepAlive: true)
+KasaReconciliationService kasaReconciliationService(
+  KasaReconciliationServiceRef ref,
+) =>
+    KasaReconciliationService();
 
 // ── Kasa kalemleri ──────────────────────────────────────────────────────────
 

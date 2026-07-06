@@ -25,6 +25,27 @@ final kasaRepositoryProvider = Provider<KasaRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef KasaRepositoryRef = ProviderRef<KasaRepository>;
+String _$kasaReconciliationServiceHash() =>
+    r'7bf3324ea6bfa15a054b02473f4033d02b4c36c8';
+
+/// Kasa mutabakat motoru (Faz C) provider — tekil örüntü.
+///
+/// Copied from [kasaReconciliationService].
+@ProviderFor(kasaReconciliationService)
+final kasaReconciliationServiceProvider =
+    Provider<KasaReconciliationService>.internal(
+      kasaReconciliationService,
+      name: r'kasaReconciliationServiceProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$kasaReconciliationServiceHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef KasaReconciliationServiceRef = ProviderRef<KasaReconciliationService>;
 String _$kasaEntriesHash() => r'9afc44b2b5fdef6552190093338e6c0333421c23';
 
 /// Copied from Dart SDK
