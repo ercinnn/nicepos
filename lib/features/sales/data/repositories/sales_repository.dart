@@ -132,6 +132,8 @@ class SalesRepository {
   ///    completeSale açık hesap satışında sale_id'li bir 'borc' hareketi
   ///    ekliyordu; customer_balances görünümü borcu bu hareketlerden hesapladığı
   ///    için kaydı silmek borcu doğrudan geri alır (ters kayıt eklemeye gerek yok).
+  /// 3b. Kasa mutabakat düzeltme satışıysa bağlı kasa_reconciliations kaydı
+  ///    silinir (sale_id FK engeli kalkar; o gün+kanal mutabakatsız hâle döner).
   /// 4. sale_items silinir (FK), sonra sales kaydı silinir.
   Future<void> deleteSale(String saleId) async {
     // 1. Stok iadesi için kalemleri oku
@@ -146,6 +148,13 @@ class SalesRepository {
 
     // 3. Satışa bağlı borç/ödeme hareketlerini sil (açık hesap borcunu geri alır)
     await _client.from('customer_payments').delete().eq('sale_id', saleId);
+
+    // Kasa mutabakat düzeltme satışıysa (is_adjustment), bağlı mutabakat kaydını
+    // önce sil: (1) kasa_reconciliations.sale_id FK engeli kalkar → satış silinebilir,
+    // (2) o gün+kanal 'hiç mutabakat yapılmamış' hâline döner (tekrar Kaydet & Mutabakat
+    // yapılınca sistem tabanından yeniden hesaplanır). Normal satışta eşleşen kayıt
+    // yoktur → zararsız no-op.
+    await _client.from('kasa_reconciliations').delete().eq('sale_id', saleId);
 
     // 4. Kalemleri, sonra satışı sil (FK sırası)
     await _client.from('sale_items').delete().eq('sale_id', saleId);
