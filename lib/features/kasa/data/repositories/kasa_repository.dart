@@ -73,6 +73,23 @@ class KasaRepository {
     await _client.from('kasa_entries').delete().eq('id', id);
   }
 
+  /// Yıl içi ürün-alımı giderlerini firma bazlı listeler (Firma Giderleri sekmesi).
+  /// Yalnız direction='gider' + category='Ürün Alımı' + company_id dolu kalemler;
+  /// firma adı companies(name) join'iyle gelir. Tarihe göre azalan.
+  Future<List<KasaEntry>> fetchProductPurchases(int fiscalYear) async {
+    final rows = await _client
+        .from('kasa_entries')
+        .select('*, companies(name)')
+        .eq('fiscal_year', fiscalYear)
+        .eq('direction', 'gider')
+        .eq('category', 'Ürün Alımı')
+        .not('company_id', 'is', null)
+        .order('entry_date', ascending: false);
+    return (rows as List)
+        .map((r) => KasaEntry.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
+  }
+
   // ── Gider kategorileri ────────────────────────────────────────────────────
 
   /// Aktif gider kategorilerini (is_active=true) ada göre sıralı çeker.

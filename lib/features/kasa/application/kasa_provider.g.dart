@@ -198,6 +198,142 @@ class _KasaEntriesProviderElement
   KasaEntriesQuery get q => (origin as KasaEntriesProvider).q;
 }
 
+String _$kasaProductPurchasesHash() =>
+    r'be8b24aa0f039ef63ca63dd8875a76fb03c5f874';
+
+/// Seçili mali yılın ürün-alımı giderleri (firma bazlı rapor için ham liste).
+///
+/// Copied from [kasaProductPurchases].
+@ProviderFor(kasaProductPurchases)
+const kasaProductPurchasesProvider = KasaProductPurchasesFamily();
+
+/// Seçili mali yılın ürün-alımı giderleri (firma bazlı rapor için ham liste).
+///
+/// Copied from [kasaProductPurchases].
+class KasaProductPurchasesFamily extends Family<AsyncValue<List<KasaEntry>>> {
+  /// Seçili mali yılın ürün-alımı giderleri (firma bazlı rapor için ham liste).
+  ///
+  /// Copied from [kasaProductPurchases].
+  const KasaProductPurchasesFamily();
+
+  /// Seçili mali yılın ürün-alımı giderleri (firma bazlı rapor için ham liste).
+  ///
+  /// Copied from [kasaProductPurchases].
+  KasaProductPurchasesProvider call(int fiscalYear) {
+    return KasaProductPurchasesProvider(fiscalYear);
+  }
+
+  @override
+  KasaProductPurchasesProvider getProviderOverride(
+    covariant KasaProductPurchasesProvider provider,
+  ) {
+    return call(provider.fiscalYear);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'kasaProductPurchasesProvider';
+}
+
+/// Seçili mali yılın ürün-alımı giderleri (firma bazlı rapor için ham liste).
+///
+/// Copied from [kasaProductPurchases].
+class KasaProductPurchasesProvider
+    extends AutoDisposeFutureProvider<List<KasaEntry>> {
+  /// Seçili mali yılın ürün-alımı giderleri (firma bazlı rapor için ham liste).
+  ///
+  /// Copied from [kasaProductPurchases].
+  KasaProductPurchasesProvider(int fiscalYear)
+    : this._internal(
+        (ref) =>
+            kasaProductPurchases(ref as KasaProductPurchasesRef, fiscalYear),
+        from: kasaProductPurchasesProvider,
+        name: r'kasaProductPurchasesProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$kasaProductPurchasesHash,
+        dependencies: KasaProductPurchasesFamily._dependencies,
+        allTransitiveDependencies:
+            KasaProductPurchasesFamily._allTransitiveDependencies,
+        fiscalYear: fiscalYear,
+      );
+
+  KasaProductPurchasesProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.fiscalYear,
+  }) : super.internal();
+
+  final int fiscalYear;
+
+  @override
+  Override overrideWith(
+    FutureOr<List<KasaEntry>> Function(KasaProductPurchasesRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: KasaProductPurchasesProvider._internal(
+        (ref) => create(ref as KasaProductPurchasesRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        fiscalYear: fiscalYear,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<List<KasaEntry>> createElement() {
+    return _KasaProductPurchasesProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is KasaProductPurchasesProvider &&
+        other.fiscalYear == fiscalYear;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, fiscalYear.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin KasaProductPurchasesRef on AutoDisposeFutureProviderRef<List<KasaEntry>> {
+  /// The parameter `fiscalYear` of this provider.
+  int get fiscalYear;
+}
+
+class _KasaProductPurchasesProviderElement
+    extends AutoDisposeFutureProviderElement<List<KasaEntry>>
+    with KasaProductPurchasesRef {
+  _KasaProductPurchasesProviderElement(super.provider);
+
+  @override
+  int get fiscalYear => (origin as KasaProductPurchasesProvider).fiscalYear;
+}
+
 String _$kasaOpeningBalanceHash() =>
     r'447e38651c16c6bbd89f5bcea9d74d0e964f3c5c';
 

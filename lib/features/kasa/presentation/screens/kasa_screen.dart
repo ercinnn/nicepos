@@ -50,6 +50,9 @@ const List<(String, String)> _posBanks = [
   ('Garanti POS', 'Garanti'),
 ];
 
+/// Kasa ekranı üst sekmeleri: Gelir · Gider · Firma Giderleri (yıl bazlı rapor).
+enum _KasaTab { gelir, gider, firmaGiderleri }
+
 class KasaScreen extends ConsumerStatefulWidget {
   const KasaScreen({super.key});
 
@@ -59,7 +62,7 @@ class KasaScreen extends ConsumerStatefulWidget {
 
 class _KasaScreenState extends ConsumerState<KasaScreen> {
   DateTime _date = _dateOnly(DateTime.now());
-  KasaDirection _direction = KasaDirection.gelir;
+  _KasaTab _tab = _KasaTab.gelir;
 
   int get _fiscalYear => _date.year;
 
@@ -107,38 +110,51 @@ class _KasaScreenState extends ConsumerState<KasaScreen> {
         ),
         const SizedBox(height: AppSizes.space16),
 
-        // ── Gelir / Gider sekmeleri ───────────────────────────────────────
-        SegmentedButton<KasaDirection>(
-          segments: const [
-            ButtonSegment(
-              value: KasaDirection.gelir,
-              label: Text('Gelir'),
-              icon: Icon(Icons.south_west, size: 18),
-            ),
-            ButtonSegment(
-              value: KasaDirection.gider,
-              label: Text('Gider'),
-              icon: Icon(Icons.north_east, size: 18),
-            ),
-          ],
-          selected: {_direction},
-          onSelectionChanged: (s) => setState(() => _direction = s.first),
+        // ── Gelir / Gider / Firma Giderleri sekmeleri ─────────────────────
+        // showSelectedIcon kapalı: 3 segment dar ekranda (mobil ~360px)
+        // seçili-ikon eklenince taşabilir; yatay scroll da güvence.
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<_KasaTab>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: _KasaTab.gelir,
+                label: Text('Gelir'),
+                icon: Icon(Icons.south_west, size: 18),
+              ),
+              ButtonSegment(
+                value: _KasaTab.gider,
+                label: Text('Gider'),
+                icon: Icon(Icons.north_east, size: 18),
+              ),
+              ButtonSegment(
+                value: _KasaTab.firmaGiderleri,
+                label: Text('Firma Giderleri'),
+                icon: Icon(Icons.storefront_outlined, size: 18),
+              ),
+            ],
+            selected: {_tab},
+            onSelectionChanged: (s) => setState(() => _tab = s.first),
+          ),
         ),
         const SizedBox(height: AppSizes.space16),
 
         // ── Seçili sekme içeriği ──────────────────────────────────────────
-        if (_direction == KasaDirection.gelir)
+        if (_tab == _KasaTab.gelir)
           _GelirSekmesi(
             key: ValueKey('gelir-$_date'),
             date: _date,
             fiscalYear: _fiscalYear,
           )
-        else
+        else if (_tab == _KasaTab.gider)
           _GiderSekmesi(
             key: ValueKey('gider-$_date'),
             date: _date,
             fiscalYear: _fiscalYear,
-          ),
+          )
+        else
+          _FirmaGiderleriSekmesi(fiscalYear: _fiscalYear),
         const SizedBox(height: AppSizes.space24),
 
         // ── Açılış bakiyesi (mütevazı bölüm) ──────────────────────────────
@@ -963,6 +979,7 @@ class _GiderSekmesiState extends ConsumerState<_GiderSekmesi> {
       });
       ref.invalidate(kasaEntriesProvider);
       ref.invalidate(kasaCumulativeSummaryProvider);
+      ref.invalidate(kasaProductPurchasesProvider);
     } catch (e) {
       if (!mounted) return;
       setState(() => _ekleniyor = false);
@@ -976,6 +993,7 @@ class _GiderSekmesiState extends ConsumerState<_GiderSekmesi> {
     await ref.read(kasaRepositoryProvider).deleteEntry(e.id);
     ref.invalidate(kasaEntriesProvider);
     ref.invalidate(kasaCumulativeSummaryProvider);
+    ref.invalidate(kasaProductPurchasesProvider);
   }
 
   @override
@@ -1025,9 +1043,9 @@ class _GiderSekmesiState extends ConsumerState<_GiderSekmesi> {
                         secili: _kategori,
                         onChanged: (v) => setState(() {
                           _kategori = v;
-                          // Kademeli açılım: kategori kalkarsa firma seçimi de
-                          // temizlenir (Firma alanı gizlenir).
-                          if (v == null || v.isEmpty) _firmaId = null;
+                          // Firma hanesi YALNIZ 'Ürün Alımı' kaleminde açılır
+                          // (KARAR v1.9.4): başka kaleme geçilirse seçim temizlenir.
+                          if (v != 'Ürün Alımı') _firmaId = null;
                         }),
                       ),
                     ),
@@ -1070,9 +1088,9 @@ class _GiderSekmesiState extends ConsumerState<_GiderSekmesi> {
               const SizedBox(height: AppSizes.space12),
 
               // Firma autocomplete (`/` deseni — satış canlı arama örüntüsü).
-              // Kademeli açılım (design-tokens §5, KARAR v1.9.2): yalnızca bir
-              // gider kalemi seçildikten sonra görünür.
-              if (_kategori != null && _kategori!.isNotEmpty) ...[
+              // Kademeli açılım (design-tokens §5, KARAR v1.9.4): firma hanesi
+              // YALNIZ 'Ürün Alımı' gider kalemi seçiliyken görünür.
+              if (_kategori == 'Ürün Alımı') ...[
                 _FirmaAramaAlani(
                   key: const ValueKey('gider-firma'),
                   onSelected: (company) => _firmaId = company?.id,
@@ -1508,6 +1526,202 @@ class _FirmaAramaAlaniState extends ConsumerState<_FirmaAramaAlani> {
                       },
                     ),
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FİRMA GİDERLERİ SEKMESİ — yıl içi 'Ürün Alımı' giderlerinin firma bazlı
+// raporu (KARAR v1.9.4). Üstte sakin özet (ALTIN RAY YOK — ikinci hero olmaz),
+// altında toplam tutara göre azalan firma kartları; kart açılınca ödeme dökümü.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _FirmaGiderleriSekmesi extends ConsumerWidget {
+  final int fiscalYear;
+
+  const _FirmaGiderleriSekmesi({required this.fiscalYear});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alimlarAsync = ref.watch(kasaProductPurchasesProvider(fiscalYear));
+
+    return alimlarAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(AppSizes.space24),
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+      error: (e, s) => Text(
+        'Firma giderleri yüklenemedi: $e',
+        style: const TextStyle(color: AppColors.danger),
+      ),
+      data: (entries) {
+        // Firma bazlı gruplama: companyId (yoksa companyName) anahtarıyla.
+        final gruplar = <String, List<KasaEntry>>{};
+        for (final e in entries) {
+          final anahtar = e.companyId ?? e.companyName ?? '';
+          gruplar.putIfAbsent(anahtar, () => []).add(e);
+        }
+        // Firmalar toplam tutara göre azalan; ödemeler repo'dan zaten tarihe
+        // göre azalan gelir (order entry_date desc).
+        final firmalar = gruplar.values.toList()
+          ..sort((a, b) {
+            final ta = a.fold<num>(0, (t, e) => t + e.amount);
+            final tb = b.fold<num>(0, (t, e) => t + e.amount);
+            return tb.compareTo(ta);
+          });
+        final genelToplam = entries.fold<num>(0, (t, e) => t + e.amount);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Sakin özet — ALTIN RAY YOK (ikinci hero olmaz) ────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSizes.cardPadding),
+              decoration: AppSizes.cardDecoration(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$fiscalYear Yılı Toplam Ürün Alımı',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.8,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.space8),
+                  Text(
+                    formatCurrency(genelToplam),
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: AppColors.primary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSizes.space16),
+
+            // ── Firma listesi / boş durum ─────────────────────────────────
+            if (entries.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: AppSizes.space16),
+                child: Center(
+                  child: Text(
+                    'Bu yıl için ürün alımı kaydı yok.',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  ),
+                ),
+              )
+            else
+              for (final odemeler in firmalar)
+                _FirmaGiderKarti(odemeler: odemeler),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Tek firmanın yıl içi ürün-alımı kartı: başlıkta firma adı + yıl toplamı,
+/// açılınca tarih/tutar döküm satırları (ince divider'lı).
+class _FirmaGiderKarti extends StatelessWidget {
+  final List<KasaEntry> odemeler;
+
+  const _FirmaGiderKarti({required this.odemeler});
+
+  @override
+  Widget build(BuildContext context) {
+    final ad = (odemeler.first.companyName?.isNotEmpty ?? false)
+        ? odemeler.first.companyName!
+        : 'Bilinmeyen Firma';
+    final toplam = odemeler.fold<num>(0, (t, e) => t + e.amount);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSizes.space8),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.divider),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        // ExpansionTile'ın kendi üst/alt çizgileri kapatılır — kart kenarlığı
+        // zaten konteynerde.
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                ad,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: AppSizes.space12),
+            Text(
+              formatCurrency(toplam),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        children: [
+          for (var i = 0; i < odemeler.length; i++) ...[
+            if (i > 0) const Divider(height: 1, color: AppColors.divider),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space16,
+                vertical: AppSizes.space8,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      formatShortDate(odemeler[i].entryDate),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatCurrency(odemeler[i].amount),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSizes.space8),
+        ],
       ),
     );
   }

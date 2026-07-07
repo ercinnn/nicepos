@@ -56,6 +56,15 @@ Future<List<KasaEntry>> kasaEntries(KasaEntriesRef ref, KasaEntriesQuery q) {
       );
 }
 
+/// Seçili mali yılın ürün-alımı giderleri (firma bazlı rapor için ham liste).
+@riverpod
+Future<List<KasaEntry>> kasaProductPurchases(
+  KasaProductPurchasesRef ref,
+  int fiscalYear,
+) {
+  return ref.watch(kasaRepositoryProvider).fetchProductPurchases(fiscalYear);
+}
+
 // ── Açılış bakiyesi ─────────────────────────────────────────────────────────
 
 /// Mali yılın kasa açılış bakiyesi (kayıt yoksa null).
