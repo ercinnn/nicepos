@@ -133,7 +133,9 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
 - **Buton:** ana aksiyon `color.ink` zemin + beyaz metin, `buttonRadius 12`. İkincil =
   altın kenarlıklı outline.
 - **Ödeme türü butonu:** varsayılan (seçili değil) zemin **nötr beyaz** (`color.surface`),
-  ince hairline kenarlık. Tür kimliği **sol renk şeridi + ikon/etiket** ile taşınır
+  ince kenarlık = **`goldBorder`** (v1.9.1 netleştirme — "ince kart kenarlığı" izniyle tutarlı;
+  onaylı satış ekranı `_PaymentTypeButton` uygulaması referanstır. Yasak olan **zemin** altınıdır,
+  kenarlık değil; disabled durumda kenarlık nötr `divider`). Tür kimliği **sol renk şeridi + ikon/etiket** ile taşınır
   (nakit `#1B7A45` · POS `#1B6A9A` · açık hesap `#C9A84C` · parçalı `#6B4FA0`).
   **Seçili durum:** o türün renginde dolgu/kenarlık. Açık hesap seçili değilken
   etiket/ikon rengi **`color.ink`** (altın metin açık zemine yazılmaz, §1). `goldBg`
@@ -228,3 +230,12 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
 
 - **Hafta sonu gün işaretçileri (günlük satış grafiği, KARAR v1.7):** Günlük satış çizgi grafiğinde (`_SatisLineChart`) o güne denk gelen **dikey düşük-alfa bant** çizilir (fl_chart `rangeAnnotations.verticalRangeAnnotations`): **Cumartesi = altın** (`gold`, ~0.09 alfa), **Pazar = kızıl** (`danger`, ~0.09 alfa). Bantlar **kategorik/bilgi amaçlıdır** (KARAR v1.4 emsali) — §4 imza rayı DEĞİL, "kötü gün" semantiği DEĞİL; yalnız "bu gün hafta sonu" bilgisidir. Kural: solid dolgu YOK (faint wash, alfa ≤ 0.10), çizgi lacivert kalır, bu kartta başka altın kullanılmaz (grafik zaten HERO değildir). Bant yalnız bu grafikte; yıllık karşılaştırma grafiğine uygulanmaz.
 - **Artımlı grafik yükleme (dashboard, KARAR v1.8):** Yıllık karşılaştırma grafiği gibi ağır sorgulu grafiklerde, veri beklenirken tam-alan loader ile alanı kapatmak yerine **grafik iskeleti** (ızgara + eksen + ay etiketleri, çizgisiz) ANINDA çizilir; sağ üst köşede küçük, göze batmayan yükleme ipucu (`textMuted` spinner + "Yükleniyor…") durur. Veri gelince çizgiler fl_chart varsayılan animasyonuyla içeri dolar. Yeni renk yok (nötr ızgara/eksen §1, ipucu textMuted). Algılanan gecikmeyi düşürür; imza/palet etkilenmez.
+- **Kasa ekranı (gelir-gider defteri, KARAR v1.9):** Yerleşim = **hero-önderli tek kolon** (raporlar/müşteri diliyle tutarlı; iki-sütunlu "defter/spreadsheet" görünümü YASAK — AI-tipik gazete sütunu). Üstten aşağıya:
+  - **Hero:** birikimli yıl kasası + altın ray (§4). Altında seçili günün Nakit+POS'u + açılış = sakin destek.
+  - **Tarih seçici** (bugün default) + **yıl** göstergesi (yıl bazlı defter; 2027 sıfırdan).
+  - **Gelir/Gider sekmeleri** (`SegmentedButton` veya sekme; ödeme türü butonu dili değil — bunlar kanal değil sekme).
+  - **Gelir sekmesi:** gün-sonu değerleri **4 tabular alan** — Nakit · İş Bankası POS · Akbank POS · Garanti POS (POS tabanı = 3 bankanın toplamı). Kanal kimliği **ince sol renk şeridi/etiket** ile taşınır (nakit `success #1B7A45`, POS `pos #1B6A9A`, §1/§5 ödeme dili) — **dolu renk zemin YOK** (dört alanı renk duvarına çevirmez). Her kanalda **mutabakat rozeti/satırı:** sistem tabanı vs girilen → fark (`adjustment_amount`). Rozet **semantik** renk: +düzeltme (ek gelir) `success`/nötr, −düzeltme (iade) `danger`; `radiusPill`, `type.utility`. **Altın DEĞİL** — imza rayı yalnız hero'ya ait; rozet "Fiyat güncellendi" pill'iyle (KARAR v1.6) aynı satır-içi geri bildirim dili.
+  - **Gider sekmesi:** kategori seçimi (`kasa_expense_categories`; Kira/Muhasebe/Muhtelif + "yeni kalem" ekleme) + tutar + not; gün içi **çok kalem** liste. Firma alanı **`/` autocomplete** → satış ekranı `_LiveProductSearchField` **OverlayPortal + CompositedTransformFollower** örüntüsünün birebir yeniden kullanımı (`companies.name`). Gider tutarları `danger` semantiği taşımaz (nötr tabular); yalnız net/negatif özet `danger`.
+  - **Açılış bakiyesi:** mütevazı alan/bölüm (hero değil); yıl bazlı `opening_income`/`opening_expense`.
+  - **Renkler:** Nakit `success` · POS `pos` · negatif düzeltme/iade `danger` — **yeni renk/altın YOK**. Altın yalnız hero ray + kart kenarlığı + tablo başlığı (`goldBg`) + aktif sekme (§1 altın ekonomisi). Tüm rakamlar Inter tabular + `formatters`.
+  - **Nav:** `/kasa` rotası + sidebar/drawer/bottom-nav öğesi (mevcut nav diline uyar; masaüstü sidebar çift-bölge KARAR v1.5 kuralı geçerli).
