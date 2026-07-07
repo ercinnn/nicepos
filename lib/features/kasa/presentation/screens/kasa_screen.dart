@@ -1023,7 +1023,12 @@ class _GiderSekmesiState extends ConsumerState<_GiderSekmesi> {
                       data: (kategoriler) => _KategoriDropdown(
                         kategoriler: kategoriler,
                         secili: _kategori,
-                        onChanged: (v) => setState(() => _kategori = v),
+                        onChanged: (v) => setState(() {
+                          _kategori = v;
+                          // Kademeli açılım: kategori kalkarsa firma seçimi de
+                          // temizlenir (Firma alanı gizlenir).
+                          if (v == null || v.isEmpty) _firmaId = null;
+                        }),
                       ),
                     ),
                   ),
@@ -1065,10 +1070,15 @@ class _GiderSekmesiState extends ConsumerState<_GiderSekmesi> {
               const SizedBox(height: AppSizes.space12),
 
               // Firma autocomplete (`/` deseni — satış canlı arama örüntüsü).
-              _FirmaAramaAlani(
-                onSelected: (company) => _firmaId = company?.id,
-              ),
-              const SizedBox(height: AppSizes.space12),
+              // Kademeli açılım (design-tokens §5, KARAR v1.9.2): yalnızca bir
+              // gider kalemi seçildikten sonra görünür.
+              if (_kategori != null && _kategori!.isNotEmpty) ...[
+                _FirmaAramaAlani(
+                  key: const ValueKey('gider-firma'),
+                  onSelected: (company) => _firmaId = company?.id,
+                ),
+                const SizedBox(height: AppSizes.space12),
+              ],
 
               // Not.
               TextField(
@@ -1294,7 +1304,7 @@ class _GiderSatiri extends StatelessWidget {
 class _FirmaAramaAlani extends ConsumerStatefulWidget {
   final void Function(Company?) onSelected;
 
-  const _FirmaAramaAlani({required this.onSelected});
+  const _FirmaAramaAlani({super.key, required this.onSelected});
 
   @override
   ConsumerState<_FirmaAramaAlani> createState() => _FirmaAramaAlaniState();
