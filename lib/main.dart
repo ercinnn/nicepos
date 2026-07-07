@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -32,6 +33,13 @@ class NicePosApp extends ConsumerWidget {
       title: 'NicePOS',
       debugShowCheckedModeBanner: false,
       theme: ref.watch(appThemeProvider),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('tr', 'TR')],
+      locale: const Locale('tr', 'TR'),
       routerConfig: router,
     );
   }
