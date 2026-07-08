@@ -111,27 +111,46 @@ class _KasaScreenState extends ConsumerState<KasaScreen> {
         const SizedBox(height: AppSizes.space16),
 
         // ── Gelir / Gider / Firma Giderleri sekmeleri ─────────────────────
-        // showSelectedIcon kapalı: 3 segment dar ekranda (mobil ~360px)
-        // seçili-ikon eklenince taşabilir; yatay scroll da güvence.
+        // Responsive (QA v1.9.5): mobilde kısa etiket "Firmalar" + ikonsuz
+        // segmentler → 360px'e kesilmeden sığar; masaüstünde ikonlu tam
+        // etiket "Firma Giderleri" ama tek satır (softWrap kapalı — segment
+        // içinde 2 satıra kırılmasın). Yatay scroll sarmalı ek güvence.
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: SegmentedButton<_KasaTab>(
             showSelectedIcon: false,
-            segments: const [
+            segments: [
               ButtonSegment(
                 value: _KasaTab.gelir,
-                label: Text('Gelir'),
-                icon: Icon(Icons.south_west, size: 18),
+                label: const Text(
+                  'Gelir',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                ),
+                icon: mobil ? null : const Icon(Icons.south_west, size: 18),
               ),
               ButtonSegment(
                 value: _KasaTab.gider,
-                label: Text('Gider'),
-                icon: Icon(Icons.north_east, size: 18),
+                label: const Text(
+                  'Gider',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                ),
+                icon: mobil ? null : const Icon(Icons.north_east, size: 18),
               ),
               ButtonSegment(
                 value: _KasaTab.firmaGiderleri,
-                label: Text('Firma Giderleri'),
-                icon: Icon(Icons.storefront_outlined, size: 18),
+                label: Text(
+                  mobil ? 'Firmalar' : 'Firma Giderleri',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                ),
+                icon: mobil
+                    ? null
+                    : const Icon(Icons.storefront_outlined, size: 18),
               ),
             ],
             selected: {_tab},
