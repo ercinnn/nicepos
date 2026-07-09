@@ -115,47 +115,62 @@ class _KasaScreenState extends ConsumerState<KasaScreen> {
         // segmentler → 360px'e kesilmeden sığar; masaüstünde ikonlu tam
         // etiket "Firma Giderleri" ama tek satır (softWrap kapalı — segment
         // içinde 2 satıra kırılmasın). Yatay scroll sarmalı ek güvence.
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SegmentedButton<_KasaTab>(
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(
-                value: _KasaTab.gelir,
-                label: const Text(
-                  'Gelir',
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.visible,
+        // Sekme butonları + aktif sekmeye ait toplam (sağa hizalı).
+        Row(
+          children: [
+            Flexible(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SegmentedButton<_KasaTab>(
+                  showSelectedIcon: false,
+                  segments: [
+                    ButtonSegment(
+                      value: _KasaTab.gelir,
+                      label: const Text(
+                        'Gelir',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
+                      ),
+                      icon:
+                          mobil ? null : const Icon(Icons.south_west, size: 18),
+                    ),
+                    ButtonSegment(
+                      value: _KasaTab.gider,
+                      label: const Text(
+                        'Gider',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
+                      ),
+                      icon:
+                          mobil ? null : const Icon(Icons.north_east, size: 18),
+                    ),
+                    ButtonSegment(
+                      value: _KasaTab.firmaGiderleri,
+                      label: Text(
+                        mobil ? 'Firmalar' : 'Firma Giderleri',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
+                      ),
+                      icon: mobil
+                          ? null
+                          : const Icon(Icons.storefront_outlined, size: 18),
+                    ),
+                  ],
+                  selected: {_tab},
+                  onSelectionChanged: (s) => setState(() => _tab = s.first),
                 ),
-                icon: mobil ? null : const Icon(Icons.south_west, size: 18),
               ),
-              ButtonSegment(
-                value: _KasaTab.gider,
-                label: const Text(
-                  'Gider',
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.visible,
-                ),
-                icon: mobil ? null : const Icon(Icons.north_east, size: 18),
-              ),
-              ButtonSegment(
-                value: _KasaTab.firmaGiderleri,
-                label: Text(
-                  mobil ? 'Firmalar' : 'Firma Giderleri',
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.visible,
-                ),
-                icon: mobil
-                    ? null
-                    : const Icon(Icons.storefront_outlined, size: 18),
-              ),
-            ],
-            selected: {_tab},
-            onSelectionChanged: (s) => setState(() => _tab = s.first),
-          ),
+            ),
+            const SizedBox(width: AppSizes.space12),
+            _SekmeToplamRozeti(
+              tab: _tab,
+              date: _date,
+              fiscalYear: _fiscalYear,
+            ),
+          ],
         ),
         const SizedBox(height: AppSizes.space16),
 
@@ -527,6 +542,89 @@ class _TarihSeciciSatiri extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Sekme butonlarının sağındaki toplam rozeti — aktif sekmeye bağlı (sağa
+/// hizalı): Gelir → günün toplam geliri (Nakit + POS) · Gider → günün toplam
+/// gideri · Firma Giderleri → o mali yıl girilmiş firma giderleri (ürün alımı)
+/// toplamı. Sakin destek: küçük etiket + tabular tutar (ray/vurgu yok).
+class _SekmeToplamRozeti extends ConsumerWidget {
+  final _KasaTab tab;
+  final DateTime date;
+  final int fiscalYear;
+
+  const _SekmeToplamRozeti({
+    required this.tab,
+    required this.date,
+    required this.fiscalYear,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    String etiket;
+    num? deger;
+    switch (tab) {
+      case _KasaTab.gelir:
+        {
+          final gunAsync = ref.watch(
+            kasaDailyChannelIncomeProvider(
+              KasaDailyQuery(fiscalYear: fiscalYear, date: date),
+            ),
+          );
+          etiket = 'Günün Geliri';
+          final v = gunAsync.valueOrNull;
+          deger = v == null ? null : v.nakit + v.pos;
+        }
+      case _KasaTab.gider:
+        {
+          final giderlerAsync = ref.watch(
+            kasaEntriesProvider(
+              KasaEntriesQuery(
+                fiscalYear: fiscalYear,
+                date: date,
+                direction: 'gider',
+              ),
+            ),
+          );
+          etiket = 'Günün Gideri';
+          deger =
+              giderlerAsync.valueOrNull?.fold<num>(0, (t, e) => t + e.amount);
+        }
+      case _KasaTab.firmaGiderleri:
+        {
+          final alimlarAsync =
+              ref.watch(kasaProductPurchasesProvider(fiscalYear));
+          etiket = 'Yıl Toplamı';
+          deger =
+              alimlarAsync.valueOrNull?.fold<num>(0, (t, e) => t + e.amount);
+        }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          etiket,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: AppSizes.space4),
+        Text(
+          deger == null ? '—' : formatCurrency(deger),
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
         ),
       ],
