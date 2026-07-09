@@ -241,17 +241,37 @@ class _KasaHero extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '$fiscalYear YILI KASA BİRİKİMİ',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-              color: AppColors.textMuted,
-            ),
+          // İki başlık: SOLA hizalı Kasa Birikimi · SAĞA hizalı İşletme Giderleri.
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$fiscalYear YILI KASA BİRİKİMİ',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSizes.space12),
+              Expanded(
+                child: Text(
+                  '$fiscalYear YILI İŞLETME GİDERLERİ',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSizes.space8),
-          // Hero tutar + altın ray.
+          // SOL: kasa birikimi hero + altın ray · SAĞ: işletme giderleri (kırmızı, − öneki, ray YOK).
           ozetAsync.when(
             loading: () => const SizedBox(
               height: 44,
@@ -272,36 +292,73 @@ class _KasaHero extends ConsumerWidget {
                 color: AppColors.textMuted,
               ),
             ),
-            data: (ozet) => IntrinsicWidth(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    formatCurrency(ozet.income),
-                    style: TextStyle(
-                      fontSize: mobil ? 30 : 38,
-                      fontWeight: FontWeight.w800,
-                      height: 1.05,
-                      letterSpacing: -0.5,
-                      color: AppColors.primary,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  const SizedBox(height: AppSizes.space6),
-                  // Altın aksan rayı — yalnız hero tutarın altında (~%40).
-                  FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: 0.4,
-                    child: Container(
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: AppColors.gold,
-                        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+            data: (ozet) => Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // SOL: kasa birikimi (hero) + altın ray.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          formatCurrency(ozet.income),
+                          style: TextStyle(
+                            fontSize: mobil ? 30 : 38,
+                            fontWeight: FontWeight.w800,
+                            height: 1.05,
+                            letterSpacing: -0.5,
+                            color: AppColors.primary,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: AppSizes.space6),
+                      // Altın aksan rayı — yalnız kasa birikimi (hero) altında (~%40).
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: 0.4,
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: AppColors.gold,
+                            borderRadius:
+                                BorderRadius.circular(AppSizes.radiusPill),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: AppSizes.space12),
+                // SAĞ: işletme giderleri — kırmızı + eksi öneki, ray YOK.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '−${formatCurrency(ozet.expense)}',
+                          style: TextStyle(
+                            fontSize: mobil ? 30 : 38,
+                            fontWeight: FontWeight.w800,
+                            height: 1.05,
+                            letterSpacing: -0.5,
+                            color: AppColors.danger,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: AppSizes.space16),
