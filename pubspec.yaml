@@ -52,6 +52,10 @@ dependencies:
   google_fonts: ^8.1.0
   archive: ^3.6.1
   xml: ^6.6.1
+  # Raf etiketi (KARAR v1.10): Code128 barkod çizgileri. barcode_widget → önizlemede
+  # Flutter widget; barcode → baskı HTML'inde SVG (toSvg) gömme.
+  barcode: ^2.2.9
+  barcode_widget: ^2.0.4
 
 dev_dependencies:
   flutter_test:
