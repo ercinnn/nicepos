@@ -100,6 +100,8 @@ lib/
     customers/     # Müşteri listesi, detay (geçmiş işlem yönetimi), ödeme
     sales/         # Satış ekranı — 5 sekme, sepet, ödeme paneli, hızlı ürünler
     reports/       # Günlük / Tarihsel / Ürün raporları (3 sekme)
+    labels/        # Etiket — raf etiketi A4 yazdırma (24-hane barkod + Code128 + logo)
+    kasa/          # Kasa — gelir-gider defteri + mutabakat + firma giderleri
 ```
 
 ### Responsive Tasarım
@@ -231,6 +233,34 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
 
 Günlük ve Tarihsel rapor tablolarında iskonto sütunu **`% 82.25`** formatında gösterilir
 (`'% ${s.discountPercent.toStringAsFixed(2)}'`, noktadan sonra 2 hane).
+
+### Etiket — Raf Etiketi A4 Yazdırma
+
+`/etiket` rotası (`lib/features/labels/`). Ürün etiketlerini A4 kağıda basmak için **araç/çalışma
+ekranı** (tasarım: design-tokens **KARAR v1.10** — **ekran hero'su YOK**, stok listesi token dili).
+- **State:** `labelSheetProvider` (`@Riverpod(keepAlive:true)` `LabelSheet` notifier) — 24 hanelik
+  `List<LabelSlot?>` + logo data URL; `setSlot/clearSlot/clearAll/setLogo`. Sabitler
+  `kLabelColumns=3, kLabelRows=8, kLabelCount=24` (`labels_screen.dart`).
+- **Ekran (`labels_screen.dart`):** masaüstü iki bölge — **sol** 24-hane barkod girişi, **sağ** canlı
+  A4 önizleme; mobil tek kolon (giriş üstte, önizleme altta `LayoutBuilder+SizedBox` ile ölçekli).
+- **Barkod akışı:** hane input'una barkod okut → **Enter** (`onSubmitted`) → satış ekranı
+  `_onBarcodeSubmitted` deseninin uyarlaması: önce paylaşılan `barcodeCacheProvider` (sales feature),
+  sonra `productRepository.fetchByBarcode`, sonra `fetchAll` (tam eşleşme tercihli) → `price1` çözülür,
+  hane dolar, imleç **otomatik bir alt haneye** geçer. Aktif hane = 3px altın sol şerit + ink kenarlık;
+  çözülemeyen = `danger` uyarı; ✕ haneyi temizler.
+- **A4 önizleme:** sabit 794×1123px (96dpi) tuval → `FittedBox` ile panele ölçeklenir; 3×8 ızgara,
+  ~5mm kenar, nötr hairline kesim kılavuzu (altın YOK).
+- **Etiket-içi (referans `raf_etiketi.jpg`):** üst bant sol **logo yuvası** (14mm×10mm; yoksa
+  `Icons.storefront` / SVG `#1B2A4A` mağaza ikonu fallback) + baskın **FİYAT** (iri bold, `price1`+" TL",
+  **altın ray YOK** — etiketin kendi hero'su, app hero'su değil) → ürün adı → **Code128** çizgileri
+  (`barcode`/`barcode_widget`) → en alt: barkod no (sol) + oluşturma tarihi (sağ-alt). Baskı siyah/beyaz.
+- **Logo yükleme:** `FilePicker.pickFiles(withData:true)` → base64 data URL, önizleme + baskıda kullanılır
+  (`keepAlive` ile oturum içi kalıcı).
+- **Yazdır / PDF Üret (yalnız `kIsWeb`):** `etiket_print.dart` conditional export
+  (`etiket_print_web.dart` / `_stub.dart`) — `sale_print.dart` deseninin birebir kopyası: HTML blob →
+  yeni pencere → `window.print()`, Code128 SVG gömülü, `@page{size:A4 portrait;margin:5mm}`. PDF Üret
+  aynı pencereyi açar (tarayıcı "PDF olarak kaydet"). Native'de no-op.
+- **Paketler:** `barcode`, `barcode_widget`, `file_picker`.
 
 ### Veritabanı (Supabase)
 
