@@ -108,6 +108,12 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     zaten min/maks/ort birim fiyat + toplam istatistik chip'leridir. Tek para metriği hero'ya yükseltilmez.
   - Stok listesi → **hero YOK** (KARAR v1.1). Bu bir tarama/çalışma ekranı; tek cesur öğe
     **kritik stok sinyali**dir (bkz. §5). Toplam stok değeri özeti "Ürün Özet" dialog'unda kalır.
+  - Etiket (raf etiketi A4 yazdırma) → **ekran hero'su YOK** (KARAR v1.10). Uygulama ekranı bir
+    araç/çalışma ekranıdır (stok listesi emsali). ANCAK basılan **her etiketin kendi hero'su = FİYAT**
+    (kullanıcı kararı): fiyat, etiketin en baskın/en iri öğesidir (referans `raf_etiketi.jpg` — iri
+    bold "250 TL"). Bu bir **baskı-çıktısı hero'sudur, app hero'su DEĞİL** → **altın ray YOK** (24
+    etikette ray = "altın duvar" + baskı çıktısı mağaza markasını taşır, app krom'unu değil). Fiyat =
+    iri bold; barkod okunaklılığı için etiket dili siyah/beyaz baskıdır. Bkz. §5 "Etiket ekranı".
   - Müşteri kayıtları (DETAY) → müşteri **BAKİYE** (= Kalan Borç). Borç ise `danger`,
     alacak/sıfır ise `positive`; **ray rengi tutara göre** (altın değil — imza istisnası),
     hero büyüklük korunur. Diğer 3 özet (Toplam Satış · Toplam Borç · Ödeme) sakin destek.
@@ -245,3 +251,36 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   - **Açılış bakiyesi:** mütevazı alan/bölüm (hero değil); yıl bazlı `opening_income`/`opening_expense`.
   - **Renkler:** Nakit `success` · POS `pos` · negatif düzeltme/iade `danger` — **yeni renk/altın YOK**. Altın yalnız hero ray + kart kenarlığı + tablo başlığı (`goldBg`) + aktif sekme (§1 altın ekonomisi). Tüm rakamlar Inter tabular + `formatters`.
   - **Nav:** `/kasa` rotası + sidebar/drawer/bottom-nav öğesi (mevcut nav diline uyar; masaüstü sidebar çift-bölge KARAR v1.5 kuralı geçerli).
+- **Etiket ekranı — raf etiketi A4 yazdırma (KARAR v1.10):** Ürün etiketlerini A4 kağıda basmak için
+  bir **araç/çalışma ekranı** (stok listesi dili; **ekran hero'su YOK**, §4). İki kavram ayrıdır:
+  **(A) uygulama krom'u** design-tokens paletine uyar; **(B) basılan etiket çıktısı** referans
+  `raf_etiketi.jpg` estetiğine (siyah/beyaz + mağaza logosu) uyar — ikisi karışmaz.
+  - **Ekran yerleşimi (A):** iki işlevsel bölge (satış ekranı sepet+ödeme deseni gibi; gazete sütunu
+    DEĞİL): **sol** = 24 haneli barkod giriş sütunu, **sağ** = canlı A4 önizleme. Mobil: tek kolon
+    (giriş üstte, önizleme "Önizle"/altta).
+  - **24-hane barkod akışı:** Haneler `1..24` numaralı, tek satır. Barkod okutulup **Enter** →
+    o hane dolar (`products` lookup ile ürün adı + `price1` çözülür), imleç **otomatik bir alt haneye**
+    geçer (satış ekranı `_onBarcodeSubmitted` deseninin birebir tekrarı). **Aktif hane** = aktif durum
+    altını (izinli: ince sol altın şerit / ink kenarlık, §5 altın ekonomisi). Çözülemeyen/boş barkod →
+    `danger` ince uyarı; satır ✕ ile hane temizlenir. Tüm barkod/fiyat Inter tabular.
+  - **A4 baskı geometrisi (B):** **3 sütun × 8 satır = 24 etiket** ızgarası. Kenar boşlukları
+    **olabildiğince küçük** (`@page { size:A4 portrait; margin:~5mm }`); etiketler arası ince nötr
+    hairline kesim kılavuzu (altın YOK — sayfa "altın duvar" olmaz). Yaklaşık hücre: ~66mm × ~36mm.
+  - **Etiket-içi yerleşim (B, referans jpg sırası):**
+    1. **Üst bant:** SOL'da **logo yuvası** (ayrılmış alan) · sağında/baskın **FİYAT hero** (iri bold,
+       etiketin en büyük öğesi — `price1` + " TL", tabular). Logo yoksa **standart ikon fallback**
+       (`Icons.store`/`Icons.storefront`, `color.ink`, aynı yuva boyutu).
+    2. **Ürün adı** (fiyatın altında, tek/iki satır, taşarsa kısalt — okunur ama fiyatı ezmez).
+    3. **Barkod çizgileri** (barkod no'dan üretilir — Code128/EAN; net siyah, beyaz sessiz alan).
+    4. **En alt:** SOL/orta **barkod no** (tabular rakam) · SAĞ-ALT köşe **oluşturma tarihi**
+       (`formatters` kısa tarih, minik `type.utility`, köşeye sığar).
+  - **Logo pixel kararı (benim):** logo yuvası ~ **14mm × 10mm** (@96dpi ≈ 53×38px); dar 3-sütun
+    hücreye sığar, fiyatı/adı ezmez. Standart ikon fallback aynı yuvada, `color.ink`.
+  - **Aksiyonlar:** **Yazdır** (ana aksiyon, `color.ink` zemin — `sale_print_web.dart` deseni: HTML
+    blob → yeni pencere → `window.print()`, yalnız web `kIsWeb` guard) + **PDF Üret** (ikincil, altın
+    kenarlıklı outline). Mobil/native'de yazdırma no-op (satış yazdırma emsali).
+  - **Renk/tipografi:** app krom'u stok listesi token dili (Manrope başlık, Inter tabular, `cardDecoration`,
+    `goldBg` başlık); **yeni renk/altın YOK**. Baskı çıktısı siyah/beyaz + mağaza logosu (app altını
+    baskıya taşınmaz). Etiket hero'su = fiyat (iri bold), **altın ray YOK** (§4).
+  - **Nav:** `/etiket` rotası + sidebar/drawer/bottom-nav "Etiket" öğesi (mevcut nav dili; masaüstü
+    çift-bölge KARAR v1.5 geçerli).
