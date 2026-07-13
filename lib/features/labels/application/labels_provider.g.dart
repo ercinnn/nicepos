@@ -6,6 +6,48 @@ part of 'labels_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
+String _$labelsStorageRepositoryHash() =>
+    r'729452d5eb2df7031fa17cbf470aa2483d176813';
+
+/// `etiket_pdfleri` bucket'ı için Storage repository (tekil örüntü).
+///
+/// Copied from [labelsStorageRepository].
+@ProviderFor(labelsStorageRepository)
+final labelsStorageRepositoryProvider =
+    Provider<LabelsStorageRepository>.internal(
+      labelsStorageRepository,
+      name: r'labelsStorageRepositoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelsStorageRepositoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LabelsStorageRepositoryRef = ProviderRef<LabelsStorageRepository>;
+String _$savedLabelFilesHash() => r'bfdbd27ffabebb05c0f85c9e73c8cb22e356f4c8';
+
+/// Kayıtlı etiket PDF'lerinin listesi (yeni → eski). Kaydetme/silme sonrası
+/// `ref.invalidate(savedLabelFilesProvider)` ile yenilenir (autoDispose).
+///
+/// Copied from [savedLabelFiles].
+@ProviderFor(savedLabelFiles)
+final savedLabelFilesProvider =
+    AutoDisposeFutureProvider<List<SavedLabelFile>>.internal(
+      savedLabelFiles,
+      name: r'savedLabelFilesProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$savedLabelFilesHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SavedLabelFilesRef = AutoDisposeFutureProviderRef<List<SavedLabelFile>>;
 String _$labelSheetHash() => r'0841c322011ac99e9ca0ac63999bc3c175acb3d7';
 
 /// Etiket sayfası durumunu tutar. `keepAlive` — kullanıcı başka sekmeye geçip

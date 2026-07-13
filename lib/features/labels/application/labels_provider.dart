@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../data/labels_storage_repository.dart';
 import '../data/models/label_slot.dart';
 
 part 'labels_provider.g.dart';
@@ -73,4 +74,20 @@ class LabelSheet extends _$LabelSheet {
       state = state.copyWith(logoDataUrl: dataUrl);
     }
   }
+}
+
+// ─── Kayıtlı PDF'ler — Supabase Storage (KARAR v1.11) ────────────────────────
+
+/// `etiket_pdfleri` bucket'ı için Storage repository (tekil örüntü).
+@Riverpod(keepAlive: true)
+LabelsStorageRepository labelsStorageRepository(
+  LabelsStorageRepositoryRef ref,
+) =>
+    LabelsStorageRepository();
+
+/// Kayıtlı etiket PDF'lerinin listesi (yeni → eski). Kaydetme/silme sonrası
+/// `ref.invalidate(savedLabelFilesProvider)` ile yenilenir (autoDispose).
+@riverpod
+Future<List<SavedLabelFile>> savedLabelFiles(SavedLabelFilesRef ref) {
+  return ref.watch(labelsStorageRepositoryProvider).list();
 }

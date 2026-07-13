@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
@@ -16,8 +18,14 @@ import '../../../products/application/products_provider.dart';
 import '../../../products/data/models/product.dart';
 import '../../../sales/application/barcode_cache.dart';
 import '../../application/labels_provider.dart';
+import '../../data/label_pdf.dart';
+import '../../data/labels_storage_repository.dart';
 import '../../data/models/label_slot.dart';
 import '../widgets/etiket_print.dart';
+import '../widgets/label_open.dart';
+
+// Etiket ekranı üst sekmeleri (KARAR v1.11): mevcut 24-hane akışı + kayıtlı PDF'ler.
+enum _LabelTab { yeni, kayitli }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Etiket (raf etiketi A4 yazdırma) ekranı — KARAR v1.10
@@ -47,6 +55,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   late final List<FocusNode> _focusNodes;
   final Set<int> _errors = {}; // çözülemeyen hane indeksleri (danger uyarı)
   int _activeIndex = 0; // aktif (odaklı) hane — aktif durum altını
+  _LabelTab _tab = _LabelTab.yeni; // aktif sekme (Yeni Etiket / Kayıtlı Dosyalar)
 
   @override
   void initState() {
@@ -183,7 +192,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     printLabelsA4(slots: state.slots, logoDataUrl: state.logoDataUrl);
   }
 
-  void _pdf() {
+  // PDF Kaydet (her platformda) — dosya adı sor → gerçek PDF üret → Supabase
+  // Storage'a yükle (KARAR v1.11). Yerel cihaz kaydı YOK; yalnız Storage.
+  Future<void> _savePdf() async {
     final state = ref.read(labelSheetProvider);
     if (state.filledCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -191,26 +202,140 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-            'Açılan yazdırma penceresinde hedef olarak "PDF olarak kaydet" seçin.'),
-      ),
+    final name = await _askFileName();
+    if (name == null || !mounted) return;
+
+    // Üretim + yükleme sırasında kısa engelleyici gösterge.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
     );
-    printLabelsA4(slots: state.slots, logoDataUrl: state.logoDataUrl);
+    try {
+      final bytes = await buildLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: state.logoDataUrl,
+      );
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // göstergeyi kapat
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  // Dosya adı soran dialog (varsayılan raf-etiket-<tarih>). Vazgeç → null.
+  Future<String?> _askFileName() {
+    final controller =
+        TextEditingController(text: 'raf-etiket-${_fileStamp()}');
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('PDF Kaydet'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Dosya adı verin (.pdf otomatik eklenir).',
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: AppSizes.space12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'raf-etiket',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: (v) =>
+                    Navigator.of(dialogContext).pop(v.trim()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Vazgeç'),
+            ),
+            ElevatedButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.textOnDark,
+              ),
+              child: const Text('Kaydet'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Varsayılan dosya adı için kompakt tarih damgası: YYYYAAGG-SSDD.
+  String _fileStamp() {
+    final n = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${n.year}${two(n.month)}${two(n.day)}-${two(n.hour)}${two(n.minute)}';
   }
 
   @override
   Widget build(BuildContext context) {
-    if (context.isMobile) return _buildMobile();
-    return _buildDesktop();
+    final mobile = context.isMobile;
+    final selector = _TabSelector(
+      tab: _tab,
+      mobile: mobile,
+      onChanged: (t) => setState(() => _tab = t),
+    );
+
+    // ── Sekme 2: Kayıtlı Dosyalar ──────────────────────────────────────────
+    if (_tab == _LabelTab.kayitli) {
+      if (mobile) {
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              selector,
+              const SizedBox(height: AppSizes.space16),
+              const _SavedFilesTab(compact: true),
+              const SizedBox(height: AppSizes.space20),
+            ],
+          ),
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          const Expanded(child: _SavedFilesTab(compact: false)),
+        ],
+      );
+    }
+
+    // ── Sekme 1: Yeni Etiket (mevcut akış) ─────────────────────────────────
+    return mobile ? _buildMobile(selector) : _buildDesktop(selector);
   }
 
   // ─── Masaüstü: iki bölge (sol giriş sütunu · sağ A4 önizleme) ──────────────
-  Widget _buildDesktop() {
+  Widget _buildDesktop(Widget selector) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
         _Header(
           filledCount: ref.watch(labelSheetProvider).filledCount,
           hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
@@ -219,7 +344,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               ref.read(labelSheetProvider.notifier).setLogo(null),
           onClearAll: _clearAll,
           onPrint: _print,
-          onPdf: _pdf,
+          onSavePdf: _savePdf,
         ),
         const SizedBox(height: AppSizes.space16),
         Expanded(
@@ -252,12 +377,14 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   }
 
   // ─── Mobil: tek kolon (giriş üstte, önizleme altta) ────────────────────────
-  Widget _buildMobile() {
+  Widget _buildMobile(Widget selector) {
     final state = ref.watch(labelSheetProvider);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
           _Header(
             filledCount: state.filledCount,
             hasLogo: state.logoDataUrl != null,
@@ -266,7 +393,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                 ref.read(labelSheetProvider.notifier).setLogo(null),
             onClearAll: _clearAll,
             onPrint: _print,
-            onPdf: _pdf,
+            onSavePdf: _savePdf,
             compact: true,
           ),
           const SizedBox(height: AppSizes.space16),
@@ -310,7 +437,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onRemoveLogo;
   final VoidCallback onClearAll;
   final VoidCallback onPrint;
-  final VoidCallback onPdf;
+  final VoidCallback onSavePdf;
   final bool compact;
 
   const _Header({
@@ -320,7 +447,7 @@ class _Header extends StatelessWidget {
     required this.onRemoveLogo,
     required this.onClearAll,
     required this.onPrint,
-    required this.onPdf,
+    required this.onSavePdf,
     this.compact = false,
   });
 
@@ -353,20 +480,21 @@ class _Header extends StatelessWidget {
         label: const Text('Tümünü Temizle'),
         style: TextButton.styleFrom(foregroundColor: AppColors.danger),
       ),
-      // Yazdırma yalnız web'de (mobil/native no-op).
-      if (kIsWeb) ...[
-        OutlinedButton.icon(
-          onPressed: onPdf,
-          icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-          label: const Text('PDF Üret'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.primary,
-            side: const BorderSide(color: AppColors.goldBorder),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
-            ),
+      // PDF Kaydet — her platformda (Supabase Storage'a kaydeder; yerel kayıt yok).
+      OutlinedButton.icon(
+        onPressed: onSavePdf,
+        icon: const Icon(Icons.save_alt_outlined, size: 18),
+        label: const Text('PDF Kaydet'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          side: const BorderSide(color: AppColors.goldBorder),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
           ),
         ),
+      ),
+      // Yazdır yalnız web'de (window.print; native/mobilde no-op → gizli).
+      if (kIsWeb)
         ElevatedButton.icon(
           onPressed: onPrint,
           icon: const Icon(Icons.print_outlined, size: 18),
@@ -379,7 +507,6 @@ class _Header extends StatelessWidget {
             ),
           ),
         ),
-      ],
     ];
 
     return Column(
@@ -838,4 +965,454 @@ class _LabelCell extends StatelessWidget {
             ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Üst sekme seçici (KARAR v1.11): Yeni Etiket · Kayıtlı Dosyalar. Kasa sekme
+// dili (SegmentedButton, aktif sekme token dili). Responsive: mobilde kısa
+// etiket "Dosyalar" + ikonsuz → dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _TabSelector extends StatelessWidget {
+  final _LabelTab tab;
+  final bool mobile;
+  final ValueChanged<_LabelTab> onChanged;
+
+  const _TabSelector({
+    required this.tab,
+    required this.mobile,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SegmentedButton<_LabelTab>(
+        showSelectedIcon: false,
+        segments: [
+          ButtonSegment(
+            value: _LabelTab.yeni,
+            label: const Text('Yeni Etiket', maxLines: 1, softWrap: false),
+            icon: mobile ? null : const Icon(Icons.add_box_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.kayitli,
+            label: Text(
+              mobile ? 'Dosyalar' : 'Kayıtlı Dosyalar',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile ? null : const Icon(Icons.folder_outlined, size: 18),
+          ),
+        ],
+        selected: {tab},
+        onSelectionChanged: (s) => onChanged(s.first),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sekme 2: Kayıtlı Dosyalar (KARAR v1.11) — Storage'daki PDF'ler. EKRAN HERO'SU
+// YOK (stok listesi/rapor dili). cardDecoration + goldBg başlık. Masaüstü tablo /
+// mobil kart. Satır aksiyonları: Aç/İndir · Yazdır · Sil (danger + onay).
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _SavedFilesTab extends ConsumerWidget {
+  final bool compact;
+  const _SavedFilesTab({required this.compact});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filesAsync = ref.watch(savedLabelFilesProvider);
+
+    Widget body = filesAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.all(AppSizes.space24),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.all(AppSizes.space16),
+        child: Text(
+          'Dosyalar yüklenemedi: $e',
+          style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+        ),
+      ),
+      data: (files) {
+        if (files.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(AppSizes.space24),
+            child: Center(
+              child: Text(
+                'Kayıtlı etiket dosyası yok.',
+                style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+              ),
+            ),
+          );
+        }
+        if (compact) {
+          return Column(
+            children: [
+              for (final f in files) _SavedFileCard(file: f),
+            ],
+          );
+        }
+        // Masaüstü: başlık + kaydırılabilir tablo (bounded height → Expanded).
+        return Expanded(
+          child: Column(
+            children: [
+              const _FilesHeaderRow(),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final f in files) _SavedFileRow(file: f),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          Row(
+            children: [
+              const _SectionLabel('Kayıtlı Dosyalar'),
+              const Spacer(),
+              IconButton(
+                onPressed: () => ref.invalidate(savedLabelFilesProvider),
+                icon: const Icon(Icons.refresh, size: 18),
+                color: AppColors.textMuted,
+                tooltip: 'Yenile',
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.space8),
+          body,
+        ],
+      ),
+    );
+  }
+}
+
+// Masaüstü tablo başlığı (goldBg zemin).
+class _FilesHeaderRow extends StatelessWidget {
+  const _FilesHeaderRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppSizes.radiusSm)),
+      ),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space8),
+      child: Row(
+        children: const [
+          Expanded(flex: 5, child: _HeaderCell('Ad')),
+          Expanded(flex: 3, child: _HeaderCell('Tarih')),
+          Expanded(flex: 2, child: _HeaderCell('Boyut')),
+          SizedBox(width: 132, child: _HeaderCell('İşlem')),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderCell extends StatelessWidget {
+  final String text;
+  const _HeaderCell(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.6,
+        color: AppColors.textSecondary,
+      ),
+    );
+  }
+}
+
+// Masaüstü tablo satırı.
+class _SavedFileRow extends ConsumerWidget {
+  final SavedLabelFile file;
+  const _SavedFileRow({required this.file});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      ),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space8),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              file.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              file.createdAt != null ? formatDateTime(file.createdAt!) : '—',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textMuted,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              _fmtSize(file.size),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textMuted,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 132,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _actionIcon(
+                  icon: Icons.open_in_new,
+                  tooltip: 'Aç / İndir',
+                  color: AppColors.primary,
+                  onTap: () => _openSaved(context, ref, file),
+                ),
+                _actionIcon(
+                  icon: Icons.print_outlined,
+                  tooltip: 'Yazdır',
+                  color: AppColors.textSecondary,
+                  onTap: () => _printSaved(context, ref, file),
+                ),
+                _actionIcon(
+                  icon: Icons.delete_outline,
+                  tooltip: 'Sil',
+                  color: AppColors.danger,
+                  onTap: () => _deleteSaved(context, ref, file),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Mobil kart.
+class _SavedFileCard extends ConsumerWidget {
+  final SavedLabelFile file;
+  const _SavedFileCard({required this.file});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSizes.space8),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            file.name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: AppSizes.space4),
+          Row(
+            children: [
+              Text(
+                file.createdAt != null ? formatDateTime(file.createdAt!) : '—',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _fmtSize(file.size),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.space8),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: () => _openSaved(context, ref, file),
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('Aç'),
+                style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary),
+              ),
+              TextButton.icon(
+                onPressed: () => _printSaved(context, ref, file),
+                icon: const Icon(Icons.print_outlined, size: 16),
+                label: const Text('Yazdır'),
+                style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => _deleteSaved(context, ref, file),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                color: AppColors.danger,
+                tooltip: 'Sil',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _actionIcon({
+  required IconData icon,
+  required String tooltip,
+  required Color color,
+  required VoidCallback onTap,
+}) {
+  return IconButton(
+    onPressed: onTap,
+    icon: Icon(icon, size: 18),
+    color: color,
+    tooltip: tooltip,
+    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+    padding: EdgeInsets.zero,
+    visualDensity: VisualDensity.compact,
+  );
+}
+
+// ─── Kayıtlı dosya aksiyonları (Aç/İndir · Yazdır · Sil) ─────────────────────
+// Platform ayrımı: web → imzalı URL yeni sekmede (window.open, mevcut
+// conditional-export deseni); native → url_launcher (aç) / Printing.layoutPdf
+// (gerçek yazdırma).
+
+Future<void> _openSaved(
+    BuildContext context, WidgetRef ref, SavedLabelFile f) async {
+  final repo = ref.read(labelsStorageRepositoryProvider);
+  try {
+    final url = await repo.signedUrl(f.path);
+    if (kIsWeb) {
+      openUrlInNewTab(url);
+    } else {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    }
+  } catch (e) {
+    if (context.mounted) _snack(context, 'Dosya açılamadı: $e');
+  }
+}
+
+Future<void> _printSaved(
+    BuildContext context, WidgetRef ref, SavedLabelFile f) async {
+  final repo = ref.read(labelsStorageRepositoryProvider);
+  try {
+    if (kIsWeb) {
+      final url = await repo.signedUrl(f.path);
+      openUrlInNewTab(url); // tarayıcı PDF yazdırma
+    } else {
+      final bytes = await repo.download(f.path);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    }
+  } catch (e) {
+    if (context.mounted) _snack(context, 'Yazdırılamadı: $e');
+  }
+}
+
+Future<void> _deleteSaved(
+    BuildContext context, WidgetRef ref, SavedLabelFile f) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Dosyayı Sil'),
+      content: Text('"${f.name}" kalıcı olarak silinsin mi?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Vazgeç'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.danger,
+            foregroundColor: AppColors.textOnDark,
+          ),
+          child: const Text('Sil'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  try {
+    await ref.read(labelsStorageRepositoryProvider).remove(f.path);
+    ref.invalidate(savedLabelFilesProvider);
+    if (context.mounted) _snack(context, 'Silindi: ${f.name}');
+  } catch (e) {
+    if (context.mounted) _snack(context, 'Silinemedi: $e');
+  }
+}
+
+void _snack(BuildContext context, String message) {
+  ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(message)));
+}
+
+// Byte boyutunu okunur biçimler (B / KB / MB).
+String _fmtSize(int bytes) {
+  if (bytes <= 0) return '—';
+  if (bytes < 1024) return '$bytes B';
+  final kb = bytes / 1024;
+  if (kb < 1024) return '${kb.toStringAsFixed(kb < 10 ? 1 : 0)} KB';
+  final mb = kb / 1024;
+  return '${mb.toStringAsFixed(1)} MB';
 }

@@ -56,6 +56,10 @@ dependencies:
   # Flutter widget; barcode → baskı HTML'inde SVG (toSvg) gömme.
   barcode: ^2.2.9
   barcode_widget: ^2.0.4
+  # Raf etiketi PDF üretimi (KARAR v1.11): her platformda gerçek A4 PDF (pw.Document)
+  # + native yazdırma/paylaşım (Printing.layoutPdf). Web'de Yazdır hâlâ window.print.
+  pdf: ^3.11.1
+  printing: ^5.13.3
 
 dev_dependencies:
   flutter_test:
