@@ -284,3 +284,22 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     baskıya taşınmaz). Etiket hero'su = fiyat (iri bold), **altın ray YOK** (§4).
   - **Nav:** `/etiket` rotası + sidebar/drawer/bottom-nav "Etiket" öğesi (mevcut nav dili; masaüstü
     çift-bölge KARAR v1.5 geçerli).
+  - **İki sekme + kayıtlı PDF'ler (KARAR v1.11):** Etiket ekranı üst kontrolü **iki sekme** olur
+    (`SegmentedButton`, kasa sekme dili; ödeme-türü butonu değil): **"Yeni Etiket"** · **"Kayıtlı
+    Dosyalar"**. Sekme fonksiyonu ayraç, kanal değil; aktif sekme token dili (§1 altın ekonomisi),
+    yeni renk yok.
+    - **Sekme 1 (Yeni Etiket):** mevcut 24-hane + A4 önizleme + **Yazdır** (web `window.print`,
+      korunur). Eski "PDF Üret" → **PDF Kaydet**: **dosya adı** soran dialog → gerçek PDF (`pdf` paketi,
+      A4 3×8 = 24 etiket, KARAR v1.10 etiket-içi düzeni birebir: logo + FİYAT hero + Code128 + barkod
+      no + tarih; baskı siyah/beyaz) → **Supabase Storage**'a yüklenir (`etiket_pdfleri` bucket'ı). Her
+      platformda çalışır (native Android dahil — yerel cihaz kaydı YOK, yalnız Storage).
+    - **Sekme 2 (Kayıtlı Dosyalar):** **ekran hero'su YOK** (tarama/liste; stok listesi/rapor emsali).
+      Storage'daki PDF'ler listelenir (kart/tablo: ad · oluşturma tarihi · boyut, Inter tabular). Her
+      satırda: **Aç/İndir** (imzalı URL → web yeni sekmede aç) · **Yazdır** (web: yeni sekmede aç →
+      `window.print`) · **Sil** (`danger`, onay dialog'u). **Silme = Storage'dan da siler**
+      (`storage.remove([path])`) — program'dan silinen dosya Storage'da kalmaz (kullanıcı kararı). Boş
+      durum: "Kayıtlı etiket dosyası yok." `cardDecoration` + `goldBg` başlık; yeni renk/altın yok.
+    - **Depolama:** private bucket `etiket_pdfleri` + **imzalı URL** (`createSignedUrl`, aç/yazdır için).
+      Bucket + RLS politikaları Supabase panelinden kurulur (anon key ile DDL yapılamaz; migration
+      dosyası `supabase/migrations/` altında dokümante edilir, uygulama panelde). Erişim: `authenticated`
+      rolü bu bucket'ta select/insert/delete.
