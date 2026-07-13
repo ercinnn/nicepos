@@ -23,6 +23,7 @@ import '../../data/labels_storage_repository.dart';
 import '../../data/models/label_slot.dart';
 import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
+import '../widgets/label_scan_sheet.dart';
 
 // Etiket ekranı üst sekmeleri (KARAR v1.11): mevcut 24-hane akışı + kayıtlı PDF'ler.
 enum _LabelTab { yeni, kayitli }
@@ -85,9 +86,45 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     super.dispose();
   }
 
-  // Barkod okutma → ürün çözümü (satış ekranı _onBarcodeSubmitted birebir
-  // uyarlaması): önce bellek cache, sonra fetchByBarcode, sonra fetchAll (tam
-  // barkod eşleşmesi tercih edilir). Çözülünce hane dolar + imleç bir alta geçer.
+  // Barkodu ürüne çözer (satış ekranı deseni): önce bellek cache (anında +
+  // internetsiz), miss ise ağ fallback (fetchByBarcode → fetchAll, tam barkod
+  // eşleşmesi tercih). Ağ hatası/offline → cache miss'te null döner. Bulunan
+  // ürün cache'e yazılır (sonraki okutmalar da hızlı/offline olur).
+  Future<Product?> _resolveBarcode(String query) async {
+    final cache = ref.read(barcodeCacheProvider);
+    Product? product = cache.lookup(query);
+    if (product == null) {
+      try {
+        final repo = ref.read(productRepositoryProvider);
+        product = await repo.fetchByBarcode(query);
+        if (product == null) {
+          final matches = await repo.fetchAll(query: query);
+          for (final p in matches) {
+            if (p.barcode == query) {
+              product = p;
+              break;
+            }
+          }
+          product ??= matches.isNotEmpty ? matches.first : null;
+        }
+        if (product != null) cache.put(product);
+      } catch (_) {
+        // Offline / ağ hatası — cache miss ise çözülemez (null).
+      }
+    }
+    return product;
+  }
+
+  // İlk boş hane indeksi (hepsi doluysa -1).
+  int _nextEmptyIndex() {
+    final slots = ref.read(labelSheetProvider).slots;
+    for (var i = 0; i < kLabelCount; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  // Elle giriş / tam barkod Enter: haneyi çöz + doldur, imleç bir alta geçer.
   Future<void> _onSubmitted(int index, String raw) async {
     final query = raw.trim();
     final notifier = ref.read(labelSheetProvider.notifier);
@@ -97,24 +134,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return;
     }
 
-    final cache = ref.read(barcodeCacheProvider);
-    Product? product = cache.lookup(query);
-    if (product == null) {
-      final repo = ref.read(productRepositoryProvider);
-      product = await repo.fetchByBarcode(query);
-      if (product == null) {
-        final matches = await repo.fetchAll(query: query);
-        for (final p in matches) {
-          if (p.barcode == query) {
-            product = p;
-            break;
-          }
-        }
-        product ??= matches.isNotEmpty ? matches.first : null;
-      }
-      if (product != null) cache.put(product);
-    }
-
+    final product = await _resolveBarcode(query);
     if (!mounted) return;
     if (product == null) {
       notifier.clearSlot(index);
@@ -122,16 +142,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return;
     }
 
-    final resolved = product;
-    final code = (resolved.barcode != null && resolved.barcode!.isNotEmpty)
-        ? resolved.barcode!
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
         : query;
     notifier.setSlot(
       index,
       LabelSlot(
         barcode: code,
-        productName: resolved.name,
-        price: resolved.price1,
+        productName: product.name,
+        price: product.price1,
         createdAt: DateTime.now(),
       ),
     );
@@ -147,6 +166,63 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         extentOffset: _controllers[index + 1].text.length,
       );
     }
+  }
+
+  // Sürekli kamera taraması: bir okutma → çöz → ilk boş haneye yerleştir.
+  // Kamera sayfası (LabelScanSheet) her okutmada bunu çağırır; dönüş değeri üst
+  // ilerleme + alt sonuç kartını canlı besler. Çözüm bellek cache'ten geldiği
+  // için internetsiz de hızlı çalışır.
+  Future<LabelScanFeedback> _handleCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    ref.read(labelSheetProvider.notifier).setSlot(
+          index,
+          LabelSlot(
+            barcode: code,
+            productName: product.name,
+            price: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+    _controllers[index].text = code;
+    setState(() => _errors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  // Kamera ile sürekli tarama sayfasını açar (yalnız native). Cache'i garanti
+  // et → okutma anında/offline çözülür.
+  Future<void> _startCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleCameraScan,
+      totalCount: kLabelCount,
+      initialFilled: ref.read(labelSheetProvider).filledCount,
+    );
   }
 
   void _clearSlot(int index) {
@@ -345,6 +421,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           onClearAll: _clearAll,
           onPrint: _print,
           onSavePdf: _savePdf,
+          onCameraScan: kIsWeb ? null : _startCameraScan,
         ),
         const SizedBox(height: AppSizes.space16),
         Expanded(
@@ -394,6 +471,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
             onClearAll: _clearAll,
             onPrint: _print,
             onSavePdf: _savePdf,
+            onCameraScan: kIsWeb ? null : _startCameraScan,
             compact: true,
           ),
           const SizedBox(height: AppSizes.space16),
@@ -438,6 +516,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onClearAll;
   final VoidCallback onPrint;
   final VoidCallback onSavePdf;
+  final VoidCallback? onCameraScan; // yalnız native → kamera ile sürekli tara
   final bool compact;
 
   const _Header({
@@ -448,12 +527,27 @@ class _Header extends StatelessWidget {
     required this.onClearAll,
     required this.onPrint,
     required this.onSavePdf,
+    this.onCameraScan,
     this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final actions = <Widget>[
+      // Kamera ile sürekli tara (mobil/native) — barkodları sırayla haneye ekler.
+      if (onCameraScan != null)
+        ElevatedButton.icon(
+          onPressed: onCameraScan,
+          icon: const Icon(Icons.camera_alt_outlined, size: 18),
+          label: const Text('Kamera ile Tara'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: AppColors.textOnDark,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+            ),
+          ),
+        ),
       // Logo yükle
       OutlinedButton.icon(
         onPressed: onPickLogo,
