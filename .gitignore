@@ -44,6 +44,10 @@ migrate_working_dir/
 !/build/web
 /coverage/
 
+# Release APK kopyaları (kök) — commit edilmez, yalnız yerel erişim
+/nicepos-etiket.apk
+*.apk
+
 # Symbolication related
 app.*.symbols
 
