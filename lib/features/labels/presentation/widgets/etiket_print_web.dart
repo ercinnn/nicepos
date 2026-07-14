@@ -151,7 +151,7 @@ String _buildHtml({
     font-size: 30pt;
     line-height: 1;
     letter-spacing: -0.5px;
-    text-align: right;
+    text-align: center;
     flex: 1 1 auto;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -161,6 +161,7 @@ String _buildHtml({
     font-weight: 600;
     line-height: 1.15;
     text-transform: uppercase;
+    text-align: center;
     /* En fazla 2 satır, taşarsa kısalt. */
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -168,7 +169,7 @@ String _buildHtml({
     overflow: hidden;
   }
   .bc {
-    height: 9mm;
+    height: 6mm;
     width: 100%;
   }
   .bc svg { width: 100%; height: 100%; display: block; }

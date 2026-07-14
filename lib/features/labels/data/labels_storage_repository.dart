@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -31,6 +32,9 @@ class LabelsStorageRepository {
 
   // Boş klasör göstergesi Supabase'in eklediği teknik nesnedir → listede gizle.
   static const String _placeholder = '.emptyFolderPlaceholder';
+
+  // Mağaza logosu Storage anahtarı (KARAR v1.12) — PDF listesinden filtrelenir.
+  static const String logoKey = '__store_logo.txt';
 
   /// PDF'i verilen adla yükler; çakışmada üzerine YAZMAZ → sona zaman damgası /
   /// sayaç ekleyerek benzersizleştirir. Kaydedilen nihai adı döndürür.
@@ -73,7 +77,7 @@ class LabelsStorageRepository {
   Future<List<SavedLabelFile>> list() async {
     final objs = await _client.storage.from(bucket).list();
     final files = objs
-        .where((o) => o.name != _placeholder)
+        .where((o) => o.name != _placeholder && o.name != logoKey)
         .map((o) {
           final meta = o.metadata;
           final size = (meta?['size'] as num?)?.toInt() ?? 0;
@@ -114,6 +118,42 @@ class LabelsStorageRepository {
   /// Program'dan silme = Storage'dan silme (KARAR v1.11).
   Future<void> remove(String path) =>
       _client.storage.from(bucket).remove([path]);
+
+  // ─── Mağaza logosu kalıcılığı (KARAR v1.12) ────────────────────────────────
+  // Logo, data URL string'i olarak `__store_logo.txt` anahtarında saklanır.
+  // RLS update izni olmayabilir → upsert yerine remove+insert kullanılır.
+
+  /// Logoyu (base64 data URL) Storage'a yazar. Önce mevcut logoyu siler.
+  Future<void> uploadLogo(String dataUrl) async {
+    try {
+      await _client.storage.from(bucket).remove([logoKey]);
+    } catch (_) {
+      // Mevcut logo yoksa / silinemezse yükleme yine denenir.
+    }
+    final bytes = Uint8List.fromList(utf8.encode(dataUrl));
+    await _client.storage.from(bucket).uploadBinary(
+          logoKey,
+          bytes,
+          fileOptions: const FileOptions(contentType: 'text/plain'),
+        );
+  }
+
+  /// Kayıtlı logoyu (data URL) getirir; dosya yoksa/offline → null.
+  Future<String?> fetchLogo() async {
+    try {
+      final bytes = await _client.storage.from(bucket).download(logoKey);
+      return utf8.decode(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Kayıtlı logoyu Storage'dan siler.
+  Future<void> removeLogo() async {
+    try {
+      await _client.storage.from(bucket).remove([logoKey]);
+    } catch (_) {}
+  }
 
   // Dosya adını Storage anahtarı için güvenli hale getirir: yol ayraçlarını ve
   // riskli karakterleri temizler, boşlukları tireye çevirir. Türkçe harfler ve

@@ -73,6 +73,18 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     // Barkod → Product bellek indeksini bir kez prefetch et (satış ekranıyla
     // paylaşılan keepAlive cache) → okutmada ağ turu beklemeden çözüm.
     ref.read(barcodeCacheProvider).ensureLoaded();
+    // Kayıtlı mağaza logosunu Storage'dan geri yükle (KARAR v1.12) — login/logout
+    // sonrası korunur. Fire-and-forget (await gerekmez).
+    _loadPersistedLogo();
+  }
+
+  // Storage'da kayıtlı logoyu (varsa) sayfaya geri yükler (KARAR v1.12).
+  Future<void> _loadPersistedLogo() async {
+    // Mevcut oturumda logo zaten yüklenmişse dokunma.
+    if (ref.read(labelSheetProvider).logoDataUrl != null) return;
+    final dataUrl = await ref.read(labelsStorageRepositoryProvider).fetchLogo();
+    if (!mounted || dataUrl == null || dataUrl.isEmpty) return;
+    ref.read(labelSheetProvider.notifier).setLogo(dataUrl);
   }
 
   @override
@@ -255,6 +267,18 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
             : 'image/png';
     final dataUrl = 'data:$mime;base64,${base64Encode(file.bytes!)}';
     ref.read(labelSheetProvider.notifier).setLogo(dataUrl);
+    // Storage'a da yaz (KARAR v1.12) — hata olsa da önizleme çalışsın.
+    try {
+      await ref.read(labelsStorageRepositoryProvider).uploadLogo(dataUrl);
+    } catch (_) {}
+  }
+
+  // Logoyu hem sayfadan hem Storage'dan kaldırır (KARAR v1.12).
+  Future<void> _removeLogo() async {
+    ref.read(labelSheetProvider.notifier).setLogo(null);
+    try {
+      await ref.read(labelsStorageRepositoryProvider).removeLogo();
+    } catch (_) {}
   }
 
   void _print() {
@@ -416,8 +440,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           filledCount: ref.watch(labelSheetProvider).filledCount,
           hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
           onPickLogo: _pickLogo,
-          onRemoveLogo: () =>
-              ref.read(labelSheetProvider.notifier).setLogo(null),
+          onRemoveLogo: _removeLogo,
           onClearAll: _clearAll,
           onPrint: _print,
           onSavePdf: _savePdf,
@@ -989,7 +1012,7 @@ class _LabelCell extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '${formatNumber(s.price)} TL',
-                        textAlign: TextAlign.right,
+                        textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.visible,
                         style: const TextStyle(
@@ -1004,21 +1027,25 @@ class _LabelCell extends StatelessWidget {
                     ),
                   ],
                 ),
-                // Ürün adı (2 satır, taşarsa kısalt)
-                Text(
-                  s.productName.toUpperCase(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    height: 1.15,
-                    color: Colors.black,
+                // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    s.productName.toUpperCase(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      height: 1.15,
+                      color: Colors.black,
+                    ),
                   ),
                 ),
                 // Barkod çizgileri (Code128)
                 SizedBox(
-                  height: 30,
+                  height: 20,
                   width: double.infinity,
                   child: BarcodeWidget(
                     barcode: bc.Barcode.code128(),

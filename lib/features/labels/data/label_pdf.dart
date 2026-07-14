@@ -121,7 +121,7 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
             pw.Expanded(
               child: pw.FittedBox(
                 fit: pw.BoxFit.scaleDown,
-                alignment: pw.Alignment.centerRight,
+                alignment: pw.Alignment.center,
                 child: pw.Text(
                   '${formatNumber(slot.price)} TL',
                   style: pw.TextStyle(
@@ -135,21 +135,25 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
             ),
           ],
         ),
-        // Ürün adı (2 satır, taşarsa kısalt)
-        pw.Text(
-          slot.productName.toUpperCase(),
-          maxLines: 2,
-          overflow: pw.TextOverflow.clip,
-          style: pw.TextStyle(
-            fontSize: 7,
-            fontWeight: pw.FontWeight.bold,
-            lineSpacing: 0.5,
-            color: PdfColors.black,
+        // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
+        pw.SizedBox(
+          width: double.infinity,
+          child: pw.Text(
+            slot.productName.toUpperCase(),
+            textAlign: pw.TextAlign.center,
+            maxLines: 2,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(
+              fontSize: 7,
+              fontWeight: pw.FontWeight.bold,
+              lineSpacing: 0.5,
+              color: PdfColors.black,
+            ),
           ),
         ),
         // Barkod çizgileri (Code128; geçersizse boş bırak — fiyat/ad korunur)
         pw.SizedBox(
-          height: 24,
+          height: 16,
           width: double.infinity,
           child: bc.Barcode.code128().isValid(slot.barcode)
               ? pw.BarcodeWidget(

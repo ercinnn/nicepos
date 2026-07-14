@@ -303,3 +303,9 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
       Bucket + RLS politikaları Supabase panelinden kurulur (anon key ile DDL yapılamaz; migration
       dosyası `supabase/migrations/` altında dokümante edilir, uygulama panelde). Erişim: `authenticated`
       rolü bu bucket'ta select/insert/delete.
+  - **Etiket-içi düzen rötuşu + logo kalıcılığı (KARAR v1.12):** KARAR v1.10 etiket-içi yerleşimi üç noktada güncellenir (önizleme = HTML yazdırma = PDF, üçü BİREBİR aynı):
+    1. **Ürün adı = ORTALI** (önce sola dayalıydı) — hücre genişliğine ortalanır.
+    2. **Fiyat = logodan sonra kalan alanda ORTALI** (önce sağa dayalıydı). Üst bant Row'unda logo yuvası solda sabit kalır; fiyat, logodan sonraki kalan genişliğe (Expanded alanı) ortalanır. Fiyat yine etiketin hero'su (iri bold, **altın ray YOK**).
+    3. **Barkod çizgi yüksekliği = önceki değerin 2/3'ü** (3x→2x). Referans ölçüler: önizleme 30→20px, PDF 24→16pt, HTML 9mm→6mm.
+  - **Logo RENKLİ:** Yüklenen mağaza logosu **kendi renkleriyle** basılır (siyah/beyaz baskı kuralının bilinçli istisnası; logo mağaza markasını taşır). Metin/barkod yine siyah/beyaz. Fallback mağaza ikonu `color.ink` lacivert kalır.
+  - **Logo kalıcılığı (Supabase Storage):** Logo artık yalnız `keepAlive` oturumda değil, **Supabase Storage'da** saklanır (mevcut `etiket_pdfleri` bucket'ı, ayrılmış `__store_logo.txt` anahtarı; `savedLabelFiles` listesinden filtrelenir). Ekran açılışında geri yüklenir → login/logout sonrası korunur. Logo değiştir = Storage'a yaz; Logo kaldır = Storage'dan sil. Yeni bucket/RLS gerekmez (authenticated insert/delete yeterli). Token/palet/imza etkilenmez.
