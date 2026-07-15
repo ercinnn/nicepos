@@ -309,3 +309,21 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     3. **Barkod çizgi yüksekliği = önceki değerin 2/3'ü** (3x→2x). Referans ölçüler: önizleme 30→20px, PDF 24→16pt, HTML 9mm→6mm.
   - **Logo RENKLİ:** Yüklenen mağaza logosu **kendi renkleriyle** basılır (siyah/beyaz baskı kuralının bilinçli istisnası; logo mağaza markasını taşır). Metin/barkod yine siyah/beyaz. Fallback mağaza ikonu `color.ink` lacivert kalır.
   - **Logo kalıcılığı (Supabase Storage):** Logo artık yalnız `keepAlive` oturumda değil, **Supabase Storage'da** saklanır (mevcut `etiket_pdfleri` bucket'ı, ayrılmış `__store_logo.txt` anahtarı; `savedLabelFiles` listesinden filtrelenir). Ekran açılışında geri yüklenir → login/logout sonrası korunur. Logo değiştir = Storage'a yaz; Logo kaldır = Storage'dan sil. Yeni bucket/RLS gerekmez (authenticated insert/delete yeterli). Token/palet/imza etkilenmez.
+  - **Etiket-içi boyut rötuşu + alt-satır kırpılma düzeltmesi (KARAR v1.13):** KARAR v1.10/v1.12 etiket-içi
+    geometrisi beş oranla güncellenir (önizleme = HTML yazdırma = PDF, üçü BİREBİR aynı; yeni renk/palet/imza
+    YOK — yalnız baskı geometrisi):
+    1. **Logo yuvası ×1.3** — önizleme 53×38→**69×49**px, HTML 14×10→**18×13**mm, PDF 40×27→**52×35**pt.
+    2. **Fiyat (etiket hero'su, altın ray YOK) ×1.3** — önizleme 34→**44**, HTML 30→**39**pt, PDF 22→**28.6**pt.
+       Fiyat taşarsa `FittedBox scaleDown` ile hücreye küçülür, **asla kırpılmaz**.
+    3. **Ürün adı ×1.25** — önizleme 10→**12.5**, HTML 8→**10**pt, PDF 7→**8.75**pt (ortalı, 2 satır + ellipsis korunur).
+    4. **Barkod numarası yazısı ×2** — önizleme 8→**16**, HTML 7→**14**pt, PDF 6→**12**pt (tabular).
+    5. **Barkod çizgi genişliği = %80 ortalı** (%10 boşluk + %80 barkod + %10 boşluk) — önizleme/PDF
+       `Center + FractionallySizedBox(widthFactor: 0.8)` (yatay widthFactor güvenli; dikey heightFactor
+       sonsuz-yükseklik verdiği için kullanılmaz), HTML `.bc { width:80%; margin:0 auto }`.
+    - **🔴 Kırpılma düzeltmesi (bug):** Sabit yükseklikli hücrede (HTML `~36mm` + `overflow:hidden`; önizleme/PDF
+      sabit tuval) `spaceBetween` dizilimi, öğelerin min toplam yüksekliği hücreyi aşınca **en alt satırı
+      (barkod no + tarih) kırpıyordu** — uzun ürün adlı ("bazı") etiketlerde. Yukarıdaki büyütmeler bunu
+      kötüleştireceğinden düzeltme zorunlu: **barkod alanı esnek öğe olur** (`Expanded` / HTML `flex:1 1 auto;
+      min-height:0`), sabit öğeler (ürün adı + alt satır `flex:0 0 auto`) yerini garantiler → **alt satır asla
+      hücre dışına itilmez**; taşma olursa yalnız barkod çizgisi kısalır. Dikey padding hafif kısılır (önizleme
+      6→4, HTML 2→1.5mm, PDF 3→2) yeni öğelere yer açmak için. Renk/palet/imza etkilenmez.
