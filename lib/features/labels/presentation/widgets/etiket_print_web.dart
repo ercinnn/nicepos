@@ -124,11 +124,11 @@ String _buildHtml({
   .cell {
     /* İnce nötr hairline kesim kılavuzu (altın YOK). */
     border: 0.2mm solid #b8b8b8;
-    padding: 2mm 2.5mm;
+    padding: 1.5mm 2.5mm;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start;
   }
   .cell.empty { border-color: #e0e0e0; }
   .top {
@@ -136,10 +136,11 @@ String _buildHtml({
     align-items: center;
     justify-content: space-between;
     gap: 2mm;
+    flex: 0 0 auto;
   }
   .logo {
-    width: 14mm;
-    height: 10mm;
+    width: 18mm;
+    height: 13mm;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
@@ -148,7 +149,7 @@ String _buildHtml({
   .logo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .price {
     font-weight: 800;
-    font-size: 30pt;
+    font-size: 39pt;
     line-height: 1;
     letter-spacing: -0.5px;
     text-align: center;
@@ -157,11 +158,12 @@ String _buildHtml({
     font-variant-numeric: tabular-nums;
   }
   .pname {
-    font-size: 8pt;
+    font-size: 10pt;
     font-weight: 600;
     line-height: 1.15;
     text-transform: uppercase;
     text-align: center;
+    flex: 0 0 auto;
     /* En fazla 2 satır, taşarsa kısalt. */
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -169,17 +171,22 @@ String _buildHtml({
     overflow: hidden;
   }
   .bc {
-    height: 6mm;
-    width: 100%;
+    /* Esnek: sabit öğeler (üst bant, ürün adı, alt satır) yerini korur;
+       taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı. */
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 80%;
+    margin: 0 auto;
   }
   .bc svg { width: 100%; height: 100%; display: block; }
   .bottom {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
+    flex: 0 0 auto;
     font-variant-numeric: tabular-nums;
   }
-  .bcno { font-size: 7pt; letter-spacing: 0.5px; }
+  .bcno { font-size: 14pt; letter-spacing: 0.5px; }
   .cdate { font-size: 5.5pt; color: #444; }
 </style>
 </head>

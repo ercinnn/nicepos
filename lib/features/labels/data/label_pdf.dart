@@ -107,16 +107,16 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
     decoration: pw.BoxDecoration(
       border: pw.Border.all(color: _hairline, width: 0.5),
     ),
-    padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+    padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      mainAxisAlignment: pw.MainAxisAlignment.start,
       children: [
         // Üst bant: logo (sol) + FİYAT hero (baskın, sağ)
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.center,
           children: [
-            pw.SizedBox(width: 40, height: 27, child: logo),
+            pw.SizedBox(width: 52, height: 35, child: logo),
             pw.SizedBox(width: 4),
             pw.Expanded(
               child: pw.FittedBox(
@@ -125,7 +125,7 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
                 child: pw.Text(
                   '${formatNumber(slot.price)} TL',
                   style: pw.TextStyle(
-                    fontSize: 22,
+                    fontSize: 28.6,
                     fontWeight: pw.FontWeight.bold,
                     letterSpacing: -0.5,
                     color: PdfColors.black,
@@ -144,25 +144,37 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
             maxLines: 2,
             overflow: pw.TextOverflow.clip,
             style: pw.TextStyle(
-              fontSize: 7,
+              fontSize: 8.75,
               fontWeight: pw.FontWeight.bold,
               lineSpacing: 0.5,
               color: PdfColors.black,
             ),
           ),
         ),
-        // Barkod çizgileri (Code128; geçersizse boş bırak — fiyat/ad korunur)
-        pw.SizedBox(
-          height: 16,
-          width: double.infinity,
-          child: bc.Barcode.code128().isValid(slot.barcode)
-              ? pw.BarcodeWidget(
-                  barcode: bc.Barcode.code128(),
-                  data: slot.barcode,
-                  drawText: false,
-                  color: PdfColors.black,
-                )
-              : pw.SizedBox(),
+        // Barkod çizgileri (Code128; geçersizse boş bırak — fiyat/ad korunur).
+        // Esnek öğe: sabit öğeler (üst bant, ürün adı, alt satır) yerini korur;
+        // taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı
+        // (%10 boşluk + %80 barkod + %10 boşluk = 1:8:1 flex; pdf paketinde
+        // FractionallySizedBox yok, flex Row eşdeğeri).
+        pw.Expanded(
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Spacer(flex: 1),
+              pw.Expanded(
+                flex: 8,
+                child: bc.Barcode.code128().isValid(slot.barcode)
+                    ? pw.BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: slot.barcode,
+                        drawText: false,
+                        color: PdfColors.black,
+                      )
+                    : pw.SizedBox(),
+              ),
+              pw.Spacer(flex: 1),
+            ],
+          ),
         ),
         // En alt: barkod no (sol) + oluşturma tarihi (sağ)
         pw.Row(
@@ -174,7 +186,7 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
                 maxLines: 1,
                 overflow: pw.TextOverflow.clip,
                 style: pw.TextStyle(
-                  fontSize: 6,
+                  fontSize: 12,
                   letterSpacing: 0.5,
                   color: PdfColors.black,
                 ),

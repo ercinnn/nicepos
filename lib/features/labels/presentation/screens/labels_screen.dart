@@ -989,39 +989,43 @@ class _LabelCell extends StatelessWidget {
           width: 0.6,
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: s == null
           ? const SizedBox.expand()
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 // Üst bant: logo (sol) + FİYAT hero (baskın, sağ)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     SizedBox(
-                      width: 53,
-                      height: 38,
+                      width: 69,
+                      height: 49,
                       child: logoBytes != null
                           ? Image.memory(logoBytes!, fit: BoxFit.contain)
                           : const Icon(Icons.storefront,
-                              color: AppColors.primary, size: 30),
+                              color: AppColors.primary, size: 39),
                     ),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
-                        '${formatNumber(s.price)} TL',
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.visible,
-                        style: const TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
-                          height: 1,
-                          color: Colors.black,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${formatNumber(s.price)} TL',
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.visible,
+                          style: const TextStyle(
+                            fontSize: 44,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            height: 1,
+                            color: Colors.black,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
                         ),
                       ),
                     ),
@@ -1036,23 +1040,29 @@ class _LabelCell extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 10,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                       height: 1.15,
                       color: Colors.black,
                     ),
                   ),
                 ),
-                // Barkod çizgileri (Code128)
-                SizedBox(
-                  height: 20,
-                  width: double.infinity,
-                  child: BarcodeWidget(
-                    barcode: bc.Barcode.code128(),
-                    data: s.barcode,
-                    drawText: false,
-                    color: Colors.black,
-                    errorBuilder: (context, error) => const SizedBox.shrink(),
+                // Barkod çizgileri (Code128) — esnek: sabit öğeler (üst bant, ürün
+                // adı, alt satır) yerini korur; taşarsa yalnız barkod çizgisi
+                // kısalır. Yatayda %80'e ortalı (widthFactor güvenli).
+                Expanded(
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.8,
+                      child: BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: s.barcode,
+                        drawText: false,
+                        color: Colors.black,
+                        errorBuilder: (context, error) =>
+                            const SizedBox.shrink(),
+                      ),
+                    ),
                   ),
                 ),
                 // En alt: barkod no (sol) + oluşturma tarihi (sağ)
@@ -1065,7 +1075,7 @@ class _LabelCell extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 8,
+                          fontSize: 16,
                           letterSpacing: 0.5,
                           color: Colors.black,
                           fontFeatures: [FontFeature.tabularFigures()],
