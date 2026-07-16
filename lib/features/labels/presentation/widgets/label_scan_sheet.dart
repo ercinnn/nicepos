@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/utils/scan_sound.dart';
 
 /// Tek bir kamera okutmasının sonucu (etiket haneleri sürekli tarama akışı).
 enum LabelScanStatus {
@@ -109,8 +110,10 @@ class _LabelScanSheetState extends State<LabelScanSheet> {
     });
     if (fb.status == LabelScanStatus.placed) {
       HapticFeedback.lightImpact();
+      playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
     } else if (fb.status == LabelScanStatus.notFound) {
       HapticFeedback.heavyImpact();
+      playScanBeep(success: false); // danger uyarı sesi (KARAR v1.14.1)
     }
     _processing = false;
   }

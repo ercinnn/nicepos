@@ -9,6 +9,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/utils/scan_sound.dart';
 import '../../../../features/products/application/products_provider.dart';
 import '../../../../features/products/data/models/product.dart';
 import '../../application/barcode_cache.dart';
@@ -56,6 +57,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     final cached = cache.lookup(query);
     if (cached != null) {
       HapticFeedback.lightImpact();
+      playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
       ref.read(salesCartProvider.notifier).addProduct(cached);
       _barcodeController.clear();
       _barcodeFocusNode.requestFocus();
@@ -67,6 +69,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     if (product != null) {
       cache.put(product); // bulunan ürünü cache'e yaz
       HapticFeedback.lightImpact();
+      playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
       ref.read(salesCartProvider.notifier).addProduct(product);
       _barcodeController.clear();
       _barcodeFocusNode.requestFocus();
@@ -77,12 +80,15 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     if (matches.length == 1) {
       cache.put(matches.first); // bulunan ürünü cache'e yaz
       HapticFeedback.lightImpact();
+      playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
       ref.read(salesCartProvider.notifier).addProduct(matches.first);
       _barcodeController.clear();
       _barcodeFocusNode.requestFocus();
       return;
     }
 
+    // Tam/tekil eşleşme yok → danger uyarı sesi + arama diyaloğu.
+    playScanBeep(success: false); // (KARAR v1.14.1)
     if (mounted) {
       await showDialog(context: context, builder: (_) => ProductSearchDialog(initialQuery: query));
     }

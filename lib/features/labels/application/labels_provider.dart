@@ -10,6 +10,11 @@ const int kLabelColumns = 3;
 const int kLabelRows = 8;
 const int kLabelCount = kLabelColumns * kLabelRows; // 24
 
+/// Geniş Logo etiket sabitleri (KARAR v1.14): 2 sütun × 5 satır = 10 etiket/A4.
+const int kWideCols = 2;
+const int kWideRows = 5;
+const int kWideCount = kWideCols * kWideRows; // 10
+
 /// Etiket sayfasının durumu: 24 hanelik liste (`null` = boş hane) + mağaza logosu
 /// (data URL / base64; hem önizleme hem baskıda kullanılır).
 class LabelSheetState {
@@ -73,6 +78,54 @@ class LabelSheet extends _$LabelSheet {
     } else {
       state = state.copyWith(logoDataUrl: dataUrl);
     }
+  }
+}
+
+// ─── Geniş Logo etiket sayfası (KARAR v1.14) ─────────────────────────────────
+
+/// Geniş Logo etiket sayfasının durumu: 10 hanelik liste (`null` = boş hane).
+/// Logosuz (marka tentesi sabit asset) — dar-logo `LabelSheetState`'in 10-haneli
+/// logosuz kopyası.
+class LabelWideSheetState {
+  final List<LabelSlot?> slots;
+
+  const LabelWideSheetState({required this.slots});
+
+  factory LabelWideSheetState.initial() => LabelWideSheetState(
+        slots: List<LabelSlot?>.filled(kWideCount, null),
+      );
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  LabelWideSheetState copyWith({List<LabelSlot?>? slots}) {
+    return LabelWideSheetState(slots: slots ?? this.slots);
+  }
+}
+
+/// Geniş Logo etiket sayfası durumunu tutar. `keepAlive` — sekme değişiminde 10
+/// hane korunur (dar-logo `LabelSheet` deseninin logosuz 10-haneli kopyası; dar
+/// 24-hane provider'ıyla KARIŞMAZ).
+@Riverpod(keepAlive: true)
+class LabelWideSheet extends _$LabelWideSheet {
+  @override
+  LabelWideSheetState build() => LabelWideSheetState.initial();
+
+  void setSlot(int index, LabelSlot slot) {
+    if (index < 0 || index >= kWideCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = slot;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearSlot(int index) {
+    if (index < 0 || index >= kWideCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = null;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(slots: List<LabelSlot?>.filled(kWideCount, null));
   }
 }
 

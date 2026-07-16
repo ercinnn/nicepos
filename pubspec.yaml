@@ -60,6 +60,10 @@ dependencies:
   # + native yazdırma/paylaşım (Printing.layoutPdf). Web'de Yazdır hâlâ window.print.
   pdf: ^3.11.1
   printing: ^5.13.3
+  # Barkod okutma sesi (KARAR v1.14.1): asset dosyası YOK — kısa WAV byte'ları
+  # kod içinde sentezlenir (core/utils/scan_sound.dart) ve BytesSource ile çalınır.
+  # Tek codepath ile hem web hem Android'de çalışır.
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -80,7 +84,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  assets: []
+  assets:
+    # Geniş Logo etiket sekmesi (KARAR v1.14) — sabit marka tentesi (turuncu
+    # çadır + NiCE). RENKLİ basılır (siyah/beyaz kuralının bilinçli marka
+    # istisnası). Tek firma, hep aynı; bu sekmede logo yükleme yoktur.
+    - genis_logo_tente.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

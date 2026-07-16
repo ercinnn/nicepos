@@ -25,6 +25,23 @@ void printLabelsA4({
   // URL'yi hemen iptal etmiyoruz; yeni pencere yüklenene kadar gerekli.
 }
 
+/// Geniş Logo etiketlerini A4 dikey (2 sütun × 5 satır = 10) olarak yeni bir
+/// tarayıcı penceresinde açar ve otomatik yazdırır (KARAR v1.14). [tenteDataUrl]
+/// = marka tentesi (genis_logo_tente.png) base64 data URL'i (RENKLİ basılır).
+void printWideLabelsA4({
+  required List<LabelSlot?> slots,
+  required String tenteDataUrl,
+}) {
+  final html = _buildWideHtml(slots: slots, tenteDataUrl: tenteDataUrl);
+
+  final blob = web.Blob(
+    [html.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/html'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.window.open(url, '_blank');
+}
+
 String _esc(String? value) {
   if (value == null || value.isEmpty) return '';
   return value
@@ -188,6 +205,140 @@ String _buildHtml({
   }
   .bcno { font-size: 14pt; letter-spacing: 0.5px; }
   .cdate { font-size: 5.5pt; color: #444; }
+</style>
+</head>
+<body onload="window.focus(); window.print();">
+  <div class="sheet">
+    $cells
+  </div>
+</body>
+</html>''';
+}
+
+// ─── Geniş Logo etiketi (KARAR v1.14) — 2 sütun × 5 satır = 10 etiket ─────────
+
+String _wideCellHtml(LabelSlot? slot, String tenteDataUrl) {
+  if (slot == null) {
+    return '<div class="wcell empty"></div>';
+  }
+
+  final bc = _barcodeSvg(slot.barcode);
+  final bcHtml = bc.isEmpty ? '' : '<div class="wbc">$bc</div>';
+
+  return '''
+    <div class="wcell">
+      <div class="wtente">
+        <img class="wtente-img" src="${_esc(tenteDataUrl)}" alt="tente">
+        <div class="wprice"><span>${_esc(formatNumber(slot.price))} TL</span></div>
+      </div>
+      <div class="wpname">${_esc(slot.productName)}</div>
+      $bcHtml
+      <div class="wbcno">${_esc(slot.barcode)}</div>
+      <div class="wdate">${_esc(formatShortDate(slot.createdAt))}</div>
+    </div>''';
+}
+
+String _buildWideHtml({
+  required List<LabelSlot?> slots,
+  required String tenteDataUrl,
+}) {
+  final cells = StringBuffer();
+  for (final slot in slots) {
+    cells.writeln(_wideCellHtml(slot, tenteDataUrl));
+  }
+
+  // A4 portrait: 200×287mm yazdırılabilir. 2 sütun → 100mm, 5 satır → 57.4mm.
+  return '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Geniş Logo Etiketleri</title>
+<style>
+  @page { size: A4 portrait; margin: 5mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    width: 200mm;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 57.4mm;
+    gap: 0;
+  }
+  .wcell {
+    border: 0.2mm solid #b8b8b8;
+    padding: 2mm 3mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .wcell.empty { border-color: #e0e0e0; }
+  /* Tente + fiyat overlay (fiyat flat üst banda ortalı). */
+  .wtente {
+    position: relative;
+    width: 68%;
+    flex: 0 0 auto;
+  }
+  .wtente-img { width: 100%; display: block; }
+  .wprice {
+    position: absolute;
+    top: 4%;
+    left: 8%;
+    right: 8%;
+    height: 58%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .wprice span {
+    font-weight: 800;
+    font-size: 22pt;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    color: #000;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .wpname {
+    font-size: 9pt;
+    font-weight: 700;
+    line-height: 1.15;
+    text-transform: uppercase;
+    text-align: center;
+    flex: 0 0 auto;
+    margin-top: 1.5mm;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .wbc {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 80%;
+    margin: 1mm auto 0 auto;
+  }
+  .wbc svg { width: 100%; height: 100%; display: block; }
+  .wbcno {
+    font-size: 12pt;
+    letter-spacing: 0.5px;
+    text-align: center;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .wdate {
+    align-self: flex-end;
+    font-size: 5.5pt;
+    color: #444;
+    flex: 0 0 auto;
+  }
 </style>
 </head>
 <body onload="window.focus(); window.print();">

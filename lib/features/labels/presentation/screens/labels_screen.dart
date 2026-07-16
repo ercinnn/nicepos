@@ -14,6 +14,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/utils/scan_sound.dart';
 import '../../../products/application/products_provider.dart';
 import '../../../products/data/models/product.dart';
 import '../../../sales/application/barcode_cache.dart';
@@ -25,8 +26,9 @@ import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
 import '../widgets/label_scan_sheet.dart';
 
-// Etiket ekranı üst sekmeleri (KARAR v1.11): mevcut 24-hane akışı + kayıtlı PDF'ler.
-enum _LabelTab { yeni, kayitli }
+// Etiket ekranı üst sekmeleri (KARAR v1.14): dar 24-hane akışı + Geniş Logo
+// 10-hane akışı + kayıtlı PDF'ler.
+enum _LabelTab { yeni, genis, kayitli }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Etiket (raf etiketi A4 yazdırma) ekranı — KARAR v1.10
@@ -56,7 +58,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   late final List<FocusNode> _focusNodes;
   final Set<int> _errors = {}; // çözülemeyen hane indeksleri (danger uyarı)
   int _activeIndex = 0; // aktif (odaklı) hane — aktif durum altını
-  _LabelTab _tab = _LabelTab.yeni; // aktif sekme (Yeni Etiket / Kayıtlı Dosyalar)
+
+  // Geniş Logo sekmesi (KARAR v1.14) — 10 haneli ayrı giriş durumu.
+  late final List<TextEditingController> _wideControllers;
+  late final List<FocusNode> _wideFocusNodes;
+  final Set<int> _wideErrors = {};
+  int _wideActiveIndex = 0;
+  Uint8List? _tenteBytes; // marka tentesi (yazdırma için bir kez okunur)
+
+  _LabelTab _tab = _LabelTab.yeni; // aktif sekme
 
   @override
   void initState() {
@@ -67,6 +77,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       final node = FocusNode();
       node.addListener(() {
         if (node.hasFocus && mounted) setState(() => _activeIndex = i);
+      });
+      return node;
+    });
+    _wideControllers =
+        List.generate(kWideCount, (_) => TextEditingController());
+    _wideFocusNodes = List.generate(kWideCount, (i) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus && mounted) setState(() => _wideActiveIndex = i);
       });
       return node;
     });
@@ -93,6 +112,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       c.dispose();
     }
     for (final n in _focusNodes) {
+      n.dispose();
+    }
+    for (final c in _wideControllers) {
+      c.dispose();
+    }
+    for (final n in _wideFocusNodes) {
       n.dispose();
     }
     super.dispose();
@@ -151,6 +176,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     if (product == null) {
       notifier.clearSlot(index);
       setState(() => _errors.add(index));
+      playScanBeep(success: false); // danger uyarı sesi (KARAR v1.14.1)
       return;
     }
 
@@ -168,6 +194,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     );
     _controllers[index].text = code;
     HapticFeedback.lightImpact();
+    playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
     setState(() => _errors.remove(index));
 
     // Otomatik bir alt haneye geç (son hanede kal).
@@ -333,10 +360,10 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     }
   }
 
-  // Dosya adı soran dialog (varsayılan raf-etiket-<tarih>). Vazgeç → null.
-  Future<String?> _askFileName() {
+  // Dosya adı soran dialog (varsayılan [defaultName]). Vazgeç → null.
+  Future<String?> _askFileName({String prefix = 'raf-etiket'}) {
     final controller =
-        TextEditingController(text: 'raf-etiket-${_fileStamp()}');
+        TextEditingController(text: '$prefix-${_fileStamp()}');
     return showDialog<String>(
       context: context,
       builder: (dialogContext) {
@@ -391,6 +418,185 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     return '${n.year}${two(n.month)}${two(n.day)}-${two(n.hour)}${two(n.minute)}';
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // Geniş Logo sekmesi (KARAR v1.14) — 10 haneli akış (dar sekmenin logosuz,
+  // sabit marka tentesi kullanan uyarlaması). Barkod çözme mantığı ortak
+  // (_resolveBarcode); yalnız hedef state (labelWideSheetProvider) farklı.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // Marka tentesini yazdırma için bir kez okur (base64 print + PDF ayrı okur).
+  Future<Uint8List> _loadTenteBytes() async {
+    return _tenteBytes ??=
+        (await rootBundle.load('genis_logo_tente.png')).buffer.asUint8List();
+  }
+
+  int _nextWideEmptyIndex() {
+    final slots = ref.read(labelWideSheetProvider).slots;
+    for (var i = 0; i < kWideCount; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  Future<void> _onWideSubmitted(int index, String raw) async {
+    final query = raw.trim();
+    final notifier = ref.read(labelWideSheetProvider.notifier);
+    if (query.isEmpty) {
+      notifier.clearSlot(index);
+      setState(() => _wideErrors.remove(index));
+      return;
+    }
+
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      notifier.clearSlot(index);
+      setState(() => _wideErrors.add(index));
+      playScanBeep(success: false); // danger uyarı sesi (KARAR v1.14.1)
+      return;
+    }
+
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    notifier.setSlot(
+      index,
+      LabelSlot(
+        barcode: code,
+        productName: product.name,
+        price: product.price1,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _wideControllers[index].text = code;
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
+    setState(() => _wideErrors.remove(index));
+
+    if (index + 1 < kWideCount) {
+      _wideFocusNodes[index + 1].requestFocus();
+      _wideControllers[index + 1].selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _wideControllers[index + 1].text.length,
+      );
+    }
+  }
+
+  Future<LabelScanFeedback> _handleWideCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelWideSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextWideEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    ref.read(labelWideSheetProvider.notifier).setSlot(
+          index,
+          LabelSlot(
+            barcode: code,
+            productName: product.name,
+            price: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+    _wideControllers[index].text = code;
+    setState(() => _wideErrors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  Future<void> _startWideCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleWideCameraScan,
+      totalCount: kWideCount,
+      initialFilled: ref.read(labelWideSheetProvider).filledCount,
+    );
+  }
+
+  void _clearWideSlot(int index) {
+    _wideControllers[index].clear();
+    ref.read(labelWideSheetProvider.notifier).clearSlot(index);
+    setState(() => _wideErrors.remove(index));
+    _wideFocusNodes[index].requestFocus();
+  }
+
+  void _clearWideAll() {
+    for (final c in _wideControllers) {
+      c.clear();
+    }
+    ref.read(labelWideSheetProvider.notifier).clearAll();
+    setState(() => _wideErrors.clear());
+  }
+
+  Future<void> _printWide() async {
+    final state = ref.read(labelWideSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final bytes = await _loadTenteBytes();
+    if (!mounted) return;
+    final tenteDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
+    printWideLabelsA4(slots: state.slots, tenteDataUrl: tenteDataUrl);
+  }
+
+  Future<void> _saveWidePdf() async {
+    final state = ref.read(labelWideSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'genis-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final bytes = await buildWideLabelsPdf(slots: state.slots);
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mobile = context.isMobile;
@@ -423,6 +629,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           const Expanded(child: _SavedFilesTab(compact: false)),
         ],
       );
+    }
+
+    // ── Sekme 2: Geniş Logo (KARAR v1.14) ──────────────────────────────────
+    if (_tab == _LabelTab.genis) {
+      return mobile ? _buildWideMobile(selector) : _buildWideDesktop(selector);
     }
 
     // ── Sekme 1: Yeni Etiket (mevcut akış) ─────────────────────────────────
@@ -525,6 +736,106 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       ),
     );
   }
+
+  // ─── Geniş Logo — masaüstü (sol 10-hane giriş · sağ A4 önizleme) ───────────
+  Widget _buildWideDesktop(Widget selector) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: ref.watch(labelWideSheetProvider).filledCount,
+          totalCount: kWideCount,
+          showLogoActions: false,
+          onClearAll: _clearWideAll,
+          onPrint: _printWide,
+          onSavePdf: _saveWidePdf,
+          onCameraScan: kIsWeb ? null : _startWideCameraScan,
+          subtitle:
+              'Barkod okutun; her hane marka tentesi + fiyat + ürün adıyla '
+              'A4 Geniş Logo etiketine dönüşür.',
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: _InputColumn(
+                  controllers: _wideControllers,
+                  focusNodes: _wideFocusNodes,
+                  errors: _wideErrors,
+                  activeIndex: _wideActiveIndex,
+                  itemCount: kWideCount,
+                  wide: true,
+                  onSubmitted: _onWideSubmitted,
+                  onClear: _clearWideSlot,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              Expanded(
+                flex: 6,
+                child: _WidePreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Geniş Logo — mobil (tek kolon) ────────────────────────────────────────
+  Widget _buildWideMobile(Widget selector) {
+    final state = ref.watch(labelWideSheetProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.filledCount,
+            totalCount: kWideCount,
+            showLogoActions: false,
+            onClearAll: _clearWideAll,
+            onPrint: _printWide,
+            onSavePdf: _saveWidePdf,
+            onCameraScan: kIsWeb ? null : _startWideCameraScan,
+            subtitle:
+                'Barkod okutun; her hane marka tentesi + fiyat + ürün adıyla '
+                'A4 Geniş Logo etiketine dönüşür.',
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          ...List.generate(kWideCount, (i) {
+            return _SlotInputRow(
+              index: i,
+              controller: _wideControllers[i],
+              focusNode: _wideFocusNodes[i],
+              isActive: _wideActiveIndex == i,
+              isError: _wideErrors.contains(i),
+              wide: true,
+              onSubmitted: (v) => _onWideSubmitted(i, v),
+              onClear: () => _clearWideSlot(i),
+            );
+          }),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          LayoutBuilder(
+            builder: (ctx, c) => SizedBox(
+              width: c.maxWidth,
+              height: c.maxWidth * (_kA4Height / _kA4Width),
+              child: _WidePreviewPane(),
+            ),
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -533,24 +844,31 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
 
 class _Header extends StatelessWidget {
   final int filledCount;
+  final int totalCount;
+  final bool showLogoActions; // Geniş Logo sekmesinde false (logo yükleme yok)
   final bool hasLogo;
-  final VoidCallback onPickLogo;
-  final VoidCallback onRemoveLogo;
+  final VoidCallback? onPickLogo;
+  final VoidCallback? onRemoveLogo;
   final VoidCallback onClearAll;
   final VoidCallback onPrint;
   final VoidCallback onSavePdf;
   final VoidCallback? onCameraScan; // yalnız native → kamera ile sürekli tara
+  final String subtitle;
   final bool compact;
 
   const _Header({
     required this.filledCount,
-    required this.hasLogo,
-    required this.onPickLogo,
-    required this.onRemoveLogo,
+    this.totalCount = kLabelCount,
+    this.showLogoActions = true,
+    this.hasLogo = false,
+    this.onPickLogo,
+    this.onRemoveLogo,
     required this.onClearAll,
     required this.onPrint,
     required this.onSavePdf,
     this.onCameraScan,
+    this.subtitle =
+        'Barkod okutun; her hane ürün adı + fiyatıyla A4 raf etiketine dönüşür.',
     this.compact = false,
   });
 
@@ -571,20 +889,21 @@ class _Header extends StatelessWidget {
             ),
           ),
         ),
-      // Logo yükle
-      OutlinedButton.icon(
-        onPressed: onPickLogo,
-        icon: const Icon(Icons.image_outlined, size: 18),
-        label: Text(hasLogo ? 'Logoyu Değiştir' : 'Logo Yükle'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textSecondary,
-          side: const BorderSide(color: AppColors.goldBorder),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+      // Logo yükle (yalnız dar-logo sekmesi; Geniş Logo'da marka tentesi sabit).
+      if (showLogoActions)
+        OutlinedButton.icon(
+          onPressed: onPickLogo,
+          icon: const Icon(Icons.image_outlined, size: 18),
+          label: Text(hasLogo ? 'Logoyu Değiştir' : 'Logo Yükle'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.textSecondary,
+            side: const BorderSide(color: AppColors.goldBorder),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppSizes.buttonRadius),
+            ),
           ),
         ),
-      ),
-      if (hasLogo)
+      if (showLogoActions && hasLogo)
         TextButton.icon(
           onPressed: onRemoveLogo,
           icon: const Icon(Icons.close, size: 16),
@@ -649,7 +968,7 @@ class _Header extends StatelessWidget {
                 border: Border.all(color: AppColors.goldBorder),
               ),
               child: Text(
-                '$filledCount / $kLabelCount etiket',
+                '$filledCount / $totalCount etiket',
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -661,9 +980,9 @@ class _Header extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSizes.space4),
-        const Text(
-          'Barkod okutun; her hane ürün adı + fiyatıyla A4 raf etiketine dönüşür.',
-          style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+        Text(
+          subtitle,
+          style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
         ),
         const SizedBox(height: AppSizes.space12),
         Wrap(
@@ -686,6 +1005,8 @@ class _InputColumn extends StatelessWidget {
   final List<FocusNode> focusNodes;
   final Set<int> errors;
   final int activeIndex;
+  final int itemCount;
+  final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
   final Future<void> Function(int, String) onSubmitted;
   final void Function(int) onClear;
 
@@ -696,6 +1017,8 @@ class _InputColumn extends StatelessWidget {
     required this.activeIndex,
     required this.onSubmitted,
     required this.onClear,
+    this.itemCount = kLabelCount,
+    this.wide = false,
   });
 
   @override
@@ -713,7 +1036,7 @@ class _InputColumn extends StatelessWidget {
           ),
           Expanded(
             child: ListView.builder(
-              itemCount: kLabelCount,
+              itemCount: itemCount,
               itemBuilder: (context, i) {
                 return _SlotInputRow(
                   index: i,
@@ -721,6 +1044,7 @@ class _InputColumn extends StatelessWidget {
                   focusNode: focusNodes[i],
                   isActive: activeIndex == i,
                   isError: errors.contains(i),
+                  wide: wide,
                   onSubmitted: (v) => onSubmitted(i, v),
                   onClear: () => onClear(i),
                 );
@@ -759,6 +1083,7 @@ class _SlotInputRow extends ConsumerWidget {
   final FocusNode focusNode;
   final bool isActive;
   final bool isError;
+  final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
   final Future<void> Function(String) onSubmitted;
   final VoidCallback onClear;
 
@@ -770,13 +1095,14 @@ class _SlotInputRow extends ConsumerWidget {
     required this.isError,
     required this.onSubmitted,
     required this.onClear,
+    this.wide = false,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final slot = ref.watch(
-      labelSheetProvider.select((s) => s.slots[index]),
-    );
+    final slot = wide
+        ? ref.watch(labelWideSheetProvider.select((s) => s.slots[index]))
+        : ref.watch(labelSheetProvider.select((s) => s.slots[index]));
 
     // Aktif hane = aktif durum altını (izinli: ince sol altın şerit + ink
     // kenarlık, §5). Hata → danger kenarlık.
@@ -1099,9 +1425,203 @@ class _LabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Üst sekme seçici (KARAR v1.11): Yeni Etiket · Kayıtlı Dosyalar. Kasa sekme
-// dili (SegmentedButton, aktif sekme token dili). Responsive: mobilde kısa
-// etiket "Dosyalar" + ikonsuz → dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
+// Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket, KARAR v1.14)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Marka tentesi crop en-boy oranı (220×90) — fiyat overlay ve ölçek için.
+const double _kWideTenteAspect = 220 / 90;
+
+class _WidePreviewPane extends ConsumerWidget {
+  const _WidePreviewPane();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(labelWideSheetProvider);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: _WideA4Canvas(slots: state.slots),
+        ),
+      ),
+    );
+  }
+}
+
+class _WideA4Canvas extends StatelessWidget {
+  final List<LabelSlot?> slots;
+
+  const _WideA4Canvas({required this.slots});
+
+  @override
+  Widget build(BuildContext context) {
+    const margin = 19.0; // ~5mm @96dpi
+    return Container(
+      width: _kA4Width,
+      height: _kA4Height,
+      color: Colors.white,
+      padding: const EdgeInsets.all(margin),
+      child: Column(
+        children: List.generate(kWideRows, (r) {
+          return Expanded(
+            child: Row(
+              children: List.generate(kWideCols, (c) {
+                final idx = r * kWideCols + c;
+                return Expanded(child: _WideLabelCell(slot: slots[idx]));
+              }),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Tek Geniş Logo etiket hücresi: marka tentesi (üstte) + FİYAT hero (tentenin
+// flat üst bandına ortalı bindirilir) → ürün adı → Code128 (%80 ortalı) + barkod
+// no → sağ-alt tarih. Marka tentesi RENKLİ; diğer öğeler siyah/beyaz.
+class _WideLabelCell extends StatelessWidget {
+  final LabelSlot? slot;
+
+  const _WideLabelCell({required this.slot});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = slot;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color:
+              s == null ? const Color(0xFFE0E0E0) : const Color(0xFFB8B8B8),
+          width: 0.6,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: s == null
+          ? const SizedBox.expand()
+          : LayoutBuilder(
+              builder: (ctx, cons) {
+                final tenteW = cons.maxWidth * 0.72;
+                final tenteH = tenteW / _kWideTenteAspect;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    // Tente + FİYAT hero (fiyat tentenin flat üst bandına ortalı)
+                    SizedBox(
+                      width: tenteW,
+                      height: tenteH,
+                      child: Stack(
+                        alignment: const Alignment(0, -0.34),
+                        children: [
+                          Positioned.fill(
+                            child: Image.asset(
+                              'genis_logo_tente.png',
+                              fit: BoxFit.fill,
+                            ),
+                          ),
+                          Padding(
+                            padding:
+                                EdgeInsets.symmetric(horizontal: tenteW * 0.08),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                '${formatNumber(s.price)} TL',
+                                maxLines: 1,
+                                style: const TextStyle(
+                                  fontSize: 46,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.5,
+                                  height: 1,
+                                  color: Colors.black,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Ürün adı (ortalı, en çok 2 satır)
+                    SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        s.productName.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          height: 1.15,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    // Code128 barkod (%80 ortalı) — esnek öğe
+                    Expanded(
+                      child: Center(
+                        child: FractionallySizedBox(
+                          widthFactor: 0.8,
+                          child: BarcodeWidget(
+                            barcode: bc.Barcode.code128(),
+                            data: s.barcode,
+                            drawText: false,
+                            color: Colors.black,
+                            errorBuilder: (context, error) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Barkod no (ortalı)
+                    SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        s.barcode,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          letterSpacing: 0.5,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    // Sağ-alt köşe: oluşturma tarihi (minik gri)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        formatShortDate(s.createdAt),
+                        style: const TextStyle(
+                          fontSize: 7,
+                          color: Color(0xFF555555),
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Üst sekme seçici (KARAR v1.14): Yeni Etiket · Geniş Logo · Kayıtlı Dosyalar.
+// Kasa sekme dili (SegmentedButton, aktif sekme token dili). Responsive: mobilde
+// kısa etiketler ("Yeni"·"Geniş"·"Dosyalar") + ikonsuz → dar ekranda taşmaz
+// (kasa KARAR v1.9.5 emsali).
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _TabSelector extends StatelessWidget {
@@ -1124,8 +1644,23 @@ class _TabSelector extends StatelessWidget {
         segments: [
           ButtonSegment(
             value: _LabelTab.yeni,
-            label: const Text('Yeni Etiket', maxLines: 1, softWrap: false),
+            label: Text(
+              mobile ? 'Yeni' : 'Yeni Etiket',
+              maxLines: 1,
+              softWrap: false,
+            ),
             icon: mobile ? null : const Icon(Icons.add_box_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.genis,
+            label: Text(
+              mobile ? 'Geniş' : 'Geniş Logo',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile
+                ? null
+                : const Icon(Icons.aspect_ratio_outlined, size: 18),
           ),
           ButtonSegment(
             value: _LabelTab.kayitli,

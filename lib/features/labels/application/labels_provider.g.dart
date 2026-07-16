@@ -68,5 +68,25 @@ final labelSheetProvider =
     );
 
 typedef _$LabelSheet = Notifier<LabelSheetState>;
+String _$labelWideSheetHash() => r'3c452c713ceb119547a9f92bf5ab83b21b77aae3';
+
+/// Geniş Logo etiket sayfası durumunu tutar. `keepAlive` — sekme değişiminde 10
+/// hane korunur (dar-logo `LabelSheet` deseninin logosuz 10-haneli kopyası; dar
+/// 24-hane provider'ıyla KARIŞMAZ).
+///
+/// Copied from [LabelWideSheet].
+@ProviderFor(LabelWideSheet)
+final labelWideSheetProvider =
+    NotifierProvider<LabelWideSheet, LabelWideSheetState>.internal(
+      LabelWideSheet.new,
+      name: r'labelWideSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelWideSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelWideSheet = Notifier<LabelWideSheetState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

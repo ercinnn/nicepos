@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:barcode/barcode.dart' as bc;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -197,6 +198,195 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
               style: const pw.TextStyle(fontSize: 5, color: _dateGrey),
             ),
           ],
+        ),
+      ],
+    ),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Geniş Logo etiketi PDF üretimi (KARAR v1.14) — 2 sütun × 5 satır = 10 etiket.
+// Etiket-içi düzen (önizleme = HTML yazdırma = PDF, üçü BİREBİR):
+//   1) Marka tentesi (genis_logo_tente.png, RENKLİ) üstte + FİYAT tentenin flat
+//      üst bandına ortalı bindirilir (hero, altın YOK, siyah).
+//   2) Ürün adı — tentenin altında ortalı (en çok 2 satır).
+//   3) Code128 barkod ortalı %80 + altında barkod no ortalı.
+//   4) Sağ-alt köşe: oluşturma tarihi (minik gri).
+// Marka tentesi bilinçli olarak RENKLİ basılır (siyah/beyaz kuralının istisnası).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Geniş Logo ızgarası (data katmanı yerel sabitleri; application katmanının
+// kWideCols/kWideRows'una bağlı kalmadan, dar PDF'in _kCols/_kRows deseni gibi).
+const int _kWideCols = 2;
+const int _kWideRows = 5;
+
+// Tentenin en-boy oranı (crop: 220×90) ve fiyat bandının dikey hizası.
+const double _kTenteAspect = 220 / 90;
+
+/// Dolu/boş 10 haneyi A4 dikey 2×5 Geniş Logo etiketi PDF'ine dönüştürür.
+Future<Uint8List> buildWideLabelsPdf({
+  required List<LabelSlot?> slots,
+}) async {
+  pw.ThemeData theme;
+  try {
+    final base = await PdfGoogleFonts.robotoRegular();
+    final bold = await PdfGoogleFonts.robotoBold();
+    theme = pw.ThemeData.withFont(base: base, bold: bold);
+  } catch (_) {
+    theme = pw.ThemeData.base();
+  }
+
+  // Marka tentesi (RENKLİ) — PDF başına bir kez oku.
+  pw.MemoryImage? tenteImage;
+  try {
+    final data = await rootBundle.load('genis_logo_tente.png');
+    tenteImage = pw.MemoryImage(data.buffer.asUint8List());
+  } catch (_) {
+    tenteImage = null;
+  }
+
+  final doc = pw.Document(theme: theme);
+  doc.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: pw.EdgeInsets.all(5 * PdfPageFormat.mm),
+      build: (context) {
+        return pw.Column(
+          children: List.generate(_kWideRows, (r) {
+            return pw.Expanded(
+              child: pw.Row(
+                children: List.generate(_kWideCols, (c) {
+                  final idx = r * _kWideCols + c;
+                  final slot = idx < slots.length ? slots[idx] : null;
+                  return pw.Expanded(child: _wideCell(slot, tenteImage));
+                }),
+              ),
+            );
+          }),
+        );
+      },
+    ),
+  );
+
+  return doc.save();
+}
+
+// Tek Geniş Logo etiket hücresi. Boş hane → yalnız ince kesim kılavuzu.
+pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? tenteImage) {
+  if (slot == null) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: _hairlineEmpty, width: 0.5),
+      ),
+    );
+  }
+
+  return pw.Container(
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: _hairline, width: 0.5),
+    ),
+    padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      mainAxisAlignment: pw.MainAxisAlignment.start,
+      children: [
+        // Tente + FİYAT hero (fiyat tentenin flat üst bandına ortalı bindirilir).
+        pw.Row(
+          children: [
+            pw.Spacer(flex: 16),
+            pw.Expanded(
+              flex: 68,
+              child: pw.AspectRatio(
+                aspectRatio: _kTenteAspect,
+                child: pw.Stack(
+                  alignment: const pw.Alignment(0, -0.34),
+                  children: [
+                    if (tenteImage != null)
+                      pw.Positioned.fill(
+                        child: pw.Image(tenteImage, fit: pw.BoxFit.fill),
+                      ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+                      child: pw.FittedBox(
+                        fit: pw.BoxFit.scaleDown,
+                        child: pw.Text(
+                          '${formatNumber(slot.price)} TL',
+                          style: pw.TextStyle(
+                            fontSize: 30,
+                            fontWeight: pw.FontWeight.bold,
+                            letterSpacing: -0.5,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            pw.Spacer(flex: 16),
+          ],
+        ),
+        pw.SizedBox(height: 3),
+        // Ürün adı (ortalı, en çok 2 satır)
+        pw.SizedBox(
+          width: double.infinity,
+          child: pw.Text(
+            slot.productName.toUpperCase(),
+            textAlign: pw.TextAlign.center,
+            maxLines: 2,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(
+              fontSize: 8.5,
+              fontWeight: pw.FontWeight.bold,
+              lineSpacing: 0.5,
+              color: PdfColors.black,
+            ),
+          ),
+        ),
+        // Code128 barkod (%80 ortalı) — esnek öğe.
+        pw.Expanded(
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Spacer(flex: 1),
+              pw.Expanded(
+                flex: 8,
+                child: bc.Barcode.code128().isValid(slot.barcode)
+                    ? pw.BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: slot.barcode,
+                        drawText: false,
+                        color: PdfColors.black,
+                      )
+                    : pw.SizedBox(),
+              ),
+              pw.Spacer(flex: 1),
+            ],
+          ),
+        ),
+        // Barkod no (ortalı)
+        pw.SizedBox(
+          width: double.infinity,
+          child: pw.Text(
+            slot.barcode,
+            textAlign: pw.TextAlign.center,
+            maxLines: 1,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(
+              fontSize: 11,
+              letterSpacing: 0.5,
+              color: PdfColors.black,
+            ),
+          ),
+        ),
+        // Sağ-alt köşe: oluşturma tarihi (minik gri)
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            formatShortDate(slot.createdAt),
+            style: const pw.TextStyle(fontSize: 5, color: _dateGrey),
+          ),
         ),
       ],
     ),
