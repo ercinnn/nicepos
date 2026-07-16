@@ -327,3 +327,58 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
       min-height:0`), sabit öğeler (ürün adı + alt satır `flex:0 0 auto`) yerini garantiler → **alt satır asla
       hücre dışına itilmez**; taşma olursa yalnız barkod çizgisi kısalır. Dikey padding hafif kısılır (önizleme
       6→4, HTML 2→1.5mm, PDF 3→2) yeni öğelere yer açmak için. Renk/palet/imza etkilenmez.
+  - **"Geniş Logo" sekmesi — sabit tenteli 2×5 marka etiketi (KARAR v1.14):** Etiket ekranına
+    **üçüncü bir sekme** eklenir; mevcut "dar logo" 3×8 raf etiketinden AYRI, iri tenteli marka
+    etiketi (`genis_logo_etiketi.jpg` referansı). Mevcut etiketi değiştirmez — yan yana yaşar.
+    - **Sekme yapısı:** Üst `SegmentedButton` **üç segment** olur: **Yeni Etiket · Geniş Logo ·
+      Kayıtlı Dosyalar** (sıra: dar → geniş → dosyalar). Aktif sekme token dili (§1 altın ekonomisi),
+      yeni renk yok. **Responsive (kasa KARAR v1.9.5 emsali):** mobilde (<650px) segment ikonları
+      gizli + kısa etiketler ("Yeni" · "Geniş" · "Dosyalar") → üç segment 360px'e taşmadan sığar;
+      masaüstünde tam etiket + ikon, tek satır (`maxLines:1, softWrap:false`).
+    - **Grid:** **2 sütun × 5 satır = 10 etiket / A4 sayfa** (dar logonun 3×8=24'ünden az, daha iri
+      hücre ≈ 100mm × 57mm). Ayrı sabitler (`kWideCols=2, kWideRows=5, kWideCount=10`) ve ayrı
+      state (`labelWideSheetProvider`, 10 hane — mevcut 24-hane `labelSheetProvider`'a karışmaz;
+      keepAlive, aynı desen). `@page{size:A4 portrait; margin:~5mm}`, hücreler arası ince nötr
+      hairline kesim kılavuzu (altın YOK).
+    - **Sabit marka görseli (logo yükleme YOK):** Turuncu tente/çadır + NiCE görseli **tek firma için
+      HEP AYNI, sabit asset** → **`genis_logo_tente.png`** (kullanıcının verdiği dolu 2×5 A4 şablon
+      `genis_logo_etiketi_sablon.png`'den kesilmiş **tek tente+NiCE karosu**; her etiket hücresinde bu
+      karo üste yerleşir, fiyat/ad/barkod uygulamaca üzerine bindirilir). `pubspec.yaml` `assets:` listesinde.
+      ⚠️ **Çözünürlük notu (izleme):** ilk karo ~220×90px → A4 ~100mm hücrede pikselleşebilir; görsel QA
+      pikselleşme gösterirse yüksek-çöz. tek-tente PNG ile değiştirilir (baskı netliği). Bu sekmede **logo yükle/değiştir/kaldır
+      aksiyonları YOKTUR** (dar logo sekmesindeki kullanıcı-logosu mantığı buraya taşınmaz). Görsel
+      **renkli** basılır (turuncu tente kendi renginde) — bu, siyah/beyaz baskı kuralının **bilinçli
+      istisnasıdır** (marka grafiği; KARAR v1.12 "logo renkli" emsali). Metin + barkod yine siyah.
+      Marka grafiği **baskı çıktısına** aittir, app paletine karışmaz (`raf_etiketi` iki-kavram ayrımı).
+    - **Etiket-içi düzen (üç çıktı BİREBİR: canlı önizleme = HTML yazdırma = PDF), üstten alta:**
+      1. **Tente görseli** hücre genişliğini kaplar; üzerine **FİYAT** ortalı bindirilir (`Stack`/overlay —
+         tentenin fiyat bandına). Fiyat = etiketin **hero'su**: iri bold tabular `${formatNumber} TL`,
+         **altın ray YOK** (baskı hero'su, app hero'su değil — §4 korunur). Taşarsa `FittedBox scaleDown`,
+         asla kırpılmaz. NiCE rozeti asset'in kendi parçasıdır (ayrı çizilmez).
+      2. **Ürün adı** — tentenin altında beyaz gövdede, **ortalı**, en çok 2 satır (taşarsa ellipsis),
+         `type.utility`/bold, siyah.
+      3. **Code128 barkod** — ortalı, **%80 genişlik** (`Center + FractionallySizedBox(widthFactor:0.8)`
+         / HTML `width:80%`, KARAR v1.13 deseni), altında **barkod no** (ortalı, tabular, siyah).
+      4. **Sağ-alt köşe:** dosyanın **oluşturma/kayıt tarihi** (`formatShortDate`, minik `type.utility`,
+         nötr gri) — kullanıcı isteği: her etiketin sağ-alt köşesine tarih.
+    - **Barkod → ürün çözme akışı = mevcut mantık BİREBİR:** hane input'una barkod okut → **Enter**
+      → `_resolveBarcode` (cache → fetchByBarcode → fetchAll) → `price1` çözülür, hane dolar, imleç
+      **bir alt haneye** geçer; kamera ile sürekli tarama da desteklenir (satış/dar-logo deseni).
+      Aktif hane = ince sol altın şerit + ink kenarlık (§5 altın ekonomisi); çözülemeyen = `danger`.
+    - **Ekran krom'u:** **ekran hero'su YOK** (araç/çalışma ekranı, §4 v1.10 gerekçesi); stok listesi
+      token dili (Manrope başlık, Inter tabular, `cardDecoration`, `goldBg` başlık). Masaüstü iki bölge
+      (sol hane girişi · sağ A4 önizleme), mobil tek kolon — mevcut "Yeni Etiket" yerleşiminin 10-haneli
+      uyarlaması. **Yazdır** (web `window.print`) + **PDF Kaydet** (Supabase Storage, mevcut
+      `etiket_pdfleri` bucket'ı — geniş-logo PDF varyantı) aynı aksiyon dili. **Kayıtlı Dosyalar** sekmesi
+      ortaktır (dar + geniş PDF'ler aynı listede). Yeni renk/altın YOK.
+- **İşitsel geri bildirim — barkod okutma sesi (KARAR v1.14.1, uygulama geneli):** Her başarılı barkod
+  okutmasında **kısa sentetik "bip"** sesi çalınır; barkod **çözülemezse** (ürün bulunamadı) farklı,
+  **"danger" hissi veren** kısa uyarı sesi çalınır. **Kapsam = tüm uygulama:** satış ekranı
+  (`_onBarcodeSubmitted` + kamera), etiket ekranı (dar + geniş logo, hane Enter + kamera sürekli tarama).
+  - **Standart/sentetik:** ses dosyası (asset) YOK — ton **kod içinde üretilir** (öneri: kısa PCM/WAV
+    byte'ları Dart'ta sentezle → tek codepath ile hem web hem Android'de çal; web-only `AudioContext`
+    yerine cross-platform tercih edilir). Başarı = tek net yüksek bip; hata = daha alçak/sert kısa ton.
+  - **Mevcut geri bildirimle katmanlı:** Ses, mevcut `HapticFeedback.lightImpact()` (titreşim) ve
+    satır-içi yeşil "çözüldü" / `danger` "bulunamadı" görsel bildirimini **değiştirmez, tamamlar**.
+    Ortak `playScanBeep(success)` yardımcısı her okutma sonucundan çağrılır. Görsel token/palet/imza
+    etkilenmez (ses görsel bir öğe değildir; buraya yalnız tutarlılık kaydı olarak yazılır).
