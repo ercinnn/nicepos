@@ -243,7 +243,8 @@ const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
 // v1.14.3'teki 1.5 harf aşağı-itme, 2 satırlı adlar barkoda giriyordu →
 // ~5mm yukarı alındı (shift 0). Barkod + alt satır YERİNDE KALIR.
 const double _kWNameSize = 8;
-const double _kWNameShift = 0; // v1.14.4: aşağı-itme kaldırıldı (2 satır fix)
+const double _kWNameShift =
+    5 * PdfPageFormat.mm; // v1.14.5: ad 5mm aşağı, üste hizalı sabit offset
 
 /// Dolu/boş 10 haneyi A4 dikey 2×5 Geniş Logo etiketi PDF'ine dönüştürür.
 Future<Uint8List> buildWideLabelsPdf({

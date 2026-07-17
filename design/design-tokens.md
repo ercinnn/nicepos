@@ -425,3 +425,12 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
       hizalı** (topCenter). Bu, adı önceki konumundan ~1.5 harf ≈ ~5mm yukarı çeker; 2 satır artık barkodu
       yemez. **Barkod + alt satır YERİNDE KALIR** (v1.14.2 alt-çizgi kuralı korunur). Ad hâlâ 2 satır +
       ellipsis/clip. Yeni renk/palet/imza YOK.
+  - **Ürün adı 5mm aşağı (KARAR v1.14.5 — kullanıcı isteği):** Geniş Logo etiketinde ürün adı,
+    v1.14.4'teki üste-hizalı konumundan **tam 5mm AŞAĞI** taşınır (`_kWNameShift` 0 → 5mm karşılığı).
+    - **Ölçü:** her çıktının kendi biriminde tam 5mm — önizleme `5*3.7795 ≈ 18.9px` · HTML `5mm` ·
+      PDF `5*PdfPageFormat.mm`. Üç çıktı BİREBİR. Kayma **1 satırda da 2 satırda da AYNI** (üste-hizalı
+      blok + sabit üst offset; ortalı-blok tuzağına düşülmez).
+    - **Kritik kısıt (v1.14.4 dersi):** Ad ÜSTE hizalı kalır ve barkodun alanını YEMEZ; 5mm eklendikten
+      sonra 2 satırlı ad barkoda girecek olursa **ad 2 satır + ellipsis ile kısalır**, barkod/alt satır
+      ASLA itilmez (fixed-height çocuklar, boşluğu yalnız esnek ad alanı yutar). Alt satır figür alt
+      çizgisinin altına taşamaz (v1.14.2). Yeni renk/palet/imza YOK — yalnız dikey hizalama.

@@ -334,6 +334,7 @@ String _buildWideHtml({
     line-height: 1.15;
     text-transform: uppercase;
     text-align: center;
+    margin-top: 5mm; /* v1.14.5: ad 5mm aşağı, üste hizalı; barkod yerinde kalır */
     flex: 1 1 auto;
     min-height: 0;
     display: -webkit-box;

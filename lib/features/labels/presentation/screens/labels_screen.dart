@@ -1455,7 +1455,8 @@ const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
 // çizgilerine giriyordu → ~5mm yukarı alındı (shift 0). Barkod + alt satır
 // YERİNDE KALIR.
 const double _kWNameSize = 12;
-const double _kWNameShift = 0; // v1.14.4: aşağı-itme kaldırıldı (2 satır fix)
+const double _kWNameShift =
+    5 * 3.7795; // v1.14.5: ad 5mm aşağı (≈18.9px @96dpi), üste hizalı sabit offset
 
 class _WidePreviewPane extends ConsumerWidget {
   const _WidePreviewPane();
