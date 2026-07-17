@@ -62,6 +62,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   String? _currentId;
   bool _loaded = false;
   bool _saving = false;
+  bool _deleting = false;
 
   /// Senkron metotlarında karşılıklı tetiklenmeyi önleyen yeniden-giriş kilidi.
   bool _syncing = false;
@@ -359,6 +360,55 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
   }
 
+  /// Mevcut ürünü siler (yalnız düzenleme modunda, `_currentId` doluyken
+  /// çağrılır — bkz. `build()`'teki `canDelete` koşulu).
+  Future<void> _deleteProduct() async {
+    final id = _currentId;
+    if (id == null || id.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Ürünü Sil'),
+        content: Text(
+          '"${_nameCtrl.text.trim()}" ürününü silmek istediğinize emin misiniz?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Hayır'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await ref.read(productRepositoryProvider).delete(id);
+      ref.invalidate(productGroupsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Ürün silindi')));
+      context.go('/products');
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().contains('foreign key') ||
+              e.toString().contains('violates')
+          ? 'Ürün silinemedi: Bu ürüne ait satış kaydı bulunuyor.'
+          : 'Ürün silinemedi: $e';
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: AppColors.danger, content: Text(msg)));
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
@@ -445,16 +495,48 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerRight,
-          child: ElevatedButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.save_outlined),
-            label: const Text('Ürünü kaydet'),
+        _buildBottomBar(),
+      ],
+    );
+  }
+
+  /// Mobilde ve mevcut (yeni değil) bir ürün düzenlenirken sol altta kırmızı
+  /// "Ürün Sil" butonu, sağda kaydet butonu; aksi halde yalnız kaydet (sağa
+  /// hizalı, önceki davranışla aynı).
+  Widget _buildBottomBar() {
+    final saveButton = ElevatedButton.icon(
+      onPressed: (_saving || _deleting) ? null : _save,
+      icon: _saving
+          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.save_outlined),
+      label: const Text('Ürünü kaydet'),
+    );
+
+    final canDelete = _currentId != null && _currentId!.isNotEmpty;
+    if (!context.isMobile || !canDelete) {
+      return Align(alignment: Alignment.centerRight, child: saveButton);
+    }
+
+    return Row(
+      children: [
+        ElevatedButton.icon(
+          onPressed: (_saving || _deleting) ? null : _deleteProduct,
+          icon: _deleting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.delete_outline),
+          label: const Text('Ürün Sil'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.danger,
+            foregroundColor: Colors.white,
           ),
         ),
+        const Spacer(),
+        saveButton,
       ],
     );
   }

@@ -52,6 +52,10 @@ class DashboardSection extends ConsumerWidget {
 
         // ── Grafik: Yıllık Ciro Karşılaştırma (çok-yıl, Oca–Ara) ─────────
         const _YillikKarsilastirmaCard(),
+        const SizedBox(height: AppSizes.space16),
+
+        // ── Grafik: Yıllık Ortalama Ciro (kümülatif günlük ortalama) ─────
+        const _YillikOrtalamaCiroCard(),
       ],
     );
 
@@ -1197,6 +1201,320 @@ class _YillikLineChart extends StatelessWidget {
             getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
               final ay = s.x.round().clamp(0, 11);
               // barIndex → açık yıl sırası ile eşleşir.
+              final yil = (s.barIndex >= 0 && s.barIndex < acikYillar.length)
+                  ? acikYillar[s.barIndex]
+                  : null;
+              final onEk = yil != null ? '$yil · ' : '';
+              return LineTooltipItem(
+                '$onEk${_ayKisaltma[ay]}\n${_currencyFmt.format(s.y)}',
+                TextStyle(
+                  color: yil != null ? _yilRengi(yil) : Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+
+        lineBarsData: barlar,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Yıllık Ortalama Ciro Kartı (kümülatif günlük ortalama, yıl-içi)
+// ═══════════════════════════════════════════════════════════════════════════
+// Her yıl KENDİ İÇİNDE değerlendirilir (Ocak'ta sıfırlanır). Ay sonu noktası =
+// o yılın Ocak'ından o aya kadarki TOPLAM ciro ÷ o tarihe kadarki TOPLAM gün
+// sayısı — o ayın KENDİ ortalaması DEĞİL. Cari yılın henüz bitmemiş ayı (ör.
+// bugün 17 Temmuzsa Temmuz noktası yalnız ilk 17 günü kapsar) `bugün.day` ile
+// hesaplanır; `sales_monthly_totals` zaten yalnızca gerçekleşmiş satışları
+// içerdiği için ekstra sorguya gerek yok — "Yıllık Ciro Karşılaştırma"
+// kartıyla AYNI iki provider (`currentYearMonthlyProvider` /
+// `historicalYearlyProvider`) yeniden kullanılır.
+// Yıl seçimi sabit 3 yılla sınırlı: bu yıl ve önceki 2 yıl (bugün için
+// 2024/2025/2026) — chip'lerle aç/kapa (çoklu-seçim).
+
+/// [aylik]: 12 elemanlı (0=Ocak..11=Aralık) [yil]'ın AY BAŞINA toplam cirosu.
+/// Dönüş: cari ay dahil o ana kadarki ayların kümülatif ortalama noktaları
+/// (cari yılda henüz gelmemiş aylar için nokta ÜRETİLMEZ).
+List<FlSpot> _kumulatifOrtalamaSpots(
+  int yil,
+  List<num> aylik,
+  int buYil,
+  DateTime bugun,
+) {
+  final sonAy = yil == buYil ? bugun.month : 12;
+  final spots = <FlSpot>[];
+  num toplamCiro = 0;
+  var toplamGun = 0;
+  for (var ay = 1; ay <= sonAy; ay++) {
+    toplamCiro += aylik[ay - 1];
+    final ayGunSayisi = (yil == buYil && ay == bugun.month)
+        ? bugun.day
+        : DateTime(yil, ay + 1, 0).day; // ay'ın takvim gün sayısı (artık yıl dahil)
+    toplamGun += ayGunSayisi;
+    spots.add(FlSpot(
+      (ay - 1).toDouble(),
+      toplamGun == 0 ? 0 : toplamCiro / toplamGun,
+    ));
+  }
+  return spots;
+}
+
+class _YillikOrtalamaCiroCard extends ConsumerStatefulWidget {
+  const _YillikOrtalamaCiroCard();
+
+  @override
+  ConsumerState<_YillikOrtalamaCiroCard> createState() =>
+      _YillikOrtalamaCiroCardState();
+}
+
+class _YillikOrtalamaCiroCardState
+    extends ConsumerState<_YillikOrtalamaCiroCard> {
+  late final int _buYil = DateTime.now().year;
+  late final List<int> _yillar = [_buYil - 2, _buYil - 1, _buYil];
+  // Varsayılan: sabit 3 yılın hepsi açık (karşılaştırma amacı).
+  late final Set<int> _acikYillar = _yillar.toSet();
+
+  @override
+  Widget build(BuildContext context) {
+    // Aynı iki provider "Yıllık Ciro Karşılaştırma" kartıyla paylaşılır →
+    // Riverpod cache sayesinde ekstra ağ isteği olmaz.
+    final currentAsync = ref.watch(currentYearMonthlyProvider);
+    final historicalAsync = ref.watch(historicalYearlyProvider);
+
+    final merged = <int, List<num>>{
+      ...?historicalAsync.valueOrNull,
+      ...?currentAsync.valueOrNull,
+    };
+
+    final mevcutYillar = _yillar.where(merged.containsKey).toList()..sort();
+    final yukleniyor = currentAsync.isLoading || historicalAsync.isLoading;
+    final ikisiDeHata = currentAsync.hasError && historicalAsync.hasError;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        boxShadow: AppSizes.cardShadow,
+      ),
+      padding: const EdgeInsets.all(AppSizes.cardPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Yıllık Ortalama Ciro (Kümülatif Günlük Ortalama)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSizes.space12),
+
+          // ── Yıl aç/kapa toggle chip'leri (çoklu-seçim, sabit 3 yıl) ─────
+          Wrap(
+            spacing: AppSizes.space8,
+            runSpacing: AppSizes.space8,
+            children: mevcutYillar
+                .map((yil) => _YilChip(
+                      yil: yil,
+                      renk: _yilRengi(yil),
+                      acik: _acikYillar.contains(yil),
+                      onTap: () => setState(() {
+                        if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
+                      }),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: AppSizes.space16),
+
+          SizedBox(
+            height: 300,
+            child: _ortalamaGrafikAlani(
+              merged: merged,
+              yukleniyor: yukleniyor,
+              ikisiDeHata: ikisiDeHata,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ortalamaGrafikAlani({
+    required Map<int, List<num>> merged,
+    required bool yukleniyor,
+    required bool ikisiDeHata,
+  }) {
+    if (merged.isEmpty) {
+      if (ikisiDeHata) {
+        return const Center(
+          child: Text(
+            'Veri yüklenemedi',
+            style: TextStyle(color: AppColors.textMuted),
+          ),
+        );
+      }
+      return Stack(
+        children: const [
+          _YillikOrtalamaLineChart(veri: {}, acikYillar: []),
+          _YukleniyorIpucu(),
+        ],
+      );
+    }
+
+    final acik = _acikYillar.where(merged.containsKey).toList()..sort();
+    if (acik.isEmpty) {
+      return const Center(
+        child: Text(
+          'Karşılaştırmak için en az bir yıl seçin',
+          style: TextStyle(color: AppColors.textMuted),
+        ),
+      );
+    }
+
+    final grafik = _YillikOrtalamaLineChart(veri: merged, acikYillar: acik);
+    if (yukleniyor) {
+      return Stack(
+        children: [grafik, const _YukleniyorIpucu()],
+      );
+    }
+    return grafik;
+  }
+}
+
+// ── Kümülatif ortalama çok-serili çizgi grafik ──────────────────────────────
+
+class _YillikOrtalamaLineChart extends StatelessWidget {
+  final Map<int, List<num>> veri;
+  final List<int> acikYillar;
+
+  const _YillikOrtalamaLineChart({
+    required this.veri,
+    required this.acikYillar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bugun = DateTime.now();
+    final buYil = bugun.year;
+
+    final serilerSpot = <int, List<FlSpot>>{
+      for (final yil in acikYillar)
+        yil: _kumulatifOrtalamaSpots(
+          yil,
+          veri[yil] ?? List<num>.filled(12, 0),
+          buYil,
+          bugun,
+        ),
+    };
+
+    var maxY = 0.0;
+    for (final spots in serilerSpot.values) {
+      for (final s in spots) {
+        if (s.y > maxY) maxY = s.y;
+      }
+    }
+    final yMax = maxY == 0 ? 100.0 : maxY * 1.2;
+
+    final barlar = acikYillar.map((yil) {
+      final renk = _yilRengi(yil);
+      return LineChartBarData(
+        spots: serilerSpot[yil]!,
+        isCurved: true,
+        curveSmoothness: 0.25,
+        preventCurveOverShooting: true,
+        color: renk,
+        barWidth: 2,
+        isStrokeCapRound: true,
+        dotData: const FlDotData(show: false),
+        belowBarData: BarAreaData(show: false),
+      );
+    }).toList();
+
+    return LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: 11,
+        minY: 0,
+        maxY: yMax,
+
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: yMax / 4,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: AppColors.textMuted.withValues(alpha: 0.15),
+            strokeWidth: 1,
+          ),
+        ),
+
+        borderData: FlBorderData(
+          show: true,
+          border: Border(
+            bottom: BorderSide(
+                color: AppColors.textMuted.withValues(alpha: 0.25)),
+            left: BorderSide(
+                color: AppColors.textMuted.withValues(alpha: 0.25)),
+          ),
+        ),
+
+        titlesData: FlTitlesData(
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 50,
+              interval: yMax / 4,
+              getTitlesWidget: (val, meta) {
+                if (val == 0) return const SizedBox.shrink();
+                final etiket = val >= 1000
+                    ? '${(val / 1000).toStringAsFixed(1)}K'
+                    : val.toStringAsFixed(0);
+                return Text(
+                  etiket,
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: AppColors.textMuted,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 22,
+              interval: 1,
+              getTitlesWidget: (val, meta) {
+                final idx = val.round();
+                if (idx < 0 || idx >= 12) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    _ayKisaltma[idx],
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+
+        // Tooltip: yıl + ay + o ana kadarki kümülatif günlük ortalama.
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => AppColors.primary.withValues(alpha: 0.90),
+            getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
+              final ay = s.x.round().clamp(0, 11);
               final yil = (s.barIndex >= 0 && s.barIndex < acikYillar.length)
                   ? acikYillar[s.barIndex]
                   : null;
