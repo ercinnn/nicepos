@@ -46441,7 +46441,7 @@ m=a.d
 return'    <div class="wcell">\n      <img class="wfig" src="'+p+'" alt="figur">\n      <div class="wprice"><span>'+o+' TL</span></div>\n      <div class="wbody">\n        <div class="wpname">'+n+"</div>\n        "+q+'\n        <div class="wbottom">\n          <span class="wbcno">'+s+'</span>\n          <span class="wdate">'+A.w4($.zF().aw(m))+"</span>\n        </div>\n      </div>\n    </div>"},
 c6E(a,b){var s,r,q,p=new A.dl("")
 for(s=b.length,r=0;r<b.length;b.length===s||(0,A.F)(b),++r){q=A.c9r(b[r],a)+"\n"
-p.a+=q}return'<!DOCTYPE html>\n<html lang="tr">\n<head>\n<meta charset="utf-8">\n<title>Geni\u015f Logo Etiketleri</title>\n<style>\n  @page { size: A4 portrait; margin: 11mm 17mm; }\n  * { box-sizing: border-box; }\n  html, body { margin: 0; padding: 0; }\n  body {\n    font-family: Arial, Helvetica, sans-serif;\n    color: #000;\n    -webkit-print-color-adjust: exact;\n    print-color-adjust: exact;\n  }\n  .sheet {\n    width: 176mm;\n    display: grid;\n    grid-template-columns: repeat(2, 88mm);\n    grid-auto-rows: 55mm;\n    gap: 0;\n  }\n  .wcell {\n    position: relative;\n    width: 88mm;\n    height: 55mm;\n    border: 0.2mm solid #b8b8b8;\n    overflow: hidden;\n  }\n  .wcell.empty { border-color: #e0e0e0; }\n  /* Fig\xfcr h\xfccreyi doldurur (RENKL\u0130 marka grafi\u011fi). */\n  .wfig {\n    position: absolute;\n    inset: 0;\n    width: 100%;\n    height: 100%;\n    display: block;\n  }\n  /* F\u0130YAT \u2014 tentenin a\xe7\u0131k i\xe7 dikd\xf6rtgeni merkezine ortal\u0131. */\n  .wprice {\n    position: absolute;\n    left: 13%;\n    top: 6.5%;\n    width: 74%;\n    height: 25%;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .wprice span {\n    font-weight: 800;\n    font-size: 26pt;\n    line-height: 1;\n    letter-spacing: -0.5px;\n    color: #000;\n    white-space: nowrap;\n    font-variant-numeric: tabular-nums;\n  }\n  /* G\xf6vde metin alan\u0131 \u2014 yan \xe7izgilerin i\xe7inde, alt \xe7izginin \xfcst\xfcnde. */\n  .wbody {\n    position: absolute;\n    left: 10%;\n    top: 58.5%;\n    width: 80%;\n    height: 39.5%;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n  }\n  /* \xdcr\xfcn ad\u0131 \u2014 v1.14.4: \xdcSTE hizal\u0131 (padding-top 0). v1.14.3\'teki a\u015fa\u011f\u0131-itme\n     2 sat\u0131rl\u0131 adlar\u0131 barkoda sokuyordu \u2192 ~5mm yukar\u0131 al\u0131nd\u0131. Barkod + alt sat\u0131r\n     yerinde kal\u0131r; ta\u015farsa yaln\u0131z ad k\u0131rp\u0131l\u0131r. */\n  .wpname {\n    font-size: 9pt;\n    font-weight: 700;\n    line-height: 1.15;\n    text-transform: uppercase;\n    text-align: center;\n    margin-top: 5mm; /* v1.14.5: ad 5mm a\u015fa\u011f\u0131, \xfcste hizal\u0131; barkod yerinde kal\u0131r */\n    flex: 1 1 auto;\n    min-height: 0;\n    display: -webkit-box;\n    -webkit-line-clamp: 2;\n    -webkit-box-orient: vertical;\n    overflow: hidden;\n    align-self: stretch;\n  }\n  /* Barkod \u2014 yar\u0131 y\xfckseklik (v1.14.2), g\xf6vde i\xe7 geni\u015fli\u011finde ortal\u0131. */\n  .wbc {\n    flex: 0 0 auto;\n    height: 33%;\n    width: 100%;\n    margin: 0 auto;\n  }\n  .wbc svg { width: 100%; height: 100%; display: block; }\n  /* Alt sat\u0131r: barkod no SOLDA \xb7 tarih SA\u011eDA. */\n  .wbottom {\n    flex: 0 0 auto;\n    width: 100%;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    font-variant-numeric: tabular-nums;\n  }\n  .wbcno { font-size: 10pt; letter-spacing: 0.3px; color: #000; }\n  .wdate { font-size: 5.5pt; color: #444; }\n</style>\n</head>\n<body onload="window.focus(); window.print();">\n  <div class="sheet">\n    '+p.j(0)+"\n  </div>\n</body>\n</html>"},
+p.a+=q}return'<!DOCTYPE html>\n<html lang="tr">\n<head>\n<meta charset="utf-8">\n<title>Geni\u015f Logo Etiketleri</title>\n<style>\n  @page { size: A4 portrait; margin: 11mm 17mm; }\n  * { box-sizing: border-box; }\n  html, body { margin: 0; padding: 0; }\n  body {\n    font-family: Arial, Helvetica, sans-serif;\n    color: #000;\n    -webkit-print-color-adjust: exact;\n    print-color-adjust: exact;\n  }\n  .sheet {\n    width: 176mm;\n    display: grid;\n    grid-template-columns: repeat(2, 88mm);\n    grid-auto-rows: 55mm;\n    gap: 0;\n  }\n  .wcell {\n    position: relative;\n    width: 88mm;\n    height: 55mm;\n    border: 0.2mm solid #b8b8b8;\n    overflow: hidden;\n  }\n  .wcell.empty { border-color: #e0e0e0; }\n  /* Fig\xfcr h\xfccreyi doldurur (RENKL\u0130 marka grafi\u011fi). */\n  .wfig {\n    position: absolute;\n    inset: 0;\n    width: 100%;\n    height: 100%;\n    display: block;\n  }\n  /* F\u0130YAT \u2014 tentenin a\xe7\u0131k i\xe7 dikd\xf6rtgeni merkezine ortal\u0131. */\n  .wprice {\n    position: absolute;\n    left: 13%;\n    top: 6.5%;\n    width: 74%;\n    height: 25%;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .wprice span {\n    font-weight: 800;\n    font-size: 26pt;\n    line-height: 1;\n    letter-spacing: -0.5px;\n    color: #000;\n    white-space: nowrap;\n    font-variant-numeric: tabular-nums;\n  }\n  /* G\xf6vde metin alan\u0131 \u2014 yan \xe7izgilerin i\xe7inde, alt \xe7izginin \xfcst\xfcnde. */\n  .wbody {\n    position: absolute;\n    left: 10%;\n    top: 58.5%;\n    width: 80%;\n    height: 39.5%;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n  }\n  /* \xdcr\xfcn ad\u0131 \u2014 v1.14.4: \xdcSTE hizal\u0131 (padding-top 0). v1.14.3\'teki a\u015fa\u011f\u0131-itme\n     2 sat\u0131rl\u0131 adlar\u0131 barkoda sokuyordu \u2192 ~5mm yukar\u0131 al\u0131nd\u0131. Barkod + alt sat\u0131r\n     yerinde kal\u0131r; ta\u015farsa yaln\u0131z ad k\u0131rp\u0131l\u0131r. */\n  .wpname {\n    font-size: 9pt;\n    font-weight: 700;\n    line-height: 1.15;\n    text-transform: uppercase;\n    text-align: center;\n    margin-top: 2.5mm; /* v1.14.6: ad 2.5mm a\u015fa\u011f\u0131, \xfcste hizal\u0131; barkod yerinde kal\u0131r */\n    flex: 1 1 auto;\n    min-height: 0;\n    display: -webkit-box;\n    -webkit-line-clamp: 2;\n    -webkit-box-orient: vertical;\n    overflow: hidden;\n    align-self: stretch;\n  }\n  /* Barkod \u2014 yar\u0131 y\xfckseklik (v1.14.2), g\xf6vde i\xe7 geni\u015fli\u011finde ortal\u0131. */\n  .wbc {\n    flex: 0 0 auto;\n    height: 33%;\n    width: 100%;\n    margin: 0 auto;\n  }\n  .wbc svg { width: 100%; height: 100%; display: block; }\n  /* Alt sat\u0131r: barkod no SOLDA \xb7 tarih SA\u011eDA. */\n  .wbottom {\n    flex: 0 0 auto;\n    width: 100%;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    font-variant-numeric: tabular-nums;\n  }\n  .wbcno { font-size: 10pt; letter-spacing: 0.3px; color: #000; }\n  .wdate { font-size: 5.5pt; color: #444; }\n</style>\n</head>\n<body onload="window.focus(); window.print();">\n  <div class="sheet">\n    '+p.j(0)+"\n  </div>\n</body>\n</html>"},
 bEi(a){var s=0,r=A.w(t.u),q,p,o,n,m,l,k
 var $async$bEi=A.r(function(b,c){if(b===1)return A.t(c,r)
 for(;;)switch(s){case 0:k=A.c6v(a)
@@ -73433,7 +73433,7 @@ aLG(a){this.I(new A.baz(this))},
 aLI(a){this.I(new A.baA(this))},
 E(a){var s=this,r=null,q=s.a.f,p=A.y(q,r,r,B.ak,r,r,B.a9s.dq(s.d?A.tJ(a).gos():B.pK.el(a)),r,r,r)
 q=s.d?A.tJ(a).ghP():r
-return A.bb(A.kJ(A.bHm(B.cQ,B.mw,p,q,B.ahu,0,s.a.c,B.ajo,0.7),B.c6,r,s.gaLF(),s.gaLH(),r),r,1/0)}}
+return A.bb(A.kJ(A.bHm(B.cQ,B.mw,p,q,B.ahu,0,s.a.c,B.ajn,0.7),B.c6,r,s.gaLF(),s.gaLH(),r),r,1/0)}}
 A.baz.prototype={
 $0(){this.a.d=!0},
 $S:0}
@@ -148283,7 +148283,7 @@ q=q?B.yF:A.la(new A.buV(r))
 return A.aP(s,q,B.K,s,s,new A.ba(s,s,p,s,s,s,B.a4),s,s,s,s,s,s,s,s)}}
 A.buV.prototype={
 $2(a,b){var s=null,r=b.b,q=b.d,p=this.a,o=p.a,n=t.p
-return A.kf(B.dL,A.b([A.aUY(0,new A.x8(A.bCc(s,s,new A.ME("genis_logo_figur.png",s,s)),s,s,B.acG,s)),A.Sh(s,A.dL(A.GT(B.aD,A.y(A.kZ(p.c)+" TL",s,1,s,s,s,B.bFp,s,s,s),B.km),s,s),q*0.25,s,r*0.13,s,q*0.065,r*0.74),A.Sh(s,A.aj(A.b([A.ak(A.A9(new A.aC(B.ajk,new A.ei(B.iP,s,s,A.y(p.b.toUpperCase(),s,2,B.ak,s,s,B.bFS,B.cP,s,s),s),s),B.V,s),1),A.bb(A.bGF(A.Fv(),B.a_,o,!1,new A.buU()),q*0.13,1/0),A.bb(A.af(A.b([A.ak(A.y(o,s,1,B.ak,s,s,B.bCI,s,s,s),1),A.y($.zF().aw(p.d),s,s,s,s,s,B.bDF,s,s,s)],n),B.dR,B.u,B.x,0,s),q*0.095,s)],n),B.C,B.u,B.x),q*0.395,s,r*0.1,s,q*0.585,r*0.8)],n),B.V,B.da,s)},
+return A.kf(B.dL,A.b([A.aUY(0,new A.x8(A.bCc(s,s,new A.ME("genis_logo_figur.png",s,s)),s,s,B.acG,s)),A.Sh(s,A.dL(A.GT(B.aD,A.y(A.kZ(p.c)+" TL",s,1,s,s,s,B.bFp,s,s,s),B.km),s,s),q*0.25,s,r*0.13,s,q*0.065,r*0.74),A.Sh(s,A.aj(A.b([A.ak(A.A9(new A.aC(B.ajo,new A.ei(B.iP,s,s,A.y(p.b.toUpperCase(),s,2,B.ak,s,s,B.bFS,B.cP,s,s),s),s),B.V,s),1),A.bb(A.bGF(A.Fv(),B.a_,o,!1,new A.buU()),q*0.13,1/0),A.bb(A.af(A.b([A.ak(A.y(o,s,1,B.ak,s,s,B.bCI,s,s,s),1),A.y($.zF().aw(p.d),s,s,s,s,s,B.bDF,s,s,s)],n),B.dR,B.u,B.x,0,s),q*0.095,s)],n),B.C,B.u,B.x),q*0.395,s,r*0.1,s,q*0.585,r*0.8)],n),B.V,B.da,s)},
 $S:378}
 A.buU.prototype={
 $2(a,b){return B.bD},
@@ -152507,7 +152507,7 @@ else p=g?B.I:i
 r=A.aS(12)
 o=A.dC(q,g?1.5:1)
 n=t.p
-return A.hL(l,A.p6(l,new A.uo(A.af(A.b([A.aP(l,l,B.K,p,l,l,l,l,l,l,l,l,l,4),A.ak(new A.aC(B.ajm,A.aj(A.b([A.eU(m.d,s,l,20),B.c2,A.y(m.c,l,l,l,l,l,A.cb(l,l,s,l,l,l,l,l,l,l,l,11,l,l,B.aq,l,l,!0,l,l,l,l,l,l,l,l),B.cP,l,l)],n),B.C,B.u,B.a6),l),1)],n),B.cA,B.u,B.x,0,l),l),B.bF,l,B.aX,new A.ba(f,l,o,r,l,l,B.a4),B.pT,l,l,l,l),B.X,!1,l,l,l,l,l,l,l,l,l,l,l,l,l,l,k,l,l,l,l,l,l)}}
+return A.hL(l,A.p6(l,new A.uo(A.af(A.b([A.aP(l,l,B.K,p,l,l,l,l,l,l,l,l,l,4),A.ak(new A.aC(B.ajl,A.aj(A.b([A.eU(m.d,s,l,20),B.c2,A.y(m.c,l,l,l,l,l,A.cb(l,l,s,l,l,l,l,l,l,l,l,11,l,l,B.aq,l,l,!0,l,l,l,l,l,l,l,l),B.cP,l,l)],n),B.C,B.u,B.a6),l),1)],n),B.cA,B.u,B.x,0,l),l),B.bF,l,B.aX,new A.ba(f,l,o,r,l,l,B.a4),B.pT,l,l,l,l),B.X,!1,l,l,l,l,l,l,l,l,l,l,l,l,l,l,k,l,l,l,l,l,l)}}
 A.EI.prototype={
 a9(){return new A.Zi(new A.bY(B.bv,$.ag()),A.b([],t._V))}}
 A.Zi.prototype={
@@ -152721,7 +152721,7 @@ d=A.b([A.y(d,o,o,o,o,o,A.cb(o,o,g,o,o,o,o,o,o,o,o,11,o,o,o,o,o,!0,o,o,o,o,o,o,o,
 s=p.f
 if(s>0){r=k.cm(0.1)
 q=A.aS(999)
-B.i.M(d,A.b([B.el,A.aP(o,A.y(""+s+" kalem",o,o,o,o,o,A.cb(o,o,k,o,o,o,o,o,o,o,o,10,o,o,B.aH,o,o,!0,o,o,o,o,o,o,o,o),o,o,o),B.K,o,o,new A.ba(r,o,o,q,o,o,B.a4),o,o,o,o,B.ajn,o,o,o)],c))}d=A.af(d,B.C,B.u,B.x,0,o)
+B.i.M(d,A.b([B.el,A.aP(o,A.y(""+s+" kalem",o,o,o,o,o,A.cb(o,o,k,o,o,o,o,o,o,o,o,10,o,o,B.aH,o,o,!0,o,o,o,o,o,o,o,o),o,o,o),B.K,o,o,new A.ba(r,o,o,q,o,o,B.a4),o,o,o,o,B.ajm,o,o,o)],c))}d=A.af(d,B.C,B.u,B.x,0,o)
 s=p.e
 s=A.aBc(A.y($.co().aw(s),new A.dw(s,t.Zs),o,o,o,o,A.cb(o,o,k,o,o,o,o,o,o,o,B.as,28,o,o,B.cK,o,o,!0,o,-0.5,o,o,o,o,o,o),o,o,o),B.av,A.bxd(),B.aX,new A.bjG())
 n=n?B.a3:B.ct
@@ -168732,20 +168732,20 @@ B.pZ=new A.av(4,4,4,4)
 B.bPK=new A.av(4,4,4,5)
 B.aji=new A.av(4,8,4,8)
 B.ajj=new A.wO(5,2,5,2)
-B.ajk=new A.av(0,18.8975,0,0)
-B.ajm=new A.av(6,12,6,12)
-B.ajn=new A.av(6,1,6,1)
+B.ajl=new A.av(6,12,6,12)
+B.ajm=new A.av(6,1,6,1)
 B.n_=new A.av(6,2,6,2)
 B.Jf=new A.av(6,6,6,6)
 B.jh=new A.av(8,0,8,0)
 B.Jg=new A.av(8,12,8,12)
 B.kH=new A.av(8,2,8,2)
-B.ajo=new A.av(8,2,8,5)
+B.ajn=new A.av(8,2,8,5)
 B.kI=new A.av(8,4,8,4)
 B.q_=new A.av(8,6,8,6)
 B.hO=new A.av(8,8,8,8)
+B.ajo=new A.av(0,9.44875,0,0)
 B.Jh=new A.av(0.5,1,0.5,1)
-B.ajp=new A.wO(0,14.173228346456694,0,0)
+B.ajp=new A.wO(0,7.086614173228347,0,0)
 B.ajq=new A.av(64.25150000000001,41.5745,64.25150000000001,41.5745)
 B.ajr=new A.GD(null)
 B.BT=new A.b9(62335,"MaterialIcons",null,!1)
@@ -176537,9 +176537,9 @@ B.Ke=new A.b9(58628,"MaterialIcons",null,!1)
 B.aqO=new A.b5(B.Ke,18,B.bi,null,null)
 B.bpJ=new A.aC(B.pZ,B.aqO,null)
 B.bpK=new A.aC(B.J8,B.df,null)
-B.ajl=new A.av(6,0,6,0)
+B.ajk=new A.av(6,0,6,0)
 B.aql=new A.b5(B.K8,14,B.ao,null,null)
-B.a2Z=new A.aC(B.ajl,B.aql,null)
+B.a2Z=new A.aC(B.ajk,B.aql,null)
 B.aqS=new A.b5(B.jo,20,B.R,null,null)
 B.bpL=new A.aC(B.pZ,B.aqS,null)
 B.bIp=new A.ab("Al\u0131\u015fveri\u015f bulunamad\u0131.",null,null,null,null,null,null,null,null,null,null)
