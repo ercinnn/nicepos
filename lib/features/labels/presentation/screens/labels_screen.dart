@@ -1447,6 +1447,12 @@ const double _kWFigBodyH = 0.395;
 const double _kWFigBarcodeH = 0.13; // barkod çizgi yüksekliği (yarıya indi)
 const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
 
+// Ürün adı (KARAR v1.14.3): ad, gövdenin üst esnek alanında üstten boşlukla
+// 1.5 harf yüksekliği aşağı itilir. Barkod + alt satır YERİNDE KALIR (sabit
+// yükseklikli çocuklar; boşluğu yalnız esnek ad alanı yutar).
+const double _kWNameSize = 12;
+const double _kWNameShift = _kWNameSize * 1.5; // 18px
+
 class _WidePreviewPane extends ConsumerWidget {
   const _WidePreviewPane();
 
@@ -1572,19 +1578,28 @@ class _WideLabelCell extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek alan.
+                          // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek
+                          // alan. v1.14.3: üstten _kWNameShift boşlukla aşağı
+                          // itilir; ClipRect ad barkod bandına taşarsa kırpar.
                           Expanded(
-                            child: Center(
-                              child: Text(
-                                s.productName.toUpperCase(),
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.1,
-                                  color: Colors.black,
+                            child: ClipRect(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.only(top: _kWNameShift),
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Text(
+                                    s.productName.toUpperCase(),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: _kWNameSize,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.1,
+                                      color: Colors.black,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

@@ -404,3 +404,13 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
       iç genişliğinde, ortalı.
     - **Alt satır:** **barkod no SOLDA · tarih SAĞDA** (önceki "no ortalı + tarih sağ-alt" düzeni değişir).
       Alt satır figürün **alt çizgisinin altına TAŞMAZ** (gövde içinde kalır). `formatShortDate`, minik tabular.
+  - **Ürün adı dikey konumu (KARAR v1.14.3 — kullanıcı isteği):** Geniş Logo etiketinde ürün adı,
+    mevcut konumundan **1.5 harf yüksekliği kadar AŞAĞI** taşınır (tentenin altına fazla yapışıktı).
+    - **Ölçü kuralı:** kaydırma = **1.5 × ürün adı font boyutu**, her çıktının kendi biriminde
+      (önizleme px · HTML pt · PDF pt) → üç çıktı BİREBİR aynı görünür.
+    - **Kapsam (kritik):** Yalnız **ürün adı** iner; **barkod çizgileri ve alt satır (barkod no + tarih)
+      YERİNDE KALIR**. Gövdenin tamamı kaydırılmaz — v1.14.2'nin "alt satır figürün alt çizgisinin
+      altına TAŞMAZ" kuralı bağlayıcıdır; hepsini kaydırmak alt satırı figür dışına iterdi.
+      Uygulama: ürün adı, gövdenin üst esnek alanı içinde üstten boşlukla aşağı itilir; taşma
+      riskinde ad yine 2 satır + ellipsis ile kısalır (barkodun alanını yemez).
+    - Yeni renk/palet/imza YOK — yalnız dikey hizalama. Fiyat hero + altın ray YOK kuralı korunur.

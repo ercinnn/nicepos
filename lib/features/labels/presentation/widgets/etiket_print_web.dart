@@ -325,12 +325,15 @@ String _buildWideHtml({
     flex-direction: column;
     align-items: center;
   }
+  /* Ürün adı — v1.14.3: üstten 1.5 harf yüksekliği (1.5 × 9pt) boşlukla aşağı
+     itilir. Barkod + alt satır yerinde kalır; taşarsa yalnız ad kırpılır. */
   .wpname {
     font-size: 9pt;
     font-weight: 700;
     line-height: 1.15;
     text-transform: uppercase;
     text-align: center;
+    padding-top: 13.5pt;
     flex: 1 1 auto;
     min-height: 0;
     display: -webkit-box;

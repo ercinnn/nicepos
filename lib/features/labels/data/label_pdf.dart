@@ -239,6 +239,11 @@ const double _kWFigBodyH = 0.395;
 const double _kWFigBarcodeH = 0.13; // barkod çizgi yüksekliği (yarıya indi)
 const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
 
+// Ürün adı (KARAR v1.14.3): ad, gövdenin üst esnek alanında üstten boşlukla
+// 1.5 harf yüksekliği aşağı itilir. Barkod + alt satır YERİNDE KALIR.
+const double _kWNameSize = 8;
+const double _kWNameShift = _kWNameSize * 1.5; // 12pt
+
 /// Dolu/boş 10 haneyi A4 dikey 2×5 Geniş Logo etiketi PDF'ine dönüştürür.
 Future<Uint8List> buildWideLabelsPdf({
   required List<LabelSlot?> slots,
@@ -351,18 +356,26 @@ pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? figurImage) {
                 crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
                   // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek alan.
+                  // v1.14.3: üstten _kWNameShift boşlukla aşağı itilir;
+                  // ClipRect ad barkod bandına taşarsa kırpar.
                   pw.Expanded(
-                    child: pw.Center(
-                      child: pw.Text(
-                        slot.productName.toUpperCase(),
-                        textAlign: pw.TextAlign.center,
-                        maxLines: 2,
-                        overflow: pw.TextOverflow.clip,
-                        style: pw.TextStyle(
-                          fontSize: 8,
-                          fontWeight: pw.FontWeight.bold,
-                          lineSpacing: 0.5,
-                          color: PdfColors.black,
+                    child: pw.ClipRect(
+                      child: pw.Padding(
+                        padding: const pw.EdgeInsets.only(top: _kWNameShift),
+                        child: pw.Align(
+                          alignment: pw.Alignment.topCenter,
+                          child: pw.Text(
+                            slot.productName.toUpperCase(),
+                            textAlign: pw.TextAlign.center,
+                            maxLines: 2,
+                            overflow: pw.TextOverflow.clip,
+                            style: pw.TextStyle(
+                              fontSize: _kWNameSize,
+                              fontWeight: pw.FontWeight.bold,
+                              lineSpacing: 0.5,
+                              color: PdfColors.black,
+                            ),
+                          ),
                         ),
                       ),
                     ),
