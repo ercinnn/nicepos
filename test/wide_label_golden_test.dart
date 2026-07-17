@@ -9,10 +9,14 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:nice_pos/features/labels/data/models/label_slot.dart';
 import 'package:nice_pos/features/labels/presentation/screens/labels_screen.dart';
 
-void main() {
+Future<void> main() async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('tr_TR');
+
   testWidgets('Geniş Logo 2x5 önizleme golden PNG üretir', (tester) async {
     final now = DateTime(2026, 7, 16);
     final slots = List<LabelSlot?>.filled(10, null);
