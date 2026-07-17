@@ -29,6 +29,8 @@ void main() {
               .overrideWith((ref) => (count: 2, revenue: 1000)),
           monthSummaryProvider.overrideWith((ref) => (count: 40, revenue: 50000)),
           lastMonthRevenueProvider.overrideWith((ref) => 42000),
+          yearToDateRevenueProvider.overrideWith((ref) => 250000),
+          last365DaysRevenueProvider.overrideWith((ref) => 480000),
           dailySalesProvider(30).overrideWith((ref) => sample),
           dailySalesProvider(8).overrideWith((ref) => sample.take(8).toList()),
           dailySalesProvider(15).overrideWith((ref) => sample.take(15).toList()),

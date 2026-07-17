@@ -109,6 +109,45 @@ final lastMonthRevenueProvider = AutoDisposeFutureProvider<num>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef LastMonthRevenueRef = AutoDisposeFutureProviderRef<num>;
+String _$yearToDateRevenueHash() => r'a4c50393d1988701a10fd6c9e99297ef4d2343d9';
+
+/// Yıl başından bugüne (YTD) toplam ciro — cari yılın 01 Ocak'ından bugüne.
+///
+/// Copied from [yearToDateRevenue].
+@ProviderFor(yearToDateRevenue)
+final yearToDateRevenueProvider = AutoDisposeFutureProvider<num>.internal(
+  yearToDateRevenue,
+  name: r'yearToDateRevenueProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$yearToDateRevenueHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef YearToDateRevenueRef = AutoDisposeFutureProviderRef<num>;
+String _$last365DaysRevenueHash() =>
+    r'b13e439cd4a0a1353e79b7cd37ef817ddc522d46';
+
+/// Son 365 günlük toplam ciro (bugün dahil son 365 takvim günü).
+///
+/// Copied from [last365DaysRevenue].
+@ProviderFor(last365DaysRevenue)
+final last365DaysRevenueProvider = AutoDisposeFutureProvider<num>.internal(
+  last365DaysRevenue,
+  name: r'last365DaysRevenueProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$last365DaysRevenueHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef Last365DaysRevenueRef = AutoDisposeFutureProviderRef<num>;
 String _$dailySalesHash() => r'e8254c7773e76085b0967828bee531f9177f1c64';
 
 /// Copied from Dart SDK

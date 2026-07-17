@@ -172,7 +172,7 @@ class _HeroBand extends ConsumerWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 4 Stat Kartı Satırı
+// 5 Stat Kartı Satırı (masaüstü: yanyana tek satır; mobil: 2 sütunlu grid)
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _StatCardsRow extends ConsumerWidget {
@@ -184,6 +184,8 @@ class _StatCardsRow extends ConsumerWidget {
     final yesterdayAsync = ref.watch(yesterdaySummaryProvider);
     final monthAsync = ref.watch(monthSummaryProvider);
     final lastMonthAsync = ref.watch(lastMonthRevenueProvider);
+    final ytdAsync = ref.watch(yearToDateRevenueProvider);
+    final last365Async = ref.watch(last365DaysRevenueProvider);
 
     // Destek kartları: hero (bugünkü ciro) zaten gösterildiği için TEKRAR
     // edilmez. Kalan metrikler sakin kartlarda — semantik % rozeti dışında renk yok.
@@ -225,6 +227,28 @@ class _StatCardsRow extends ConsumerWidget {
           error: (e, s) => '—',
         ),
         degisim: null, // aylık adet için geçen ay adet verisi yok
+        karsilastirmaEtiketi: '',
+      ),
+      _StatCardData(
+        baslik: 'Yıllık Ciro',
+        donem: 'Bu Yıl',
+        asyncDeger: ytdAsync.when(
+          data: (v) => _currencyFmt.format(v),
+          loading: () => null,
+          error: (e, s) => '—',
+        ),
+        degisim: null, // YTD karşılaştırması yok
+        karsilastirmaEtiketi: '',
+      ),
+      _StatCardData(
+        baslik: 'Son 365 Günlük Ciro',
+        donem: '365 Gün',
+        asyncDeger: last365Async.when(
+          data: (v) => _currencyFmt.format(v),
+          loading: () => null,
+          error: (e, s) => '—',
+        ),
+        degisim: null,
         karsilastirmaEtiketi: '',
       ),
     ];

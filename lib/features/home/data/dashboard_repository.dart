@@ -135,6 +135,45 @@ class DashboardRepository {
     );
   }
 
+  // ── Yıl başından bugüne (YTD) toplam ciro ────────────────────────────────
+  // Cari yılın 01 Ocak gününden bugünün sonuna kadar (bugün dahil) toplam ciro.
+  // Örn. 17.07.2026 için 01.01.2026 00:00 – 18.07.2026 00:00 aralığı.
+  Future<num> fetchYearToDateRevenue() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, 1, 1);
+    final end = DateTime(now.year, now.month, now.day)
+        .add(const Duration(days: 1));
+    final rows = await _fetchAllRows(
+      'total_amount',
+      start: start,
+      end: end,
+    );
+    return rows.fold<num>(
+      0,
+      (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
+    );
+  }
+
+  // ── Son 365 günlük toplam ciro ───────────────────────────────────────────
+  // Bugün dahil son 365 takvim günü: bugünden 364 gün önceki günün başından
+  // bugünün sonuna kadar. Örn. 17.07.2026 için 19.07.2025 00:00 – 18.07.2026
+  // 00:00 aralığı (365 gün).
+  Future<num> fetchLast365DaysRevenue() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = today.subtract(const Duration(days: 364));
+    final end = today.add(const Duration(days: 1));
+    final rows = await _fetchAllRows(
+      'total_amount',
+      start: start,
+      end: end,
+    );
+    return rows.fold<num>(
+      0,
+      (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
+    );
+  }
+
   // ── Son N günün günlük satış tutarlarını getir ───────────────────────────
   Future<List<({DateTime date, num amount})>> fetchDailySales(int days) async {
     final now = DateTime.now();

@@ -29,6 +29,16 @@ Future<({int count, num revenue})> monthSummary(MonthSummaryRef ref) =>
 Future<num> lastMonthRevenue(LastMonthRevenueRef ref) =>
     ref.watch(dashboardRepositoryProvider).fetchLastMonthRevenue();
 
+/// Yıl başından bugüne (YTD) toplam ciro — cari yılın 01 Ocak'ından bugüne.
+@riverpod
+Future<num> yearToDateRevenue(YearToDateRevenueRef ref) =>
+    ref.watch(dashboardRepositoryProvider).fetchYearToDateRevenue();
+
+/// Son 365 günlük toplam ciro (bugün dahil son 365 takvim günü).
+@riverpod
+Future<num> last365DaysRevenue(Last365DaysRevenueRef ref) =>
+    ref.watch(dashboardRepositoryProvider).fetchLast365DaysRevenue();
+
 /// Son [days] günün günlük satış verileri.
 /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
 /// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
