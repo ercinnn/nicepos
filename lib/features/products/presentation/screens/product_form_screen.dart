@@ -241,8 +241,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _syncing = false;
   }
 
-  /// Fiyat 1 elle değişince kâr oranını hesaplar (satışı EZMEZ).
-  /// Kâr% = (satış / alış − 1) × 100. Alış ≤ 0 ise hesap atlanır.
+  /// Fiyat 1 (satış) VEYA Alış fiyatı elle değişince kâr oranını hesaplar
+  /// (satışı EZMEZ; satış her iki durumda da sabit kalır).
+  /// Kâr% = (satış / alış − 1) × 100. Alış ≤ 0 ise hesap atlanır
+  /// (0'a bölme yok; kâr alanı eski değerinde kalır, exception atılmaz).
   void _recalcMarginFromPrice1() {
     if (_syncing) return;
     final purchase = _num(_purchasePriceCtrl).toDouble();
@@ -558,8 +560,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: _decimalInputFormatters,
                 onChanged: (_) {
-                  // Alış değişince mevcut kâr oranını koruyup Fiyat 1'i hesapla.
-                  _recalcPrice1FromMargin();
+                  // Alış değişince SATIŞ sabit kalır; kâr oranı yeniden hesaplanır.
+                  // Kâr% = (satış / alış − 1) × 100. Alış ≤ 0 ise hesap atlanır.
+                  _recalcMarginFromPrice1();
                   setState(() {});
                 },
               ),
