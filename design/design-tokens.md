@@ -382,3 +382,25 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     satır-içi yeşil "çözüldü" / `danger` "bulunamadı" görsel bildirimini **değiştirmez, tamamlar**.
     Ortak `playScanBeep(success)` yardımcısı her okutma sonucundan çağrılır. Görsel token/palet/imza
     etkilenmez (ses görsel bir öğe değildir; buraya yalnız tutarlılık kaydı olarak yazılır).
+  - **Geniş Logo baskı geometrisi + etiket-içi hizalama (KARAR v1.14.2 — kullanıcı ölçüleri):** Geniş Logo
+    etiketinin fiziksel/baskı ölçüleri kesinleşti. Önizleme = HTML = PDF üçü BİREBİR aynı; yeni renk/palet/imza
+    YOK (fiyat hero, altın ray YOK korunur).
+    - **Sayfa geometrisi (kesin mm):** A4 dikey 210×297mm. Etiket hücresi **94mm genişlik × 55mm yükseklik**.
+      2 sütun = 188mm · 5 satır = 275mm. **Boşluklar eşit ve simetrik:** sol=sağ=**11mm**, üst=alt=**11mm**
+      → `(210−188)/2 = 11`, `(297−275)/2 = 11`. 10 etiket A4'e tam ortalanır. HTML `@page{size:A4 portrait;
+      margin:11mm}` + hücre `94mm×55mm`; PDF `PdfPageFormat.a4` + `margin:11mm` + hücre eşit dağılım; önizleme
+      tuvali aynı oranı korur (1mm≈3.78px @96dpi).
+    - **Asset = TAM tek-hücre figürü:** Marka görseli yalnız tente üstü DEĞİL, **tam dükkan figürü** olmalı:
+      turuncu tente + NiCE rozeti + altındaki **beyaz gövde + sol/sağ turuncu yan çizgiler + alt çizgi**.
+      Kaynak: kullanıcının `genis_logo_etiketi_sablon.png` dolu 2×5 şablonundan **tek tam hücre** yüksek
+      çözünürlükte kırpılır (dashed kesim kılavuzları hariç). Figür hücreyi (94×55 oranı) dolduracak biçimde
+      yerleşir; tüm etiket-içeriği bu figürün **sınırları içinde** kalır.
+    - **Fiyat:** Tentenin **açık turuncu (iç) dikdörtgeninin tam merkezine** — yatay VE dikey ortalı. **Kalın**
+      (w800) siyah tabular; taşarsa `FittedBox scaleDown`. Fiyat = etiket hero'su, **altın ray YOK**.
+    - **Ürün adı + barkod genişliği:** NiCE yazısının/tentenin altındaki gövdede; **sol ve sağdaki turuncu yan
+      çizgilerin dışına TAŞMAZ** (genişlik gövdenin iç payına kısıtlı) ve **tam ortalı**. Ürün adı ortalı, en
+      çok 2 satır + ellipsis.
+    - **Barkod çizgi yüksekliği:** mevcut değerin **1/2'sine** indirilir (yarı yükseklik); yatayda yine gövde
+      iç genişliğinde, ortalı.
+    - **Alt satır:** **barkod no SOLDA · tarih SAĞDA** (önceki "no ortalı + tarih sağ-alt" düzeni değişir).
+      Alt satır figürün **alt çizgisinin altına TAŞMAZ** (gövde içinde kalır). `formatShortDate`, minik tabular.
