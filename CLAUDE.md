@@ -135,7 +135,9 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` annotation ile üre
 | `dailyReportProvider` | `autoDispose family` | Günlük rapor |
 | `dashboardRepositoryProvider` | `autoDispose` | Dashboard repository |
 | `todaySummaryProvider` / `yesterdaySummaryProvider` / `monthSummaryProvider` / `lastMonthRevenueProvider` | `autoDispose` | Dashboard stat kartları |
+| `yearToDateRevenueProvider` / `last365DaysRevenueProvider` | `autoDispose` | "Yıllık Ciro" (YTD) / "Son 365 Günlük Ciro" kartları — `sales_revenue_between` RPC (bkz. Veritabanı notu) |
 | `dailySalesProvider(days)` | `autoDispose family` | Dashboard günlük satış grafiği (8/15/30 gün). `monthlySalesProvider` hâlâ tanımlı ama dashboard'da artık kullanılmıyor |
+| `currentYearMonthlyProvider` / `historicalYearlyProvider` | `keepAlive` | Yıllık aylık toplamlar (cari yıl / geçmiş yıllar) — hem "Yıllık Ciro Karşılaştırma" hem "Yıllık Ortalama Ciro" grafiği bu ikisini paylaşır |
 | `customerSalesProvider(query)` / `customerPaymentsProvider(id)` | `autoDispose family` | Müşteri geçmiş işlemleri |
 
 ### Satış Akışı
@@ -193,6 +195,20 @@ Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir
   (Pzt..Pzr, `DateTime.weekday`). Eski Aylık Satış grafiği kaldırıldı.
 - **Regresyon testi:** `test/dashboard_render_test.dart` — masaüstü genişliğinde dashboard'u sahte
   provider'larla render edip "infinite height" hatası atmadığını + grafiğin göründüğünü doğrular.
+- **Yıllık Ciro / Son 365 Günlük Ciro kartları — sunucu tarafı SUM:** `DashboardRepository.fetchYearToDateRevenue()`,
+  `fetchLast365DaysRevenue()`, `fetchLastMonthRevenue()` eskiden o tarih aralığındaki TÜM `sales`
+  satırlarını sayfalayarak çekip Dart'ta topluyordu (~5sn). Artık `sales_revenue_between(start_ts,
+  end_ts)` RPC'sini (bkz. Veritabanı notu, `0015_sales_revenue_rpc.sql`) çağırıyor — Postgres
+  `sale_date` index'i ile tek `SUM()` sorgusu, istemci tek sayı alır (~1sn).
+- **Yıllık Ortalama Ciro grafiği (`_YillikOrtalamaCiroCard`):** Kümülatif günlük ortalama —
+  her yıl KENDİ İÇİNDE değerlendirilir (Ocak'ta sıfırlanır). Ay sonu noktası = o yılın Ocak'ından o
+  aya kadarki TOPLAM ciro ÷ o tarihe kadarki TOPLAM gün sayısı (o ayın kendi ortalaması DEĞİL).
+  Cari yılın bitmemiş ayı (ör. bugün 17 Temmuzsa Temmuz noktası yalnız ilk 17 günü kapsar) —
+  `sales_monthly_totals` view'ı zaten yalnızca gerçekleşmiş satışları içerdiği için ekstra sorguya
+  gerek yok; "Yıllık Ciro Karşılaştırma" kartıyla AYNI iki provider (`currentYearMonthlyProvider` /
+  `historicalYearlyProvider`) yeniden kullanılır (`_kumulatifOrtalamaSpots` helper'ı,
+  `dashboard_section.dart`). Yıl seçimi sabit 3 yılla sınırlı: bu yıl + önceki 2 yıl, chip'lerle
+  aç/kapa (varsayılan hepsi açık).
 
 ### Müşteri Detayı — Geçmiş İşlem Yönetimi
 
@@ -203,7 +219,28 @@ Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir
 
 ### Ürünler Sayfası
 
-**Desktop:** DataTable + kolon seçici (`productColumnsProvider`) + checkbox seçim + toplu silme
+**Desktop:** `DataTable` + kolon seçici (`productColumnsProvider`) + checkbox seçim + toplu silme.
+Sabit kolonlar sırası: Checkbox · **Durum** · # · Ürün Adı · (dinamik kolonlar) · İşlem.
+
+- **Satır içi düzenleme (tıkla-düzenle, `_ProductsTable`/`products_list_screen.dart`):** Ürün Adı,
+  Stok, Alış, Fiyat 1 hücreleri varsayılan olarak sade `Text` (ucuz); birine **dokununca** o SATIR
+  düzenleme moduna geçer ve o 4 hane canlı `TextField`'a döner (`_editingIds` seti,
+  `_RowControllers` yalnız düzenlenen satır için lazy kurulur). ⚠️ Performans notu: `DataTable`
+  sanallaştırma YAPMAZ — sayfadaki TÜM satırları her zaman `TextField` yapmak (50 satır × 4 hane)
+  ilk açılışı gözle görülür yavaşlatır; bu yüzden yalnız dokunulan satır düzenlenebilir.
+  İşlem sütununda düzenleme sırasında yeşil **Güncelle** (kaydet) + gri **Vazgeç** (X, iptal) çıkar;
+  kaydedince satır otomatik display moduna döner. Başarılı güncellemede sağ üstte **2 saniyelik**
+  toast bildirimi (`_showTopRightToast` — `SnackBar` değil, `OverlayEntry`; alt köşede değil sağ
+  üstte çıkması için).
+- **Durum sütunu (`_StatusBadge`):** Çok Satan (yeşil) / Tükendi (kırmızı) / Pasif (gri) / boş.
+  Sunucuda `product_status` view'ından (`0016_product_status.sql`) tek sorguyla çekilir
+  (`ProductRepository.fetchStatuses(ids)`, sayfadaki ürün id'leriyle filtreli — ana ürün sorgusundan
+  AYRI, ikinci bir istek). Öncelik: Çok Satan > Tükendi > Pasif > boş — tanımlar migration
+  dosyasında. Stok/fiyat güncellendiğinde (`_updateProduct`) durum yeniden çekilir.
+- **Yoğunlaştırılmış tablo:** `columnSpacing: 28` (varsayılan 56'nın yarısı), hücre fontu 1 kademe
+  küçük (`dataTextStyle` fontSize 12, başlık 11), Ürün Adı hücresi 516px (eski 220'nin ~2 katı + 2cm).
+- **Arama debounce:** 250ms (`_onSearchChanged`, `Timer`) — Durum sorgusu eklendiğinden beri her
+  yükleme 2 ardışık istek attığı için debounce olmadan her tuş vuruşu bu maliyeti tekrarlardı.
 
 **Mobil:** Kart listesi — her kart:
 - Sol üst: ürün adı
@@ -217,6 +254,15 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
 **Arama (`ProductRepository`):** `fetchAll(query)` Türkçe-duyarlı (İ/i, I/ı katlaması) — `name`/`barcode`/`stock_code` üzerinde `ilike` OR varyantları (`_buildSearchOr`).
 
 **Ürün formu (`product_form_screen.dart`):** Kâr alanı düzenlenebilir; kâr ↔ satış fiyatı çift yönlü hesaplanır. Sayısal girişlerde virgül **ve** nokta ondalık ayıracı kabul edilir.
+- **Mobilde ürün resmi ekleme alanı YOK** ("Ürün resmi ekle" bölümü yalnız masaüstü `Row`
+  dalında kalır; `_buildProductInfoTab`'te `isMobile ? formFields : Row(...imageSection...)`).
+  Görsel yükleme/gösterme mantığı (`_pickImage`, `_imageUrl`, `_save()` içindeki upload) DOKUNULMADI
+  — sadece mobil UI'dan çıkarıldı, masaüstünden yüklenen görsel mobilde hâlâ korunur/gösterilir.
+- **Mobilde Ürün Sil butonu:** yalnız mevcut (yeni değil, `_currentId` dolu) ürün düzenlenirken,
+  alt çubukta sol tarafta kırmızı `ElevatedButton.icon` (sağda kaydet butonuyla birlikte `Row`).
+  Onay dialogu: başlık "Ürünü Sil", metin `"$ad" ürününü silmek istediğinize emin misiniz?`,
+  butonlar **Hayır** / **Sil** (kırmızı). `ProductRepository.delete()` çağırır, foreign-key
+  hatasında ("bu ürüne ait satış kaydı var") anlaşılır mesaj gösterir.
 
 ### Excel Export
 
@@ -268,6 +314,8 @@ ekranı** (tasarım: design-tokens **KARAR v1.10** — **ekran hero'su YOK**, st
 - `sales` tablosu iskontoyu **birebir** saklar: `discount_percent` (geriye dönük uyumluluk) + `discount_amount` (kesin TL) + `discount_type` (`'percent'` | `'tl'`). Bkz. `0008_discount_amount.sql`. `SaleEditScreen` kaydedilen tür/değerle açılır → yuvarlama farkı olmaz.
 - `customer_balances` görünümü borcu `customer_payments` hareketlerinden hesaplar; bu yüzden bir hareketi/satışı silmek borcu doğrudan günceller.
 - RPC'ler: `generate_sale_code`, `increment_product_stock` (stok iadesi), stok düşürme.
+- `sales_revenue_between(start_ts, end_ts)` RPC (`0015_sales_revenue_rpc.sql`): `sale_date` index'i ile tek `SUM(total_amount)` sorgusu — dashboard YTD/365-gün/geçen-ay ciro kartları bunu kullanır (bkz. Dashboard notu). `security invoker` (varsayılan), RLS `sales` tablosuyla aynı.
+- `product_status` view (`0016_product_status.sql`): Ürünler tablosundaki **Durum** sütununun kaynağı. Öncelik Çok Satan > Tükendi > Pasif > boş. Çok Satan = son 4 haftanın (bugüne göre kayan 7'şer günlük 4 pencere, takvim haftası DEĞİL) HER birinde ≥1 adet satış — `sale_items`/`sales` üzerinden hesaplanır. Tükendi = `stock_quantity <= 0`. Pasif = `products.updated_at` 1 yıldan eski — stok satışla (`decrement_product_stock`/`increment_product_stock` RPC'leri) VEYA elle düzenlemeyle (`Product.toInsertMap()`) değiştiğinde HER ikisi de `updated_at`'i günceller, yani bu tek alan "stok + satış + fiyat" aktivitesinin hepsini kapsar. `ProductRepository.fetchStatuses(ids)` ile `product_id` filtreli okunur (ana ürün sorgusundan ayrı, ikinci istek).
 
 ### Deploy — GitHub Pages
 
