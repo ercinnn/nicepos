@@ -13,7 +13,7 @@ void printLabelsA4({
 /// Geniş Logo etiketi yazdırma — web dışı platformlarda no-op (KARAR v1.14).
 void printWideLabelsA4({
   required List<LabelSlot?> slots,
-  required String tenteDataUrl,
+  required String figurDataUrl,
 }) {
   // No-op
 }

@@ -64,7 +64,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   late final List<FocusNode> _wideFocusNodes;
   final Set<int> _wideErrors = {};
   int _wideActiveIndex = 0;
-  Uint8List? _tenteBytes; // marka tentesi (yazdırma için bir kez okunur)
+  Uint8List? _figurBytes; // marka figürü (yazdırma için bir kez okunur)
 
   _LabelTab _tab = _LabelTab.yeni; // aktif sekme
 
@@ -424,10 +424,10 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // (_resolveBarcode); yalnız hedef state (labelWideSheetProvider) farklı.
   // ═════════════════════════════════════════════════════════════════════════
 
-  // Marka tentesini yazdırma için bir kez okur (base64 print + PDF ayrı okur).
-  Future<Uint8List> _loadTenteBytes() async {
-    return _tenteBytes ??=
-        (await rootBundle.load('genis_logo_tente.png')).buffer.asUint8List();
+  // Marka figürünü yazdırma için bir kez okur (base64 print + PDF ayrı okur).
+  Future<Uint8List> _loadFigurBytes() async {
+    return _figurBytes ??=
+        (await rootBundle.load('genis_logo_figur.png')).buffer.asUint8List();
   }
 
   int _nextWideEmptyIndex() {
@@ -556,10 +556,10 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
       return;
     }
-    final bytes = await _loadTenteBytes();
+    final bytes = await _loadFigurBytes();
     if (!mounted) return;
-    final tenteDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
-    printWideLabelsA4(slots: state.slots, tenteDataUrl: tenteDataUrl);
+    final figurDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
+    printWideLabelsA4(slots: state.slots, figurDataUrl: figurDataUrl);
   }
 
   Future<void> _saveWidePdf() async {
@@ -1425,11 +1425,27 @@ class _LabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket, KARAR v1.14)
+// Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket, KARAR v1.14 /
+// v1.14.2). Hücre 94×55mm, kenar 11mm. Marka figürü (RENKLİ) hücreyi doldurur;
+// fiyat/ad/barkod figür üzerine oranlı bindirilir (önizleme = HTML = PDF BİREBİR).
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Marka tentesi crop en-boy oranı (220×90) — fiyat overlay ve ölçek için.
-const double _kWideTenteAspect = 220 / 90;
+// A4 önizleme kenar boşluğu — her yönde 11mm @96dpi (KARAR v1.14.2).
+const double _kWideMargin = 11 * 3.7795; // ≈ 41.6px
+
+// Etiket-içi hizalama oranları (hücre = figür; figür crop'undan ölçüldü). Bu
+// oranlar HTML/PDF ile birebir paylaşılır. Fiyat = tentenin açık iç dikdörtgeni;
+// gövde = yan çizgilerin içi (alt çizginin üstünde).
+const double _kWFigPriceLeft = 0.13;
+const double _kWFigPriceTop = 0.065;
+const double _kWFigPriceW = 0.74;
+const double _kWFigPriceH = 0.25;
+const double _kWFigBodyLeft = 0.10;
+const double _kWFigBodyTop = 0.585;
+const double _kWFigBodyW = 0.80;
+const double _kWFigBodyH = 0.395;
+const double _kWFigBarcodeH = 0.13; // barkod çizgi yüksekliği (yarıya indi)
+const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
 
 class _WidePreviewPane extends ConsumerWidget {
   const _WidePreviewPane();
@@ -1461,12 +1477,11 @@ class _WideA4Canvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const margin = 19.0; // ~5mm @96dpi
     return Container(
       width: _kA4Width,
       height: _kA4Height,
       color: Colors.white,
-      padding: const EdgeInsets.all(margin),
+      padding: const EdgeInsets.all(_kWideMargin),
       child: Column(
         children: List.generate(kWideRows, (r) {
           return Expanded(
@@ -1483,9 +1498,16 @@ class _WideA4Canvas extends StatelessWidget {
   }
 }
 
-// Tek Geniş Logo etiket hücresi: marka tentesi (üstte) + FİYAT hero (tentenin
-// flat üst bandına ortalı bindirilir) → ürün adı → Code128 (%80 ortalı) + barkod
-// no → sağ-alt tarih. Marka tentesi RENKLİ; diğer öğeler siyah/beyaz.
+// Geniş Logo A4 önizleme tuvalini (2×5) golden/görsel doğrulama için üretir.
+// Yalnız test amaçlı (tasarım-lideri hiza denetimi); üretim akışında kullanılmaz.
+@visibleForTesting
+Widget buildWideCanvasForGolden(List<LabelSlot?> slots) =>
+    _WideA4Canvas(slots: slots);
+
+// Tek Geniş Logo etiket hücresi (figür arka planı + fiyat/ad/barkod overlay,
+// KARAR v1.14.2). Figür hücreyi doldurur (RENKLİ); fiyat tentenin açık iç
+// dikdörtgeninin merkezine, ürün adı + barkod + alt satır gövdede (yan
+// çizgilerin içinde) oranlı bindirilir. Öğeler siyah/beyaz.
 class _WideLabelCell extends StatelessWidget {
   final LabelSlot? slot;
 
@@ -1502,111 +1524,117 @@ class _WideLabelCell extends StatelessWidget {
           width: 0.6,
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: s == null
           ? const SizedBox.expand()
           : LayoutBuilder(
               builder: (ctx, cons) {
-                final tenteW = cons.maxWidth * 0.72;
-                final tenteH = tenteW / _kWideTenteAspect;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisAlignment: MainAxisAlignment.start,
+                final w = cons.maxWidth;
+                final h = cons.maxHeight;
+                return Stack(
                   children: [
-                    // Tente + FİYAT hero (fiyat tentenin flat üst bandına ortalı)
-                    SizedBox(
-                      width: tenteW,
-                      height: tenteH,
-                      child: Stack(
-                        alignment: const Alignment(0, -0.34),
-                        children: [
-                          Positioned.fill(
-                            child: Image.asset(
-                              'genis_logo_tente.png',
-                              fit: BoxFit.fill,
+                    // Figür arka planı — hücreyi doldurur (BoxFit.fill).
+                    Positioned.fill(
+                      child: Image.asset(
+                        'genis_logo_figur.png',
+                        fit: BoxFit.fill,
+                      ),
+                    ),
+                    // FİYAT — tentenin açık iç dikdörtgeni merkezine ortalı.
+                    Positioned(
+                      left: w * _kWFigPriceLeft,
+                      top: h * _kWFigPriceTop,
+                      width: w * _kWFigPriceW,
+                      height: h * _kWFigPriceH,
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            '${formatNumber(s.price)} TL',
+                            maxLines: 1,
+                            style: const TextStyle(
+                              fontSize: 46,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                              height: 1,
+                              color: Colors.black,
+                              fontFeatures: [FontFeature.tabularFigures()],
                             ),
                           ),
-                          Padding(
-                            padding:
-                                EdgeInsets.symmetric(horizontal: tenteW * 0.08),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
+                        ),
+                      ),
+                    ),
+                    // Gövde: ürün adı + barkod + alt satır (yan çizgilerin içi).
+                    Positioned(
+                      left: w * _kWFigBodyLeft,
+                      top: h * _kWFigBodyTop,
+                      width: w * _kWFigBodyW,
+                      height: h * _kWFigBodyH,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek alan.
+                          Expanded(
+                            child: Center(
                               child: Text(
-                                '${formatNumber(s.price)} TL',
-                                maxLines: 1,
+                                s.productName.toUpperCase(),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 46,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.5,
-                                  height: 1,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
                                   color: Colors.black,
-                                  fontFeatures: [FontFeature.tabularFigures()],
                                 ),
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    // Ürün adı (ortalı, en çok 2 satır)
-                    SizedBox(
-                      width: double.infinity,
-                      child: Text(
-                        s.productName.toUpperCase(),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
-                    // Code128 barkod (%80 ortalı) — esnek öğe
-                    Expanded(
-                      child: Center(
-                        child: FractionallySizedBox(
-                          widthFactor: 0.8,
-                          child: BarcodeWidget(
-                            barcode: bc.Barcode.code128(),
-                            data: s.barcode,
-                            drawText: false,
-                            color: Colors.black,
-                            errorBuilder: (context, error) =>
-                                const SizedBox.shrink(),
+                          // Code128 barkod — yarı yükseklik, gövde iç genişliğinde.
+                          SizedBox(
+                            width: double.infinity,
+                            height: h * _kWFigBarcodeH,
+                            child: BarcodeWidget(
+                              barcode: bc.Barcode.code128(),
+                              data: s.barcode,
+                              drawText: false,
+                              color: Colors.black,
+                              errorBuilder: (context, error) =>
+                                  const SizedBox.shrink(),
+                            ),
                           ),
-                        ),
-                      ),
-                    ),
-                    // Barkod no (ortalı)
-                    SizedBox(
-                      width: double.infinity,
-                      child: Text(
-                        s.barcode,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          letterSpacing: 0.5,
-                          color: Colors.black,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                    // Sağ-alt köşe: oluşturma tarihi (minik gri)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        formatShortDate(s.createdAt),
-                        style: const TextStyle(
-                          fontSize: 7,
-                          color: Color(0xFF555555),
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
+                          // Alt satır: barkod no SOLDA · tarih SAĞDA.
+                          SizedBox(
+                            height: h * _kWFigBottomH,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    s.barcode,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      letterSpacing: 0.3,
+                                      color: Colors.black,
+                                      fontFeatures: [
+                                        FontFeature.tabularFigures()
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  formatShortDate(s.createdAt),
+                                  style: const TextStyle(
+                                    fontSize: 7,
+                                    color: Color(0xFF555555),
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

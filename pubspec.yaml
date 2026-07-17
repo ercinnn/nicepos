@@ -85,10 +85,12 @@ flutter:
   uses-material-design: true
 
   assets:
-    # Geniş Logo etiket sekmesi (KARAR v1.14) — sabit marka tentesi (turuncu
-    # çadır + NiCE). RENKLİ basılır (siyah/beyaz kuralının bilinçli marka
-    # istisnası). Tek firma, hep aynı; bu sekmede logo yükleme yoktur.
-    - genis_logo_tente.png
+    # Geniş Logo etiket sekmesi (KARAR v1.14 / v1.14.2) — sabit TAM marka figürü
+    # (turuncu tente + NiCE + beyaz gövde + yan çizgiler + alt çizgi). RENKLİ
+    # basılır (siyah/beyaz kuralının bilinçli marka istisnası). Figür her hücreyi
+    # doldurur; fiyat/ad/barkod üzerine bindirilir. Tek firma, hep aynı; bu
+    # sekmede logo yükleme yoktur.
+    - genis_logo_figur.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
