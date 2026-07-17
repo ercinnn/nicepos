@@ -252,9 +252,9 @@ String _buildWideHtml({
     cells.writeln(_wideCellHtml(slot, figurDataUrl));
   }
 
-  // A4 portrait 210×297mm, kenar 11mm → yazdırılabilir 188×275mm.
-  // 2 sütun → 94mm, 5 satır → 55mm (KARAR v1.14.2). Konum oranları figürün
-  // iç bölgelerine göre (fiyat=tentenin açık iç dikdörtgeni, gövde=yan çizgi içi).
+  // A4 portrait 210×297mm; kenar üst/alt 11mm, sol/sağ 17mm (KARAR v1.14.4) →
+  // yazdırılabilir 176×275mm. 2 sütun → 88mm, 5 satır → 55mm. Konum oranları
+  // figürün iç bölgelerine göre (fiyat=tentenin açık iç dikdörtgeni, gövde=yan çizgi içi).
   return '''
 <!DOCTYPE html>
 <html lang="tr">
@@ -262,7 +262,7 @@ String _buildWideHtml({
 <meta charset="utf-8">
 <title>Geniş Logo Etiketleri</title>
 <style>
-  @page { size: A4 portrait; margin: 11mm; }
+  @page { size: A4 portrait; margin: 11mm 17mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -272,15 +272,15 @@ String _buildWideHtml({
     print-color-adjust: exact;
   }
   .sheet {
-    width: 188mm;
+    width: 176mm;
     display: grid;
-    grid-template-columns: repeat(2, 94mm);
+    grid-template-columns: repeat(2, 88mm);
     grid-auto-rows: 55mm;
     gap: 0;
   }
   .wcell {
     position: relative;
-    width: 94mm;
+    width: 88mm;
     height: 55mm;
     border: 0.2mm solid #b8b8b8;
     overflow: hidden;
@@ -325,15 +325,15 @@ String _buildWideHtml({
     flex-direction: column;
     align-items: center;
   }
-  /* Ürün adı — v1.14.3: üstten 1.5 harf yüksekliği (1.5 × 9pt) boşlukla aşağı
-     itilir. Barkod + alt satır yerinde kalır; taşarsa yalnız ad kırpılır. */
+  /* Ürün adı — v1.14.4: ÜSTE hizalı (padding-top 0). v1.14.3'teki aşağı-itme
+     2 satırlı adları barkoda sokuyordu → ~5mm yukarı alındı. Barkod + alt satır
+     yerinde kalır; taşarsa yalnız ad kırpılır. */
   .wpname {
     font-size: 9pt;
     font-weight: 700;
     line-height: 1.15;
     text-transform: uppercase;
     text-align: center;
-    padding-top: 13.5pt;
     flex: 1 1 auto;
     min-height: 0;
     display: -webkit-box;

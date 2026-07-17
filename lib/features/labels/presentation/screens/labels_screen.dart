@@ -1426,12 +1426,15 @@ class _LabelCell extends StatelessWidget {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket, KARAR v1.14 /
-// v1.14.2). Hücre 94×55mm, kenar 11mm. Marka figürü (RENKLİ) hücreyi doldurur;
-// fiyat/ad/barkod figür üzerine oranlı bindirilir (önizleme = HTML = PDF BİREBİR).
+// v1.14.2 / v1.14.4). Hücre 88×55mm; üst/alt kenar 11mm, sol/sağ kenar 17mm.
+// Marka figürü (RENKLİ) hücreyi doldurur; fiyat/ad/barkod figür üzerine oranlı
+// bindirilir (önizleme = HTML = PDF BİREBİR).
 // ═══════════════════════════════════════════════════════════════════════════
 
-// A4 önizleme kenar boşluğu — her yönde 11mm @96dpi (KARAR v1.14.2).
-const double _kWideMargin = 11 * 3.7795; // ≈ 41.6px
+// A4 önizleme kenar boşluğu (KARAR v1.14.4 — hücre 94→88mm): üst/alt 11mm,
+// sol/sağ 17mm @96dpi → (210−2×88)/2 = 17mm, hücre genişliği tam 88mm.
+const double _kWideMargin = 11 * 3.7795; // dikey ≈ 41.6px
+const double _kWideMarginH = 17 * 3.7795; // yatay ≈ 64.25px
 
 // Etiket-içi hizalama oranları (hücre = figür; figür crop'undan ölçüldü). Bu
 // oranlar HTML/PDF ile birebir paylaşılır. Fiyat = tentenin açık iç dikdörtgeni;
@@ -1447,11 +1450,12 @@ const double _kWFigBodyH = 0.395;
 const double _kWFigBarcodeH = 0.13; // barkod çizgi yüksekliği (yarıya indi)
 const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
 
-// Ürün adı (KARAR v1.14.3): ad, gövdenin üst esnek alanında üstten boşlukla
-// 1.5 harf yüksekliği aşağı itilir. Barkod + alt satır YERİNDE KALIR (sabit
-// yükseklikli çocuklar; boşluğu yalnız esnek ad alanı yutar).
+// Ürün adı (KARAR v1.14.4): ad, gövdenin üst esnek alanında ÜSTE hizalı
+// (topCenter). v1.14.3'teki 1.5 harf aşağı-itme, 2 satırlı adlar barkod
+// çizgilerine giriyordu → ~5mm yukarı alındı (shift 0). Barkod + alt satır
+// YERİNDE KALIR.
 const double _kWNameSize = 12;
-const double _kWNameShift = _kWNameSize * 1.5; // 18px
+const double _kWNameShift = 0; // v1.14.4: aşağı-itme kaldırıldı (2 satır fix)
 
 class _WidePreviewPane extends ConsumerWidget {
   const _WidePreviewPane();
@@ -1487,7 +1491,10 @@ class _WideA4Canvas extends StatelessWidget {
       width: _kA4Width,
       height: _kA4Height,
       color: Colors.white,
-      padding: const EdgeInsets.all(_kWideMargin),
+      padding: const EdgeInsets.symmetric(
+        vertical: _kWideMargin,
+        horizontal: _kWideMarginH,
+      ),
       child: Column(
         children: List.generate(kWideRows, (r) {
           return Expanded(
@@ -1579,8 +1586,8 @@ class _WideLabelCell extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek
-                          // alan. v1.14.3: üstten _kWNameShift boşlukla aşağı
-                          // itilir; ClipRect ad barkod bandına taşarsa kırpar.
+                          // alan. v1.14.4: ÜSTE hizalı (_kWNameShift=0); 2 satır
+                          // artık barkoda girmez. ClipRect taşarsa kırpar.
                           Expanded(
                             child: ClipRect(
                               child: Padding(

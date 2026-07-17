@@ -414,3 +414,14 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
       Uygulama: ürün adı, gövdenin üst esnek alanı içinde üstten boşlukla aşağı itilir; taşma
       riskinde ad yine 2 satır + ellipsis ile kısalır (barkodun alanını yemez).
     - Yeni renk/palet/imza YOK — yalnız dikey hizalama. Fiyat hero + altın ray YOK kuralı korunur.
+  - **Geniş Logo etiket genişliği + ürün adı düzeltmesi (KARAR v1.14.4 — kullanıcı isteği):**
+    - **Etiket genişliği 94mm → 88mm:** 2×5=10 etiket sayısı aynı kalır. A4 dikey 210×297mm; hücre
+      **88mm × 55mm**. 2 sütun = 176mm · 5 satır = 275mm. Kenar boşlukları: **sol/sağ = 17mm**
+      (`(210−2×88)/2 = 17`), **üst/alt = 11mm** (`(297−275)/2 = 11`). 10 etiket A4'e tam ortalı kalır.
+      HTML `@page{margin:11mm 17mm}` + `.sheet width:176mm` + hücre `88mm×55mm`; PDF `margin:symmetric(v:11mm,
+      h:17mm)`; önizleme `EdgeInsets.symmetric(vertical:11mm, horizontal:17mm)`. Üçü BİREBİR.
+    - **Ürün adı ~5mm yukarı:** v1.14.3'teki 1.5-harf aşağı-itme, 2 satırlı adlarda alttaki barkod
+      çizgilerine giriyordu → aşağı-itme **kaldırıldı** (shift 0), ad gövdenin üst esnek alanında **ÜSTE
+      hizalı** (topCenter). Bu, adı önceki konumundan ~1.5 harf ≈ ~5mm yukarı çeker; 2 satır artık barkodu
+      yemez. **Barkod + alt satır YERİNDE KALIR** (v1.14.2 alt-çizgi kuralı korunur). Ad hâlâ 2 satır +
+      ellipsis/clip. Yeni renk/palet/imza YOK.

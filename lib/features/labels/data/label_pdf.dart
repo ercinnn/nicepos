@@ -207,8 +207,8 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Geniş Logo etiketi PDF üretimi (KARAR v1.14 / v1.14.2) — 2 sütun × 5 satır =
 // 10 etiket. Kesin baskı geometrisi (önizleme = HTML = PDF, üçü BİREBİR):
-//   • A4 dikey 210×297mm · hücre 94×55mm · kenar boşluğu her yönde 11mm →
-//     10 etiket A4'e tam ortalı.
+//   • A4 dikey 210×297mm · hücre 88×55mm · kenar üst/alt 11mm, sol/sağ 17mm
+//     (KARAR v1.14.4) → 10 etiket A4'e tam ortalı.
 //   • Marka figürü (genis_logo_figur.png, RENKLİ — tente + NiCE + gövde + yan
 //     çizgiler + alt çizgi) hücreyi doldurur; fiyat/ad/barkod ÜZERİNE bindirilir.
 // Etiket-içi hizalama (figür sınırları içinde, hücre oranıyla):
@@ -239,10 +239,11 @@ const double _kWFigBodyH = 0.395;
 const double _kWFigBarcodeH = 0.13; // barkod çizgi yüksekliği (yarıya indi)
 const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
 
-// Ürün adı (KARAR v1.14.3): ad, gövdenin üst esnek alanında üstten boşlukla
-// 1.5 harf yüksekliği aşağı itilir. Barkod + alt satır YERİNDE KALIR.
+// Ürün adı (KARAR v1.14.4): ad, gövdenin üst esnek alanında ÜSTE hizalı.
+// v1.14.3'teki 1.5 harf aşağı-itme, 2 satırlı adlar barkoda giriyordu →
+// ~5mm yukarı alındı (shift 0). Barkod + alt satır YERİNDE KALIR.
 const double _kWNameSize = 8;
-const double _kWNameShift = _kWNameSize * 1.5; // 12pt
+const double _kWNameShift = 0; // v1.14.4: aşağı-itme kaldırıldı (2 satır fix)
 
 /// Dolu/boş 10 haneyi A4 dikey 2×5 Geniş Logo etiketi PDF'ine dönüştürür.
 Future<Uint8List> buildWideLabelsPdf({
@@ -270,8 +271,12 @@ Future<Uint8List> buildWideLabelsPdf({
   doc.addPage(
     pw.Page(
       pageFormat: PdfPageFormat.a4,
-      // Kenar boşluğu her yönde 11mm → 2×5 hücre 94×55mm A4'e tam ortalı.
-      margin: pw.EdgeInsets.all(11 * PdfPageFormat.mm),
+      // Kenar boşluğu (KARAR v1.14.4 — hücre 94→88mm): üst/alt 11mm, sol/sağ
+      // 17mm → 2×5 hücre 88×55mm A4'e tam ortalı ((210−2×88)/2 = 17).
+      margin: pw.EdgeInsets.symmetric(
+        vertical: 11 * PdfPageFormat.mm,
+        horizontal: 17 * PdfPageFormat.mm,
+      ),
       build: (context) {
         return pw.Column(
           children: List.generate(_kWideRows, (r) {
@@ -356,8 +361,8 @@ pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? figurImage) {
                 crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
                   // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek alan.
-                  // v1.14.3: üstten _kWNameShift boşlukla aşağı itilir;
-                  // ClipRect ad barkod bandına taşarsa kırpar.
+                  // v1.14.4: ÜSTE hizalı (_kWNameShift=0); 2 satır artık
+                  // barkoda girmez. ClipRect taşarsa kırpar.
                   pw.Expanded(
                     child: pw.ClipRect(
                       child: pw.Padding(
