@@ -119,20 +119,24 @@ class DashboardRepository {
     return (count: count, revenue: revenue);
   }
 
+  // ── Sunucu tarafında SUM(total_amount) — geniş tarih aralıkları için ─────
+  // `sales_revenue_between` RPC'si (bkz. 0015_sales_revenue_rpc.sql) toplamayı
+  // Postgres'te `sale_date` index'i ile tek sorguda yapar; istemci binlerce
+  // satır çekip Dart'ta toplamak yerine tek sayısal değer alır.
+  Future<num> _fetchRevenueBetween(DateTime start, DateTime end) async {
+    final result = await _client.rpc('sales_revenue_between', params: {
+      'start_ts': start.toUtc().toIso8601String(),
+      'end_ts': end.toUtc().toIso8601String(),
+    });
+    return _asNum(result);
+  }
+
   // ── Geçen ayın satış tutarını getir ─────────────────────────────────────
   Future<num> fetchLastMonthRevenue() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month - 1, 1);
     final end = DateTime(now.year, now.month, 1);
-    final rows = await _fetchAllRows(
-      'total_amount',
-      start: start,
-      end: end,
-    );
-    return rows.fold<num>(
-      0,
-      (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
-    );
+    return _fetchRevenueBetween(start, end);
   }
 
   // ── Yıl başından bugüne (YTD) toplam ciro ────────────────────────────────
@@ -143,15 +147,7 @@ class DashboardRepository {
     final start = DateTime(now.year, 1, 1);
     final end = DateTime(now.year, now.month, now.day)
         .add(const Duration(days: 1));
-    final rows = await _fetchAllRows(
-      'total_amount',
-      start: start,
-      end: end,
-    );
-    return rows.fold<num>(
-      0,
-      (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
-    );
+    return _fetchRevenueBetween(start, end);
   }
 
   // ── Son 365 günlük toplam ciro ───────────────────────────────────────────
@@ -163,15 +159,7 @@ class DashboardRepository {
     final today = DateTime(now.year, now.month, now.day);
     final start = today.subtract(const Duration(days: 364));
     final end = today.add(const Duration(days: 1));
-    final rows = await _fetchAllRows(
-      'total_amount',
-      start: start,
-      end: end,
-    );
-    return rows.fold<num>(
-      0,
-      (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
-    );
+    return _fetchRevenueBetween(start, end);
   }
 
   // ── Son N günün günlük satış tutarlarını getir ───────────────────────────
