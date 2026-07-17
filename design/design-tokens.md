@@ -434,3 +434,9 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
       sonra 2 satırlı ad barkoda girecek olursa **ad 2 satır + ellipsis ile kısalır**, barkod/alt satır
       ASLA itilmez (fixed-height çocuklar, boşluğu yalnız esnek ad alanı yutar). Alt satır figür alt
       çizgisinin altına taşamaz (v1.14.2). Yeni renk/palet/imza YOK — yalnız dikey hizalama.
+  - **Ürün adı 2.5mm'ye düşürüldü (KARAR v1.14.6 — kullanıcı isteği):** v1.14.5'teki 5mm aşağı-kaydırma,
+    2 satırlı adlarda ürün adını hâlâ **azıcık barkoda sokuyordu** → kaydırma **5mm → 2.5mm** yarıya
+    indirilir (`_kWNameShift` = 2.5mm karşılığı). Net konum: v1.14.4 üste-hizalı taban + **2.5mm aşağı**.
+    - **Ölçü:** her çıktının kendi biriminde tam 2.5mm — önizleme `2.5*3.7795 ≈ 9.45px` · HTML
+      `margin-top: 2.5mm` · PDF `2.5*PdfPageFormat.mm`. Üç çıktı BİREBİR; kayma 1 ve 2 satırda AYNI
+      (üste-hizalı blok + sabit offset). Barkod + alt satır YERİNDE (v1.14.4/v1.14.2 kısıtları korunur).
