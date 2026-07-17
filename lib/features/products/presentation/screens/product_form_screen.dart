@@ -769,15 +769,8 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: isMobile
-          // Mobil: resim üstte, form alanları altta (yan yana koymak taşar)
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                imageSection,
-                const SizedBox(height: 16),
-                formFields,
-              ],
-            )
+          // Mobil: resim alanı gösterilmiyor, sadece form alanları
+          ? formFields
           // Masaüstü: sol = form alanları (2/3), sağ = resim (1/3)
           : Row(
               crossAxisAlignment: CrossAxisAlignment.start,
