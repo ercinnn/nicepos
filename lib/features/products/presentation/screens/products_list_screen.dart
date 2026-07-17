@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,6 +18,48 @@ import '../../application/products_provider.dart';
 import '../widgets/excel_import_dialog.dart';
 import '../widgets/excel_export.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
+
+// ── Sağ üst köşe bildirimi (2sn otomatik kaybolur) ─────────────────────────────
+// `SnackBar` varsayılan olarak alt köşede çıkar; "Ürün güncellendi" bildirimi
+// için sağ üstte kısa ömürlü bir `OverlayEntry` kullanılır (bu ekrana özgü,
+// başka yerde ihtiyaç doğarsa `core/widgets`'a taşınabilir).
+void _showTopRightToast(BuildContext context, String message) {
+  final overlay = Overlay.of(context);
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (ctx) => Positioned(
+      top: AppSizes.space16 + MediaQuery.of(ctx).padding.top,
+      right: AppSizes.space16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSizes.space16, vertical: AppSizes.space12),
+          decoration: BoxDecoration(
+            color: AppColors.success,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            boxShadow: AppSizes.cardShadow,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle_outline,
+                  color: Colors.white, size: 18),
+              const SizedBox(width: AppSizes.space8),
+              Text(message,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+  overlay.insert(entry);
+  Future.delayed(const Duration(seconds: 2), () {
+    if (entry.mounted) entry.remove();
+  });
+}
 
 // ── Ekran ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +82,15 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
   final Set<String> _selectedIds = {};
 
+  // Ürün başına "Durum" (Çok Satan/Tükendi/Pasif) — bkz. `_loadStatuses`.
+  Map<String, String?> _statuses = {};
+
+  // Arama kutusu debounce'u (250ms) — projedeki diğer canlı aramalarla aynı
+  // desen (bkz. sales_screen.dart `_LiveProductSearchField`). Durum sütunu
+  // eklendiğinden beri her yükleme 2 ardışık sorgu attığı için (ürünler +
+  // durum), debounce OLMADAN her tuş vuruşu bu maliyeti tekrarlardı.
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -46,7 +100,14 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  void _onSearchChanged(String v) {
+    setState(() { _query = v; _page = 0; _products = []; });
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), _loadProducts);
   }
 
   Future<void> _loadProducts() async {
@@ -67,12 +128,26 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         _products = rows;
         _loading = false;
       });
+      _loadStatuses();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  // "Durum" bilgisini o an listelenen ürünler için ayrıca çeker (ana ürün
+  // sorgusunu yavaşlatmamak için — bkz. `ProductRepository.fetchStatuses`).
+  Future<void> _loadStatuses() async {
+    final ids = _products.map((p) => p.id).toList();
+    try {
+      final statuses = await ref.read(productRepositoryProvider).fetchStatuses(ids);
+      if (!mounted) return;
+      setState(() => _statuses = statuses);
+    } catch (_) {
+      // Durum bilgisi ikincil — sessizce yoksay, liste yine gösterilir.
     }
   }
 
@@ -206,6 +281,20 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     ));
   }
 
+  // ── Satır içi güncelleme (tablodan doğrudan düzenleme) ──────────────────────
+
+  Future<void> _updateProduct(Product updated) async {
+    await ref.read(productRepositoryProvider).update(updated.id, updated);
+    if (!mounted) return;
+    setState(() {
+      final idx = _products.indexWhere((x) => x.id == updated.id);
+      if (idx != -1) _products[idx] = updated;
+    });
+    _showTopRightToast(context, 'Ürün güncellendi');
+    // Stok/fiyat değişimi Durum'u etkileyebilir (Tükendi/Pasif) → tazele.
+    _loadStatuses();
+  }
+
   // ── Seçim yardımcıları ───────────────────────────────────────────────────────
 
   void _toggleSelect(String id) => setState(() {
@@ -291,10 +380,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                   )
                 : null,
           ),
-          onChanged: (v) {
-            setState(() { _query = v; _page = 0; _products = []; });
-            _loadProducts();
-          },
+          onChanged: _onSearchChanged,
         ),
         const SizedBox(height: AppSizes.space8),
         // Grup filtresi
@@ -402,10 +488,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                   hintText: 'Ürün adı, barkod, stok kodu...',
                   prefixIcon: Icon(Icons.search, size: 18),
                 ),
-                onChanged: (v) {
-                  setState(() { _query = v; _page = 0; _products = []; });
-                  _loadProducts();
-                },
+                onChanged: _onSearchChanged,
               ),
             ),
             const SizedBox(width: AppSizes.space12),
@@ -499,7 +582,9 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                             visibleColumns: ref.watch(productColumnsProvider),
                             selectedIds: _selectedIds,
                             allSelected: _allSelected,
+                            statuses: _statuses,
                             onDelete: _deleteProduct,
+                            onUpdate: _updateProduct,
                             onToggleSelect: _toggleSelect,
                             onToggleSelectAll: _toggleSelectAll,
                           ),
@@ -781,12 +866,14 @@ class _SummaryRow extends StatelessWidget {
 
 // ── Dinamik Tablo ─────────────────────────────────────────────────────────────
 
-class _ProductsTable extends StatelessWidget {
+class _ProductsTable extends StatefulWidget {
   final List<Product> products;
   final Set<ProductColumn> visibleColumns;
   final Set<String> selectedIds;
   final bool allSelected;
+  final Map<String, String?> statuses;
   final Future<void> Function(Product) onDelete;
+  final Future<void> Function(Product) onUpdate;
   final void Function(String id) onToggleSelect;
   final VoidCallback onToggleSelectAll;
 
@@ -795,10 +882,130 @@ class _ProductsTable extends StatelessWidget {
     required this.visibleColumns,
     required this.selectedIds,
     required this.allSelected,
+    required this.statuses,
     required this.onDelete,
+    required this.onUpdate,
     required this.onToggleSelect,
     required this.onToggleSelectAll,
   });
+
+  @override
+  State<_ProductsTable> createState() => _ProductsTableState();
+}
+
+/// Satır başına düzenlenebilir alanların denetleyicileri (ad/stok/alış/fiyat1).
+/// Kaydedilmemiş kullanıcı girdisini tutar; "Güncelle"ye basılana kadar
+/// sunucuya YAZILMAZ.
+class _RowControllers {
+  final TextEditingController name;
+  final TextEditingController stock;
+  final TextEditingController purchase;
+  final TextEditingController price1;
+
+  _RowControllers(Product p)
+      : name = TextEditingController(text: p.name),
+        stock = TextEditingController(text: _fmtNum(p.stockQuantity)),
+        purchase = TextEditingController(text: _fmtNum(p.purchasePrice)),
+        price1 = TextEditingController(text: _fmtNum(p.price1));
+
+  void dispose() {
+    name.dispose();
+    stock.dispose();
+    purchase.dispose();
+    price1.dispose();
+  }
+}
+
+String _fmtNum(num v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+num? _parseNum(String s) => num.tryParse(s.trim().replaceAll(',', '.'));
+
+final _decimalInputFormatters = <TextInputFormatter>[
+  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+  TextInputFormatter.withFunction(
+    (o, n) => RegExp(r'[.,]').allMatches(n.text).length > 1 ? o : n,
+  ),
+];
+
+class _ProductsTableState extends State<_ProductsTable> {
+  final Map<String, _RowControllers> _rowCtrls = {};
+  final Set<String> _savingIds = {};
+
+  // Yalnız DOKUNULAN satır düzenleme moduna geçer (performans: `DataTable`
+  // sanallaştırma yapmadığı için sayfadaki TÜM satırları her zaman canlı
+  // `TextField` yapmak (50 satır × 4 hane) ilk açılışı gözle görülür
+  // yavaşlatıyordu. Artık varsayılan görünüm ucuz `Text`; bir hücreye
+  // dokunulunca YALNIZ o satır için kontrolcü kurulur ve `TextField`'a döner.
+  final Set<String> _editingIds = {};
+
+  _RowControllers _ctrlsFor(Product p) =>
+      _rowCtrls.putIfAbsent(p.id, () => _RowControllers(p));
+
+  void _enterEdit(Product p) {
+    setState(() {
+      _ctrlsFor(p); // kontrolcüleri GÜNCEL ürün değerleriyle kur
+      _editingIds.add(p.id);
+    });
+  }
+
+  void _exitEdit(String id) {
+    setState(() {
+      _editingIds.remove(id);
+      _rowCtrls.remove(id)?.dispose();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProductsTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sayfa/arama/filtre değişince artık listede olmayan satırların
+    // kontrolcülerini temizle (bellek sızıntısı olmasın). Hâlâ listede olan
+    // satırlar dokunulmaz — kaydedilmemiş kullanıcı girdisi korunur.
+    final currentIds = widget.products.map((p) => p.id).toSet();
+    final stale = _rowCtrls.keys.where((id) => !currentIds.contains(id)).toList();
+    for (final id in stale) {
+      _rowCtrls.remove(id)?.dispose();
+      _editingIds.remove(id);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _rowCtrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _onGuncelle(Product p) async {
+    final ctrls = _ctrlsFor(p);
+    final name = ctrls.name.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ürün adı boş olamaz')));
+      return;
+    }
+    final updated = p.copyWith(
+      name: name,
+      stockQuantity: _parseNum(ctrls.stock.text) ?? p.stockQuantity,
+      purchasePrice: _parseNum(ctrls.purchase.text) ?? p.purchasePrice,
+      price1: _parseNum(ctrls.price1.text) ?? p.price1,
+    );
+    setState(() => _savingIds.add(p.id));
+    try {
+      await widget.onUpdate(updated);
+      if (mounted) _exitEdit(p.id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            backgroundColor: AppColors.danger,
+            content: Text('"${p.name}" güncellenemedi: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _savingIds.remove(p.id));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -806,18 +1013,23 @@ class _ProductsTable extends StatelessWidget {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
+          // Sütunlar arası boşluk yarıya indirildi (varsayılan 56 → 28) ve
+          // hücre fontu bir kademe küçültüldü (tema varsayılanı 13 → 12) —
+          // sidebar daralmasıyla birlikte tablonun ekrana sığması için.
+          columnSpacing: 28,
+          dataTextStyle: const TextStyle(fontSize: 12),
           // Tablo başlığı: altın zemin (token §5) + type.utility
           headingRowColor: WidgetStateProperty.all(AppColors.goldBg),
           headingTextStyle: const TextStyle(
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
             color: AppColors.textSecondary,
             letterSpacing: 0.2,
           ),
           columns: _buildColumns(),
-          rows: List.generate(products.length, (i) {
-            final p = products[i];
-            final selected = selectedIds.contains(p.id);
+          rows: List.generate(widget.products.length, (i) {
+            final p = widget.products[i];
+            final selected = widget.selectedIds.contains(p.id);
             return DataRow(
               selected: selected,
               color: WidgetStateProperty.resolveWith((states) {
@@ -839,19 +1051,21 @@ class _ProductsTable extends StatelessWidget {
       // Sabit: Checkbox
       DataColumn(
         label: Checkbox(
-          value: allSelected,
-          tristate: selectedIds.isNotEmpty && !allSelected,
-          onChanged: (_) => onToggleSelectAll(),
+          value: widget.allSelected,
+          tristate: widget.selectedIds.isNotEmpty && !widget.allSelected,
+          onChanged: (_) => widget.onToggleSelectAll(),
           activeColor: AppColors.primary,
         ),
       ),
+      // Sabit: Durum (Çok Satan / Tükendi / Pasif)
+      const DataColumn(label: Text('Durum')),
       // Sabit: Sıra
       const DataColumn(label: Text('#')),
       // Sabit: Ürün Adı
       const DataColumn(label: Text('Ürün Adı')),
       // Dinamik kolonlar — sayısal olanlar sağa dayalı (tarama kolaylığı)
       ...ProductColumn.values
-          .where((c) => visibleColumns.contains(c))
+          .where((c) => widget.visibleColumns.contains(c))
           .map((c) => DataColumn(
                 label: Text(c.label),
                 numeric: _isNumericColumn(c),
@@ -883,46 +1097,139 @@ class _ProductsTable extends StatelessWidget {
 
   List<DataCell> _buildCells(
       BuildContext context, Product p, int i, bool selected) {
+    final saving = _savingIds.contains(p.id);
+    final editing = _editingIds.contains(p.id);
     return [
       // Sabit: Checkbox
       DataCell(Checkbox(
         value: selected,
-        onChanged: (_) => onToggleSelect(p.id),
+        onChanged: (_) => widget.onToggleSelect(p.id),
         activeColor: AppColors.primary,
       )),
+      // Sabit: Durum (Çok Satan / Tükendi / Pasif)
+      DataCell(_StatusBadge(status: widget.statuses[p.id])),
       // Sabit: Sıra
       DataCell(Text('${i + 1}',
           style: const TextStyle(color: AppColors.textMuted))),
-      // Sabit: Ürün Adı
-      DataCell(SizedBox(
-        width: 220,
-        child: Text(
-          p.name,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
+      // Ürün Adı — dokununca düzenlenebilir (eski genişliğin 2 katı + 2cm, 220→516).
+      DataCell(_cell(
+        p,
+        width: 516,
+        bold: true,
+        controllerOf: (c) => c.name,
+        displayText: () => p.name,
       )),
       // Dinamik hücreler
       ...ProductColumn.values
-          .where((c) => visibleColumns.contains(c))
+          .where((c) => widget.visibleColumns.contains(c))
           .map((c) => _buildCell(context, c, p)),
-      // Sabit: İşlem
+      // Sabit: İşlem (Düzenle · [düzenleniyorsa] Güncelle/Vazgeç · Sil)
       DataCell(Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
             icon: const Icon(Icons.edit, size: 18),
+            tooltip: 'Düzenle',
             onPressed: () => context.go('/products/${p.id}'),
           ),
+          if (editing) ...[
+            saving
+                ? const Padding(
+                    padding: EdgeInsets.all(AppSizes.space8),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.check_circle_outline,
+                        size: 18, color: AppColors.success),
+                    tooltip: 'Güncelle',
+                    onPressed: () => _onGuncelle(p),
+                  ),
+            if (!saving)
+              IconButton(
+                icon: const Icon(Icons.close,
+                    size: 18, color: AppColors.textMuted),
+                tooltip: 'Vazgeç',
+                onPressed: () => _exitEdit(p.id),
+              ),
+          ],
           IconButton(
             icon: const Icon(Icons.delete_outline,
                 size: 18, color: AppColors.danger),
-            onPressed: () => onDelete(p),
+            tooltip: 'Sil',
+            onPressed: () => widget.onDelete(p),
           ),
         ],
       )),
     ];
+  }
+
+  // Satır DÜZENLENMİYORSA ucuz salt-okunur `Text` (dokununca düzenlemeye
+  // geçer); DÜZENLENİYORSA canlı `TextField`. Genişlik iki modda da AYNI
+  // tutulur ki dokunma anında sütun genişliği zıplamasın.
+  Widget _cell(
+    Product p, {
+    required double width,
+    required TextEditingController Function(_RowControllers) controllerOf,
+    required String Function() displayText,
+    bool bold = false,
+    bool numeric = false,
+  }) {
+    if (_editingIds.contains(p.id)) {
+      return _editableField(controllerOf(_ctrlsFor(p)),
+          width: width, bold: bold, numeric: numeric);
+    }
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: () => _enterEdit(p),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSizes.space6),
+          child: Text(
+            displayText(),
+            textAlign: numeric ? TextAlign.right : TextAlign.left,
+            maxLines: numeric ? 1 : 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+              fontFeatures:
+                  numeric ? const [FontFeature.tabularFigures()] : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Düzenleme moduna geçmiş bir satır için canlı metin alanı.
+  Widget _editableField(TextEditingController ctrl,
+      {required double width, bool bold = false, bool numeric = false}) {
+    return SizedBox(
+      width: width,
+      child: TextField(
+        controller: ctrl,
+        autofocus: true,
+        textAlign: numeric ? TextAlign.right : TextAlign.left,
+        keyboardType: numeric
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : TextInputType.text,
+        inputFormatters: numeric ? _decimalInputFormatters : null,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+          fontFeatures:
+              numeric ? const [FontFeature.tabularFigures()] : null,
+        ),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(vertical: AppSizes.space6),
+        ),
+      ),
+    );
   }
 
   DataCell _buildCell(BuildContext context, ProductColumn col, Product p) {
@@ -938,7 +1245,7 @@ class _ProductsTable extends StatelessWidget {
               ));
       case ProductColumn.barkod:
         return DataCell(SelectableText(p.barcode ?? '-',
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12)));
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 11)));
       case ProductColumn.stokKodu:
         return DataCell(Text(p.stockCode ?? '-'));
       case ProductColumn.ustGrup:
@@ -948,10 +1255,14 @@ class _ProductsTable extends StatelessWidget {
         return DataCell(Text(p.groupName ?? '-',
             style: const TextStyle(color: AppColors.textSecondary)));
       case ProductColumn.stok:
-        // İMZA — kritik stok sinyali (§5): tükendi / kritik / normal.
-        return DataCell(Align(
-          alignment: Alignment.centerRight,
-          child: _StockSignal(product: p),
+        // Dokununca düzenlenebilir (kritik stok rozeti bu haneden kalktı —
+        // düzenlenebilir metin alanıyla birlikte sürmüyor).
+        return DataCell(_cell(
+          p,
+          width: 80,
+          numeric: true,
+          controllerOf: (c) => c.stock,
+          displayText: () => formatNumber(p.stockQuantity),
         ));
       case ProductColumn.kritikStok:
         return DataCell(Text(formatNumber(p.criticalStock),
@@ -961,10 +1272,22 @@ class _ProductsTable extends StatelessWidget {
       case ProductColumn.kdv:
         return DataCell(Text('%${p.vatRate}', style: _kTabular));
       case ProductColumn.alis:
-        return DataCell(Text(formatCurrency(p.purchasePrice), style: _kTabular));
+        return DataCell(_cell(
+          p,
+          width: 90,
+          numeric: true,
+          controllerOf: (c) => c.purchase,
+          displayText: () => formatCurrency(p.purchasePrice),
+        ));
       case ProductColumn.fiyat1:
-        return DataCell(Text(formatCurrency(p.price1),
-            style: _kTabular.copyWith(fontWeight: FontWeight.w600)));
+        return DataCell(_cell(
+          p,
+          width: 90,
+          numeric: true,
+          bold: true,
+          controllerOf: (c) => c.price1,
+          displayText: () => formatCurrency(p.price1),
+        ));
       case ProductColumn.fiyat2:
         return DataCell(Text(formatCurrency(p.price2), style: _kTabular));
     }
@@ -977,6 +1300,45 @@ const _kTabularMuted = TextStyle(
   color: AppColors.textSecondary,
   fontFeatures: [FontFeature.tabularFigures()],
 );
+
+// ── Durum rozeti (Çok Satan / Tükendi / Pasif) ───────────────────────────────
+// Öncelik sırası sunucuda (`product_status` view) belirlenir: Çok Satan >
+// Tükendi > Pasif > (boş). Burada yalnız gelen `status` değeri gösterilir.
+class _StatusBadge extends StatelessWidget {
+  final String? status;
+
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final (String label, Color color) = switch (status) {
+      'cok_satan' => ('Çok Satan', AppColors.success),
+      'tukendi' => ('Tükendi', AppColors.danger),
+      'pasif' => ('Pasif', AppColors.textMuted),
+      _ => ('', Colors.transparent),
+    };
+    if (label.isEmpty) return const SizedBox.shrink();
+    // Mümkün olduğunca dar: metne yapışık minimum dolgu (yalnız "ÇOK SATAN"
+    // okunacak kadar), sütun genişliğini bu rozetin içeriği belirler.
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space6, vertical: AppSizes.space2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 0.1,
+        ),
+      ),
+    );
+  }
+}
 
 // ── Mobil ürün kartı ──────────────────────────────────────────────────────────
 //

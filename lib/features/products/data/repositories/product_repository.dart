@@ -117,6 +117,22 @@ class ProductRepository {
     }
   }
 
+  // Görüntülenen sayfadaki ürünler için "Durum" (Çok Satan/Tükendi/Pasif)
+  // bilgisini `product_status` view'ından tek sorguda çeker (bkz.
+  // 0016_product_status.sql). Dönüş: product_id → status ('cok_satan' |
+  // 'tukendi' | 'pasif' | null).
+  Future<Map<String, String?>> fetchStatuses(List<String> productIds) async {
+    if (productIds.isEmpty) return {};
+    final rows = await _client
+        .from('product_status')
+        .select('product_id, status')
+        .inFilter('product_id', productIds);
+    return {
+      for (final row in (rows as List))
+        (row as Map)['product_id'] as String: row['status'] as String?,
+    };
+  }
+
   Future<void> delete(String id) async {
     final deleted = await _client.from('products').delete().eq('id', id).select('id');
     if (deleted.isEmpty) throw Exception('Ürün silinemedi.');
