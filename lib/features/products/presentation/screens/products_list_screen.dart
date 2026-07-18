@@ -81,6 +81,12 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   // Mutable — Liste Gir'deki ExtractedRow ile aynı desen.
   final ProductFilters _filters = ProductFilters();
 
+  // Sütun başlığına dokununca sıralama (Ürün Adı A-Z/Z-A, sayısal sütunlar
+  // büyükten küçüğe/küçükten büyüğe) — server-side (bkz. ProductRepository
+  // sortColumn/sortAscending), sayfalamayla doğru çalışsın diye.
+  String _sortColumn = 'name';
+  bool _sortAscending = true;
+
   List<Product> _products = [];
   bool _loading = true;
   String? _error;
@@ -128,6 +134,17 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     _loadProducts();
   }
 
+  // Sütun başlığına dokununca çağrılır (bkz. _ProductsTable onSort).
+  void _onSortChanged(String column, bool ascending) {
+    setState(() {
+      _sortColumn = column;
+      _sortAscending = ascending;
+      _page = 0;
+      _products = [];
+    });
+    _loadProducts();
+  }
+
   void _clearAllFilters() {
     _applyFilterChange((f) {
       f.barcode = null;
@@ -162,6 +179,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             query: _query,
             groupId: _selectedGroupId,
             filters: _filters,
+            sortColumn: _sortColumn,
+            sortAscending: _sortAscending,
             page: _page,
             pageSize: kProductPageSize,
           );
@@ -489,7 +508,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             OutlinedButton.icon(
               onPressed: () async {
                 final all = await ref.read(productRepositoryProvider).fetchAll(
-                      query: _query, groupId: _selectedGroupId, filters: _filters);
+                      query: _query, groupId: _selectedGroupId, filters: _filters,
+                      sortColumn: _sortColumn, sortAscending: _sortAscending);
                 final result = await exportProductsToExcel(all);
                 if (result != null && mounted) {
                   // ignore: use_build_context_synchronously
@@ -648,6 +668,9 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                             statuses: _statuses,
                             filters: _filters,
                             onFilterApply: _applyFilterChange,
+                            sortColumn: _sortColumn,
+                            sortAscending: _sortAscending,
+                            onSortChanged: _onSortChanged,
                             onDelete: _deleteProduct,
                             onUpdate: _updateProduct,
                             onToggleSelect: _toggleSelect,
@@ -949,6 +972,9 @@ class _ProductsTable extends StatefulWidget {
   final Map<String, String?> statuses;
   final ProductFilters filters;
   final void Function(void Function(ProductFilters)) onFilterApply;
+  final String sortColumn;
+  final bool sortAscending;
+  final void Function(String column, bool ascending) onSortChanged;
   final Future<void> Function(Product) onDelete;
   final Future<void> Function(Product) onUpdate;
   final void Function(String id) onToggleSelect;
@@ -962,6 +988,9 @@ class _ProductsTable extends StatefulWidget {
     required this.statuses,
     required this.filters,
     required this.onFilterApply,
+    required this.sortColumn,
+    required this.sortAscending,
+    required this.onSortChanged,
     required this.onDelete,
     required this.onUpdate,
     required this.onToggleSelect,
@@ -1105,6 +1134,8 @@ class _ProductsTableState extends State<_ProductsTable> {
             color: AppColors.textSecondary,
             letterSpacing: 0.2,
           ),
+          sortColumnIndex: _sortColumnIndex,
+          sortAscending: widget.sortAscending,
           columns: _buildColumns(),
           rows: List.generate(widget.products.length, (i) {
             final p = widget.products[i];
@@ -1147,10 +1178,14 @@ class _ProductsTableState extends State<_ProductsTable> {
       ),
       // Sabit: Sıra
       const DataColumn(label: Text('#')),
-      // Sabit: Ürün Adı
-      const DataColumn(label: Text('Ürün Adı')),
+      // Sabit: Ürün Adı — alfabetik sıralanabilir (A-Z / Z-A).
+      DataColumn(
+        label: const Text('Ürün Adı'),
+        onSort: (columnIndex, ascending) => widget.onSortChanged('name', ascending),
+      ),
       // Dinamik kolonlar — sayısal olanlar sağa dayalı (tarama kolaylığı),
-      // her biri (Görsel hariç) sütun başlığında filtre ikonu taşır.
+      // her biri (Görsel hariç) sütun başlığında filtre ikonu taşır; sayısal
+      // olanlar + Barkod ayrıca sıralanabilir (bkz. _dbColumnFor).
       ...ProductColumn.values
           .where((c) => widget.visibleColumns.contains(c))
           .map((c) => DataColumn(
@@ -1163,10 +1198,50 @@ class _ProductsTableState extends State<_ProductsTable> {
                         onTap: () => _showColumnFilterDialog(context, c),
                       ),
                 numeric: _isNumericColumn(c),
+                onSort: _dbColumnFor(c) == null
+                    ? null
+                    : (columnIndex, ascending) => widget.onSortChanged(_dbColumnFor(c)!, ascending),
               )),
       // Sabit: İşlem
       const DataColumn(label: Text('İşlem')),
     ];
+  }
+
+  // Sıralanabilir sütun → gerçek `products` sütun adı (bkz.
+  // ProductRepository.sortableColumns). null = sıralanamaz (Görsel, Stok
+  // Kodu, Üst Grup, Grup Adı, Birim — kapsam dışı, istenirse eklenir).
+  static String? _dbColumnFor(ProductColumn c) {
+    switch (c) {
+      case ProductColumn.barkod:
+        return 'barcode';
+      case ProductColumn.stok:
+        return 'stock_quantity';
+      case ProductColumn.kritikStok:
+        return 'critical_stock';
+      case ProductColumn.kdv:
+        return 'vat_rate';
+      case ProductColumn.alis:
+        return 'purchase_price';
+      case ProductColumn.fiyat1:
+        return 'price1';
+      case ProductColumn.fiyat2:
+        return 'price2';
+      case ProductColumn.gorsel:
+      case ProductColumn.stokKodu:
+      case ProductColumn.ustGrup:
+      case ProductColumn.grupAdi:
+      case ProductColumn.birim:
+        return null;
+    }
+  }
+
+  // `widget.sortColumn`'a karşılık gelen DataColumn indeksi — sabit
+  // kolonlar 0-3 (checkbox/durum/#/ürün adı), dinamik kolonlar 4'ten başlar.
+  int? get _sortColumnIndex {
+    if (widget.sortColumn == 'name') return 3;
+    final dynamicCols = ProductColumn.values.where((c) => widget.visibleColumns.contains(c)).toList();
+    final idx = dynamicCols.indexWhere((c) => _dbColumnFor(c) == widget.sortColumn);
+    return idx == -1 ? null : 4 + idx;
   }
 
   // Başlık metni + küçük filtre ikonu; aktif filtreli sütunlarda ikon
@@ -1222,7 +1297,12 @@ class _ProductsTableState extends State<_ProductsTable> {
       case ProductColumn.gorsel:
         return;
       case ProductColumn.barkod:
-        return _showTextFilterDialog(context, title: c.label, currentValue: f.barcode, apply: (v) => (f) => f.barcode = v);
+        // Barkod "içerir" değil BİREBİR eşleşme — "002" yazınca yalnız
+        // barkodu tam olarak "002" olan ürün gelsin, "8698...002..." gibi
+        // içinde 002 geçen tüm barkodlar DEĞİL (kullanıcı isteği).
+        return _showTextFilterDialog(context,
+            title: c.label, currentValue: f.barcode, hint: 'Tam barkod (birebir eşleşme)...',
+            apply: (v) => (f) => f.barcode = v);
       case ProductColumn.stokKodu:
         return _showTextFilterDialog(context, title: c.label, currentValue: f.stockCode, apply: (v) => (f) => f.stockCode = v);
       case ProductColumn.ustGrup:
@@ -1258,12 +1338,14 @@ class _ProductsTableState extends State<_ProductsTable> {
     }
   }
 
-  // Metin-içerir filtresi (Barkod, Stok Kodu, Birim, Üst Grup, Grup Adı).
+  // Metin filtresi (Stok Kodu, Birim, Üst Grup, Grup Adı: "içerir"; Barkod:
+  // birebir eşleşme — `hint` ile ayırt edilir).
   Future<void> _showTextFilterDialog(
     BuildContext context, {
     required String title,
     required String? currentValue,
     required void Function(ProductFilters) Function(String?) apply,
+    String hint = 'İçerir...',
   }) async {
     final ctrl = TextEditingController(text: currentValue ?? '');
     final result = await showDialog<String>(
@@ -1275,7 +1357,7 @@ class _ProductsTableState extends State<_ProductsTable> {
           child: TextField(
             controller: ctrl,
             autofocus: true,
-            decoration: const InputDecoration(hintText: 'İçerir...'),
+            decoration: InputDecoration(hintText: hint),
             onSubmitted: (v) => Navigator.of(ctx).pop(v),
           ),
         ),

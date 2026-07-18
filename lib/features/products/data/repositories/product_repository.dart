@@ -6,6 +6,15 @@ import '../models/product_filters.dart';
 class ProductRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
+  // Sıralanabilir sütunlar — Ürünler tablosu başlıklarına dokununca (bkz.
+  // products_list_screen.dart `_dbColumnFor`). Beyaz liste: hem PostgREST
+  // `.order()` çağrısında hem RPC'nin CASE tabanlı ORDER BY'ında kullanılan
+  // gerçek `products` sütun adları — rastgele bir dize asla doğrudan sorguya
+  // enjekte edilmez.
+  static const sortableColumns = {
+    'name', 'barcode', 'stock_quantity', 'critical_stock', 'vat_rate', 'purchase_price', 'price1', 'price2',
+  };
+
   // Türkçe büyük harf: önce i→İ, ı→I eşle, sonra toUpperCase().
   // Dart'ın yerleşik toUpperCase'i Türkçe değildir; noktalı/noktasız i'yi yanlış katlar.
   static String _trUpper(String s) =>
@@ -45,7 +54,9 @@ class ProductRepository {
   // zorunlu; çağıran taraf `builder = _applyColumnFilters(builder, filters)`
   // ile atamalı — aksi halde filtreler sessizce kaybolur.
   PostgrestFilterBuilder<T> _applyColumnFilters<T>(PostgrestFilterBuilder<T> builder, ProductFilters filters) {
-    if (filters.barcode != null) builder = builder.ilike('barcode', '%${filters.barcode}%');
+    // Barkod "içerir" değil BİREBİR eşleşme (kullanıcı isteği: "002" yazınca
+    // yalnız barkodu tam "002" olan ürün gelsin).
+    if (filters.barcode != null) builder = builder.eq('barcode', filters.barcode!);
     if (filters.stockCode != null) builder = builder.ilike('stock_code', '%${filters.stockCode}%');
     if (filters.unit != null) builder = builder.ilike('unit', '%${filters.unit}%');
     if (filters.groupName != null) builder = builder.ilike('product_groups.name', '%${filters.groupName}%');
@@ -78,11 +89,19 @@ class ProductRepository {
   // tek bir RPC çağrısında sunucuda birleştirilir (bkz. 0017_search_products_rpc.sql)
   // — id listesi asla istemciye/URL'ye geri dönmez. Durum filtresi YOKSA eski
   // (daha basit, iyi test edilmiş) PostgREST sorgu zinciri kullanılmaya devam eder.
-  Map<String, dynamic> _searchProductsParams({String? query, String? groupId, required ProductFilters filters}) {
+  Map<String, dynamic> _searchProductsParams({
+    String? query,
+    String? groupId,
+    required ProductFilters filters,
+    required String sortColumn,
+    required bool sortAscending,
+  }) {
     return {
       'p_query': (query != null && query.trim().isNotEmpty) ? query.trim() : null,
       'p_group_id': (groupId != null && groupId.isNotEmpty) ? groupId : null,
       'p_status': filters.status,
+      'p_sort_column': sortableColumns.contains(sortColumn) ? sortColumn : 'name',
+      'p_sort_ascending': sortAscending,
       'p_barcode': filters.barcode,
       'p_stock_code': filters.stockCode,
       'p_unit': filters.unit,
@@ -103,14 +122,21 @@ class ProductRepository {
     };
   }
 
-  Future<List<Product>> fetchAll({String? query, String? groupId, ProductFilters? filters}) async {
+  Future<List<Product>> fetchAll({
+    String? query,
+    String? groupId,
+    ProductFilters? filters,
+    String sortColumn = 'name',
+    bool sortAscending = true,
+  }) async {
+    final sortCol = sortableColumns.contains(sortColumn) ? sortColumn : 'name';
     if (filters != null && filters.status != null) {
       const batch = 1000;
       final all = <Product>[];
       var page = 0;
       while (true) {
         final rows = await _client.rpc('search_products', params: {
-          ..._searchProductsParams(query: query, groupId: groupId, filters: filters),
+          ..._searchProductsParams(query: query, groupId: groupId, filters: filters, sortColumn: sortCol, sortAscending: sortAscending),
           'p_limit': batch,
           'p_offset': page * batch,
         });
@@ -138,7 +164,7 @@ class ProductRepository {
         builder = _applyColumnFilters(builder, filters);
       }
       final from = page * batch;
-      final rows = await builder.order('name').range(from, from + batch - 1);
+      final rows = await builder.order(sortCol, ascending: sortAscending).range(from, from + batch - 1);
       final list = (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
       all.addAll(list);
       if (list.length < batch) break;
@@ -151,16 +177,19 @@ class ProductRepository {
     String? query,
     String? groupId,
     ProductFilters? filters,
+    String sortColumn = 'name',
+    bool sortAscending = true,
     int page = 0,
     int pageSize = 50,
   }) async {
+    final sortCol = sortableColumns.contains(sortColumn) ? sortColumn : 'name';
     if (filters != null && filters.status != null) {
       // +1 üst sınır: ekran "sonraki sayfa var mı" kontrolünü
       // `_products.length > kProductPageSize` ile yapıyor (bkz.
       // products_list_screen.dart `_hasMore`) — eski `.range()` deseniyle
       // aynı "1 fazla çek" yaklaşımı.
       final rows = await _client.rpc('search_products', params: {
-        ..._searchProductsParams(query: query, groupId: groupId, filters: filters),
+        ..._searchProductsParams(query: query, groupId: groupId, filters: filters, sortColumn: sortCol, sortAscending: sortAscending),
         'p_limit': pageSize + 1,
         'p_offset': page * pageSize,
       });
@@ -177,7 +206,7 @@ class ProductRepository {
       builder = _applyColumnFilters(builder, filters);
     }
     final from = page * pageSize;
-    final rows = await builder.order('name').range(from, from + pageSize);
+    final rows = await builder.order(sortCol, ascending: sortAscending).range(from, from + pageSize);
     return (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
   }
 
