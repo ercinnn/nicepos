@@ -13,6 +13,7 @@ import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/skeleton.dart';
 import '../../data/models/product.dart';
+import '../../data/models/product_filters.dart';
 import '../../application/product_columns_provider.dart';
 import '../../application/products_provider.dart';
 import '../widgets/excel_import_dialog.dart';
@@ -76,6 +77,10 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   String _query = '';
   int _page = 0;
 
+  // Sütun başlığı filtre ikonlarından doldurulur (bkz. _ProductsTable).
+  // Mutable — Liste Gir'deki ExtractedRow ile aynı desen.
+  final ProductFilters _filters = ProductFilters();
+
   List<Product> _products = [];
   bool _loading = true;
   String? _error;
@@ -110,6 +115,42 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     _searchDebounce = Timer(const Duration(milliseconds: 250), _loadProducts);
   }
 
+  // Sütun başlığı filtre dialoglarından çağrılır — `mutate` ilgili alan(lar)ı
+  // değiştirir, sayfa sıfırlanıp sunucudan yeniden yüklenir (server-side
+  // filtre: sayfalama ile birlikte doğru çalışması için `fetchPaged`
+  // sorgusunun bir parçası — yalnız o an yüklü sayfayı süzmek YANLIŞ olurdu).
+  void _applyFilterChange(void Function(ProductFilters) mutate) {
+    setState(() {
+      mutate(_filters);
+      _page = 0;
+      _products = [];
+    });
+    _loadProducts();
+  }
+
+  void _clearAllFilters() {
+    _applyFilterChange((f) {
+      f.barcode = null;
+      f.stockCode = null;
+      f.unit = null;
+      f.groupName = null;
+      f.parentGroupName = null;
+      f.stockMin = null;
+      f.stockMax = null;
+      f.criticalStockMin = null;
+      f.criticalStockMax = null;
+      f.vatMin = null;
+      f.vatMax = null;
+      f.purchaseMin = null;
+      f.purchaseMax = null;
+      f.price1Min = null;
+      f.price1Max = null;
+      f.price2Min = null;
+      f.price2Max = null;
+      f.status = null;
+    });
+  }
+
   Future<void> _loadProducts() async {
     setState(() {
       _loading = true;
@@ -120,6 +161,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       final rows = await ref.read(productRepositoryProvider).fetchPaged(
             query: _query,
             groupId: _selectedGroupId,
+            filters: _filters,
             page: _page,
             pageSize: kProductPageSize,
           );
@@ -174,6 +216,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       builder: (ctx) => _ProductSummaryDialog(
         query: _query,
         groupId: _selectedGroupId,
+        filters: _filters,
       ),
     );
   }
@@ -446,7 +489,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             OutlinedButton.icon(
               onPressed: () async {
                 final all = await ref.read(productRepositoryProvider).fetchAll(
-                      query: _query, groupId: _selectedGroupId);
+                      query: _query, groupId: _selectedGroupId, filters: _filters);
                 final result = await exportProductsToExcel(all);
                 if (result != null && mounted) {
                   // ignore: use_build_context_synchronously
@@ -523,6 +566,26 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               icon: const Icon(Icons.summarize_outlined, size: 18),
               label: const Text('Ürün Özet'),
             ),
+            if (!_filters.isEmpty) ...[
+              const SizedBox(width: AppSizes.space12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppSizes.space8, vertical: AppSizes.space4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.filter_alt, size: 14, color: AppColors.primary),
+                  const SizedBox(width: AppSizes.space4),
+                  const Text('Sütun filtresi aktif', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: AppSizes.space4),
+                  InkWell(
+                    onTap: _clearAllFilters,
+                    child: const Icon(Icons.close, size: 14, color: AppColors.primary),
+                  ),
+                ]),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: AppSizes.space8),
@@ -583,6 +646,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                             selectedIds: _selectedIds,
                             allSelected: _allSelected,
                             statuses: _statuses,
+                            filters: _filters,
+                            onFilterApply: _applyFilterChange,
                             onDelete: _deleteProduct,
                             onUpdate: _updateProduct,
                             onToggleSelect: _toggleSelect,
@@ -708,8 +773,9 @@ class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
 class _ProductSummaryDialog extends ConsumerStatefulWidget {
   final String query;
   final String? groupId;
+  final ProductFilters filters;
 
-  const _ProductSummaryDialog({required this.query, this.groupId});
+  const _ProductSummaryDialog({required this.query, this.groupId, required this.filters});
 
   @override
   ConsumerState<_ProductSummaryDialog> createState() =>
@@ -735,6 +801,7 @@ class _ProductSummaryDialogState extends ConsumerState<_ProductSummaryDialog> {
       final products = await ref.read(productRepositoryProvider).fetchAll(
             query: widget.query,
             groupId: widget.groupId,
+            filters: widget.filters,
           );
       num quantity = 0, cost = 0, sales = 0;
       for (final p in products) {
@@ -864,6 +931,14 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
+// Durum filtre dialogunda "Tümü" (value=null) seçimini "dialog kapatıldı,
+// hiçbir şey seçilmedi" (showDialog'un doğal null dönüşü) durumundan ayırt
+// etmek için ince bir sarmalayıcı.
+class _StatusChoice {
+  final String? value;
+  const _StatusChoice(this.value);
+}
+
 // ── Dinamik Tablo ─────────────────────────────────────────────────────────────
 
 class _ProductsTable extends StatefulWidget {
@@ -872,6 +947,8 @@ class _ProductsTable extends StatefulWidget {
   final Set<String> selectedIds;
   final bool allSelected;
   final Map<String, String?> statuses;
+  final ProductFilters filters;
+  final void Function(void Function(ProductFilters)) onFilterApply;
   final Future<void> Function(Product) onDelete;
   final Future<void> Function(Product) onUpdate;
   final void Function(String id) onToggleSelect;
@@ -883,6 +960,8 @@ class _ProductsTable extends StatefulWidget {
     required this.selectedIds,
     required this.allSelected,
     required this.statuses,
+    required this.filters,
+    required this.onFilterApply,
     required this.onDelete,
     required this.onUpdate,
     required this.onToggleSelect,
@@ -1057,22 +1136,252 @@ class _ProductsTableState extends State<_ProductsTable> {
           activeColor: AppColors.primary,
         ),
       ),
-      // Sabit: Durum (Çok Satan / Tükendi / Pasif)
-      const DataColumn(label: Text('Durum')),
+      // Sabit: Durum (Çok Satan / Tükendi / Pasif) — filtrelenebilir (dropdown).
+      DataColumn(
+        label: _headerWithFilter(
+          context,
+          'Durum',
+          active: widget.filters.status != null,
+          onTap: () => _showStatusFilterDialog(context),
+        ),
+      ),
       // Sabit: Sıra
       const DataColumn(label: Text('#')),
       // Sabit: Ürün Adı
       const DataColumn(label: Text('Ürün Adı')),
-      // Dinamik kolonlar — sayısal olanlar sağa dayalı (tarama kolaylığı)
+      // Dinamik kolonlar — sayısal olanlar sağa dayalı (tarama kolaylığı),
+      // her biri (Görsel hariç) sütun başlığında filtre ikonu taşır.
       ...ProductColumn.values
           .where((c) => widget.visibleColumns.contains(c))
           .map((c) => DataColumn(
-                label: Text(c.label),
+                label: c == ProductColumn.gorsel
+                    ? Text(c.label)
+                    : _headerWithFilter(
+                        context,
+                        c.label,
+                        active: _isColumnFilterActive(c),
+                        onTap: () => _showColumnFilterDialog(context, c),
+                      ),
                 numeric: _isNumericColumn(c),
               )),
       // Sabit: İşlem
       const DataColumn(label: Text('İşlem')),
     ];
+  }
+
+  // Başlık metni + küçük filtre ikonu; aktif filtreli sütunlarda ikon
+  // vurgulanır (dolu + primary renk).
+  Widget _headerWithFilter(BuildContext context, String label, {required bool active, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(label),
+        const SizedBox(width: 3),
+        Icon(
+          active ? Icons.filter_alt : Icons.filter_alt_outlined,
+          size: 13,
+          color: active ? AppColors.primary : AppColors.textMuted,
+        ),
+      ]),
+    );
+  }
+
+  bool _isColumnFilterActive(ProductColumn c) {
+    final f = widget.filters;
+    switch (c) {
+      case ProductColumn.gorsel:
+        return false;
+      case ProductColumn.barkod:
+        return f.barcode != null;
+      case ProductColumn.stokKodu:
+        return f.stockCode != null;
+      case ProductColumn.ustGrup:
+        return f.parentGroupName != null;
+      case ProductColumn.grupAdi:
+        return f.groupName != null;
+      case ProductColumn.birim:
+        return f.unit != null;
+      case ProductColumn.stok:
+        return f.stockMin != null || f.stockMax != null;
+      case ProductColumn.kritikStok:
+        return f.criticalStockMin != null || f.criticalStockMax != null;
+      case ProductColumn.kdv:
+        return f.vatMin != null || f.vatMax != null;
+      case ProductColumn.alis:
+        return f.purchaseMin != null || f.purchaseMax != null;
+      case ProductColumn.fiyat1:
+        return f.price1Min != null || f.price1Max != null;
+      case ProductColumn.fiyat2:
+        return f.price2Min != null || f.price2Max != null;
+    }
+  }
+
+  Future<void> _showColumnFilterDialog(BuildContext context, ProductColumn c) async {
+    final f = widget.filters;
+    switch (c) {
+      case ProductColumn.gorsel:
+        return;
+      case ProductColumn.barkod:
+        return _showTextFilterDialog(context, title: c.label, currentValue: f.barcode, apply: (v) => (f) => f.barcode = v);
+      case ProductColumn.stokKodu:
+        return _showTextFilterDialog(context, title: c.label, currentValue: f.stockCode, apply: (v) => (f) => f.stockCode = v);
+      case ProductColumn.ustGrup:
+        return _showTextFilterDialog(context, title: c.label, currentValue: f.parentGroupName, apply: (v) => (f) => f.parentGroupName = v);
+      case ProductColumn.grupAdi:
+        return _showTextFilterDialog(context, title: c.label, currentValue: f.groupName, apply: (v) => (f) => f.groupName = v);
+      case ProductColumn.birim:
+        return _showTextFilterDialog(context, title: c.label, currentValue: f.unit, apply: (v) => (f) => f.unit = v);
+      case ProductColumn.stok:
+        return _showRangeFilterDialog(context,
+            title: c.label, currentMin: f.stockMin, currentMax: f.stockMax,
+            apply: (min, max) => (f) { f.stockMin = min; f.stockMax = max; });
+      case ProductColumn.kritikStok:
+        return _showRangeFilterDialog(context,
+            title: c.label, currentMin: f.criticalStockMin, currentMax: f.criticalStockMax,
+            apply: (min, max) => (f) { f.criticalStockMin = min; f.criticalStockMax = max; });
+      case ProductColumn.kdv:
+        return _showRangeFilterDialog(context,
+            title: c.label, currentMin: f.vatMin, currentMax: f.vatMax,
+            apply: (min, max) => (f) { f.vatMin = min; f.vatMax = max; });
+      case ProductColumn.alis:
+        return _showRangeFilterDialog(context,
+            title: c.label, currentMin: f.purchaseMin, currentMax: f.purchaseMax,
+            apply: (min, max) => (f) { f.purchaseMin = min; f.purchaseMax = max; });
+      case ProductColumn.fiyat1:
+        return _showRangeFilterDialog(context,
+            title: c.label, currentMin: f.price1Min, currentMax: f.price1Max,
+            apply: (min, max) => (f) { f.price1Min = min; f.price1Max = max; });
+      case ProductColumn.fiyat2:
+        return _showRangeFilterDialog(context,
+            title: c.label, currentMin: f.price2Min, currentMax: f.price2Max,
+            apply: (min, max) => (f) { f.price2Min = min; f.price2Max = max; });
+    }
+  }
+
+  // Metin-içerir filtresi (Barkod, Stok Kodu, Birim, Üst Grup, Grup Adı).
+  Future<void> _showTextFilterDialog(
+    BuildContext context, {
+    required String title,
+    required String? currentValue,
+    required void Function(ProductFilters) Function(String?) apply,
+  }) async {
+    final ctrl = TextEditingController(text: currentValue ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$title Filtrele'),
+        content: SizedBox(
+          width: 280,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'İçerir...'),
+            onSubmitted: (v) => Navigator.of(ctx).pop(v),
+          ),
+        ),
+        actions: [
+          if (currentValue != null)
+            TextButton(onPressed: () => Navigator.of(ctx).pop(''), child: const Text('Temizle')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Vazgeç')),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(ctrl.text), child: const Text('Uygula')),
+        ],
+      ),
+    );
+    if (result == null) return; // Vazgeç
+    final trimmed = result.trim();
+    widget.onFilterApply(apply(trimmed.isEmpty ? null : trimmed));
+  }
+
+  // Min/Maks sayısal aralık filtresi (Stok, Kritik Stok, KDV, Alış, Fiyat 1/2).
+  Future<void> _showRangeFilterDialog(
+    BuildContext context, {
+    required String title,
+    required num? currentMin,
+    required num? currentMax,
+    required void Function(ProductFilters) Function(num?, num?) apply,
+  }) async {
+    final minCtrl = TextEditingController(text: currentMin?.toString() ?? '');
+    final maxCtrl = TextEditingController(text: currentMax?.toString() ?? '');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$title Filtrele'),
+        content: SizedBox(
+          width: 260,
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: minCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Min'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+              ),
+            ),
+            const SizedBox(width: AppSizes.space12),
+            Expanded(
+              child: TextField(
+                controller: maxCtrl,
+                decoration: const InputDecoration(labelText: 'Maks'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+              ),
+            ),
+          ]),
+        ),
+        actions: [
+          if (currentMin != null || currentMax != null)
+            TextButton(
+              onPressed: () {
+                minCtrl.clear();
+                maxCtrl.clear();
+                Navigator.of(ctx).pop(true);
+              },
+              child: const Text('Temizle'),
+            ),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Vazgeç')),
+          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Uygula')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    widget.onFilterApply(apply(_parseNum(minCtrl.text), _parseNum(maxCtrl.text)));
+  }
+
+  // Durum: sabit kısa seçenek listesi → basit seçim dialogu (dropdown yerine
+  // — bu dosyadaki diğer dialoglarla aynı `showDialog` deseni).
+  Future<void> _showStatusFilterDialog(BuildContext context) async {
+    const options = <(String?, String)>[
+      (null, 'Tümü'),
+      ('cok_satan', 'Çok Satan'),
+      ('tukendi', 'Tükendi'),
+      ('pasif', 'Pasif'),
+      ('bos', 'Boş (durum yok)'),
+    ];
+    final current = widget.filters.status;
+    final result = await showDialog<_StatusChoice>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Durum Filtrele'),
+        children: [
+          for (final (value, label) in options)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(_StatusChoice(value)),
+              child: Row(children: [
+                Icon(
+                  current == value ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  size: 16,
+                  color: current == value ? AppColors.primary : AppColors.textMuted,
+                ),
+                const SizedBox(width: AppSizes.space8),
+                Text(label),
+              ]),
+            ),
+        ],
+      ),
+    );
+    if (result == null) return; // Vazgeç (dışarı tıklandı)
+    widget.onFilterApply((f) => f.status = result.value);
   }
 
   // Stok/fiyat/oran kolonları rakamdır → sağa dayalı + tabular hizalama.

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/product.dart';
+import '../models/product_filters.dart';
 
 class ProductRepository {
   final SupabaseClient _client = Supabase.instance.client;
@@ -33,7 +34,61 @@ class ProductRepository {
         .join(',');
   }
 
-  Future<List<Product>> fetchAll({String? query, String? groupId}) async {
+  // Sütun bazlı filtreler (Ürünler tablosu başlık ikonları) — `product_groups`
+  // embed'i üzerinde ilike ile filtreleme PostgREST'in desteklediği bir
+  // özellik (embedded resource filter, tek/iki seviye — canlı API'ye karşı
+  // doğrulandı); embed edilmiş bir alana filtre uygulamak üst seviye satırları
+  // da daraltır (implicit inner join davranışı).
+  // NOT: PostgrestFilterBuilder immutable — her .ilike()/.gte()/.lte() çağrısı
+  // YENİ bir builder döndürür (bkz. postgrest paketi `_copyWith`), `this`'i
+  // mutasyona uğratmaz. Bu yüzden güncellenmiş builder'ı geri DÖNDÜRMEK
+  // zorunlu; çağıran taraf `builder = _applyColumnFilters(builder, filters)`
+  // ile atamalı — aksi halde filtreler sessizce kaybolur.
+  PostgrestFilterBuilder<T> _applyColumnFilters<T>(PostgrestFilterBuilder<T> builder, ProductFilters filters) {
+    if (filters.barcode != null) builder = builder.ilike('barcode', '%${filters.barcode}%');
+    if (filters.stockCode != null) builder = builder.ilike('stock_code', '%${filters.stockCode}%');
+    if (filters.unit != null) builder = builder.ilike('unit', '%${filters.unit}%');
+    if (filters.groupName != null) builder = builder.ilike('product_groups.name', '%${filters.groupName}%');
+    if (filters.parentGroupName != null) {
+      builder = builder.ilike('product_groups.parent_group.name', '%${filters.parentGroupName}%');
+    }
+    if (filters.stockMin != null) builder = builder.gte('stock_quantity', filters.stockMin!);
+    if (filters.stockMax != null) builder = builder.lte('stock_quantity', filters.stockMax!);
+    if (filters.criticalStockMin != null) builder = builder.gte('critical_stock', filters.criticalStockMin!);
+    if (filters.criticalStockMax != null) builder = builder.lte('critical_stock', filters.criticalStockMax!);
+    if (filters.vatMin != null) builder = builder.gte('vat_rate', filters.vatMin!);
+    if (filters.vatMax != null) builder = builder.lte('vat_rate', filters.vatMax!);
+    if (filters.purchaseMin != null) builder = builder.gte('purchase_price', filters.purchaseMin!);
+    if (filters.purchaseMax != null) builder = builder.lte('purchase_price', filters.purchaseMax!);
+    if (filters.price1Min != null) builder = builder.gte('price1', filters.price1Min!);
+    if (filters.price1Max != null) builder = builder.lte('price1', filters.price1Max!);
+    if (filters.price2Min != null) builder = builder.gte('price2', filters.price2Min!);
+    if (filters.price2Max != null) builder = builder.lte('price2', filters.price2Max!);
+    return builder;
+  }
+
+  // "Durum" (Çok Satan/Tükendi/Pasif/Boş) `products` tablosunda bir sütun
+  // DEĞİL — `product_status` view'ından hesaplanır (bkz. 0016_product_status.sql)
+  // ve view'ın `products`'a tanımlı bir FK'si olmadığından PostgREST embed
+  // filtresi desteklemiyor. Bu yüzden önce eşleşen id'ler ayrı bir sorguyla
+  // çekilir, sonra ana sorguya `inFilter('id', ids)` olarak eklenir
+  // (fetchStatuses/fetchByBarcodes'daki toplu-sorgu deseniyle aynı yaklaşım).
+  // Dönüş `null` = "durum filtresi yok", boş liste = "hiç eşleşme yok".
+  Future<List<String>?> _resolveStatusFilterIds(String? status) async {
+    if (status == null) return null;
+    final query = _client.from('product_status').select('product_id');
+    final rows = await (status == 'bos' ? query.filter('status', 'is', null) : query.eq('status', status));
+    return (rows as List).map((r) => (r as Map)['product_id'] as String).toList();
+  }
+
+  Future<List<Product>> fetchAll({String? query, String? groupId, ProductFilters? filters}) async {
+    // Durum filtresi tek seferde çözülür (döngü başına DEĞİL — >1000 ürünlü
+    // kataloglarda gereksiz tekrar sorgu olmasın diye).
+    List<String>? statusIds;
+    if (filters != null) {
+      statusIds = await _resolveStatusFilterIds(filters.status);
+      if (statusIds != null && statusIds.isEmpty) return [];
+    }
     // PostgREST sunucu tarafı varsayılan olarak en fazla 1000 satır döndürür.
     // Tüm ürünleri almak için 1000'lik sayfalarla döngüsel çekeriz.
     const batch = 1000;
@@ -47,6 +102,10 @@ class ProductRepository {
       if (groupId != null && groupId.isNotEmpty) {
         builder = builder.eq('group_id', groupId);
       }
+      if (filters != null) {
+        builder = _applyColumnFilters(builder, filters);
+        if (statusIds != null) builder = builder.inFilter('id', statusIds);
+      }
       final from = page * batch;
       final rows = await builder.order('name').range(from, from + batch - 1);
       final list = (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
@@ -57,13 +116,27 @@ class ProductRepository {
     return all;
   }
 
-  Future<List<Product>> fetchPaged({String? query, String? groupId, int page = 0, int pageSize = 50}) async {
+  Future<List<Product>> fetchPaged({
+    String? query,
+    String? groupId,
+    ProductFilters? filters,
+    int page = 0,
+    int pageSize = 50,
+  }) async {
     var builder = _client.from('products').select('*, product_groups(name, parent_group:parent_group_id(name))');
     if (query != null && query.trim().isNotEmpty) {
       builder = builder.or(_buildSearchOr(query.trim()));
     }
     if (groupId != null && groupId.isNotEmpty) {
       builder = builder.eq('group_id', groupId);
+    }
+    if (filters != null) {
+      builder = _applyColumnFilters(builder, filters);
+      final statusIds = await _resolveStatusFilterIds(filters.status);
+      if (statusIds != null) {
+        if (statusIds.isEmpty) return [];
+        builder = builder.inFilter('id', statusIds);
+      }
     }
     final from = page * pageSize;
     final rows = await builder.order('name').range(from, from + pageSize);
