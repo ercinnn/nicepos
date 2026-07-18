@@ -212,6 +212,12 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
     );
   }
 
+  // Önizleme ızgarasındaki düzenlenebilir hanelerin metin boyutu — varsayılan
+  // TextField boyutundan 2 punto küçük (yoğunlaştırılmış tablo, dense=true ile
+  // uyumlu; bkz. products_list_screen.dart'ın aynı "1 kademe küçük" kararı).
+  static const _cellFontSize = 12.0;
+  static const _cellTextStyle = TextStyle(fontSize: _cellFontSize);
+
   DataRow _buildRow(BuildContext context, int index) {
     final row = widget.rows[index];
     final c = _ctrlsFor(index);
@@ -220,14 +226,16 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
         width: 150,
         child: TextField(
           controller: c.barcode,
+          style: _cellTextStyle,
           decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
           onChanged: (v) => row.barcode = v.trim(),
         ),
       )),
       DataCell(SizedBox(
-        width: 260,
+        width: 390,
         child: TextField(
           controller: c.name,
+          style: _cellTextStyle,
           decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
           onChanged: (v) => row.name = v,
         ),
@@ -236,6 +244,7 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
         width: 80,
         child: TextField(
           controller: c.quantity,
+          style: _cellTextStyle,
           textAlign: TextAlign.right,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
@@ -246,6 +255,7 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
         width: 100,
         child: TextField(
           controller: c.purchasePrice,
+          style: _cellTextStyle,
           textAlign: TextAlign.right,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
@@ -270,7 +280,7 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
           // girilmesi gereken bir değerdir → kırmızı, dikkat çeksin. Barkodu
           // zaten kayıtlı ürünlerde mevcut fiyat gösterildiği için otomatik
           // (siyah) renk yeterli.
-          style: TextStyle(color: row.existingProductId == null ? AppColors.danger : null),
+          style: _cellTextStyle.copyWith(color: row.existingProductId == null ? AppColors.danger : null),
           onChanged: (v) => row.salePrice = parseTrNumber(v),
         ),
       )),
