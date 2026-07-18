@@ -21,3 +21,8 @@ String formatCurrency(num value) => _currencyFormat.format(value);
 String formatDate(DateTime value) => _dateFormat.format(value);
 String formatDateTime(DateTime value) => _dateTimeFormat.format(value);
 String formatShortDate(DateTime value) => _shortDateFormat.format(value);
+
+/// Türkçe büyük harf katlaması: Dart'ın yerleşik `toUpperCase()`'i i/İ, ı/I
+/// çiftlerini yanlış katlar (ör. "kırmızı" → "KıRMıZı" değil "KIRMIZI"
+/// olmalı) — önce i→İ, ı→I eşlenir, sonra `toUpperCase()` çağrılır.
+String trUpperCase(String s) => s.replaceAll('i', 'İ').replaceAll('ı', 'I').toUpperCase();

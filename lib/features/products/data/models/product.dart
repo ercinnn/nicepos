@@ -1,3 +1,5 @@
+import '../../../../core/utils/formatters.dart';
+
 class Product {
   final String id;
   final String? barcode;
@@ -98,7 +100,10 @@ class Product {
   Map<String, dynamic> toInsertMap() {
     return {
       'barcode': (barcode == null || barcode!.isEmpty) ? null : barcode,
-      'name': name,
+      // Kaynak farketmeksizin (Liste Gir, Excel içe aktarma, elle giriş,
+      // satır içi düzenleme) — hepsi bu toInsertMap() üzerinden yazıyor,
+      // tek noktadan büyük harfe zorlanır.
+      'name': trUpperCase(name),
       'stock_code': stockCode,
       'group_id': groupId,
       'unit': unit,
