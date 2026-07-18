@@ -82,6 +82,22 @@ class ProductRepository {
     return Product.fromMap(Map<String, dynamic>.from(row));
   }
 
+  // Liste Gir: birden çok barkodu tek sorguda arar (fetchStatuses'daki
+  // inFilter deseninin aynısı) — N sıralı fetchByBarcode çağrısı yerine.
+  Future<Map<String, Product>> fetchByBarcodes(List<String> barcodes) async {
+    if (barcodes.isEmpty) return {};
+    final rows = await _client
+        .from('products')
+        .select('*, product_groups(name, parent_group:parent_group_id(name))')
+        .inFilter('barcode', barcodes);
+    final result = <String, Product>{};
+    for (final row in (rows as List)) {
+      final product = Product.fromMap(Map<String, dynamic>.from(row as Map));
+      if (product.barcode != null) result[product.barcode!] = product;
+    }
+    return result;
+  }
+
   Future<List<Product>> fetchByGroup(String groupId) async {
     final rows = await _client.from('products').select('*, product_groups(name, parent_group:parent_group_id(name))').eq('group_id', groupId).order('quick_list_order', ascending: true).limit(100000);
     return (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
