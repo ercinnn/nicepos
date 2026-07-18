@@ -136,6 +136,22 @@ void main() {
       expect(extractRows(items: [], bands: [ColumnBand(type: ColumnType.name, left: 0, right: 10)]), isEmpty);
       expect(extractRows(items: [const PositionedText(text: 'x', x: 0, y: 0, width: 1, height: 1)], bands: []), isEmpty);
     });
+
+    test('rawPurchasePrice çıkarılan alış fiyatıyla eşleşir (çarpan uygulanabilsin diye)', () {
+      final bands = [
+        ColumnBand(type: ColumnType.name, left: 0, right: 100),
+        ColumnBand(type: ColumnType.purchasePrice, left: 100, right: 200),
+      ];
+      final items = [
+        const PositionedText(text: 'ÜRÜN', x: 10, y: 100, width: 40, height: 12),
+        const PositionedText(text: '90,00', x: 110, y: 100, width: 40, height: 12),
+      ];
+
+      final row = extractRows(items: items, bands: bands).single;
+
+      expect(row.purchasePrice, 90.0);
+      expect(row.rawPurchasePrice, 90.0);
+    });
   });
 
   group('consolidateDuplicateBarcodes', () {
@@ -154,6 +170,7 @@ void main() {
       expect(merged.purchasePrice, 12);
       expect(merged.salePrice, 15); // 0 yeni değer eskisini silmedi
       expect(merged.name, 'A');
+      expect(merged.rawPurchasePrice, 12); // purchasePrice ile birlikte güncellendi
     });
 
     test('barkodu boş satırlar birleştirilmeden ayrı kalır', () {

@@ -75,7 +75,9 @@ List<ExtractedRow> extractRows({
         case ColumnType.quantity:
           row.quantity = parseTrNumber(cellItems.map((e) => e.text).join());
         case ColumnType.purchasePrice:
-          row.purchasePrice = parseTrNumber(cellItems.map((e) => e.text).join());
+          final price = parseTrNumber(cellItems.map((e) => e.text).join());
+          row.purchasePrice = price;
+          row.rawPurchasePrice = price;
       }
     }
     if (!row.isEmpty) result.add(row);
@@ -123,7 +125,10 @@ List<ExtractedRow> consolidateDuplicateBarcodes(List<ExtractedRow> rows) {
       result.add(row);
     } else {
       existing.quantity = existing.quantity + row.quantity;
-      if (row.purchasePrice != 0) existing.purchasePrice = row.purchasePrice;
+      if (row.purchasePrice != 0) {
+        existing.purchasePrice = row.purchasePrice;
+        existing.rawPurchasePrice = row.rawPurchasePrice;
+      }
       if (row.salePrice != 0) existing.salePrice = row.salePrice;
       if (existing.name.isEmpty && row.name.isNotEmpty) existing.name = row.name;
     }

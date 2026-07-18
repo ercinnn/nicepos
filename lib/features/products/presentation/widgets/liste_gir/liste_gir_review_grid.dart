@@ -53,6 +53,8 @@ String _fmt(num v) {
 
 class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
   final Map<int, _RowCtrls> _ctrls = {};
+  final TextEditingController _multiplierCtrl = TextEditingController(text: '1');
+  double _multiplier = 1;
 
   _RowCtrls _ctrlsFor(int index) => _ctrls.putIfAbsent(index, () => _RowCtrls(widget.rows[index]));
 
@@ -61,7 +63,26 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
     for (final c in _ctrls.values) {
       c.dispose();
     }
+    _multiplierCtrl.dispose();
     super.dispose();
+  }
+
+  // Listede yazan alış fiyatı gerçek alış fiyatından farklı olabilir
+  // (iskonto/+KDV) — kullanıcı burada sabit bir çarpan girer, tüm satırların
+  // alış fiyatı `rawPurchasePrice * çarpan` olarak yeniden hesaplanır. Ham
+  // değer korunduğu için çarpan istenildiği kadar değiştirilebilir.
+  void _applyMultiplier() {
+    final parsed = parseTrNumber(_multiplierCtrl.text);
+    final multiplier = parsed == 0 ? 1.0 : parsed.toDouble();
+    setState(() {
+      _multiplier = multiplier;
+      for (var i = 0; i < widget.rows.length; i++) {
+        final row = widget.rows[i];
+        row.purchasePrice = row.rawPurchasePrice * multiplier;
+        _ctrls[i]?.purchasePrice.text = _fmt(row.purchasePrice);
+      }
+    });
+    widget.onRowsChanged();
   }
 
   void _removeRow(int index) {
@@ -85,6 +106,8 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildMultiplierRow(),
+        const SizedBox(height: 10),
         Expanded(
           child: SingleChildScrollView(
             child: SingleChildScrollView(
@@ -113,6 +136,40 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
           label: const Text('Satır Ekle'),
         ),
       ],
+    );
+  }
+
+  Widget _buildMultiplierRow() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
+      ),
+      child: Row(children: [
+        const Text('Alış Fiyatı Çarpanı:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 90,
+          child: TextField(
+            controller: _multiplierCtrl,
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), filled: true, fillColor: Colors.white),
+            onSubmitted: (_) => _applyMultiplier(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton(onPressed: _applyMultiplier, child: const Text('Uygula')),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Text(
+            'Listede yazan alış fiyatı gerçek alış fiyatından farklıysa (iskonto/+KDV) çarpan girin — ör. %34 iskonto için 0,66, +%20 KDV için 1,2. Aynıysa 1 bırakın.',
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -153,7 +210,14 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
           textAlign: TextAlign.right,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
-          onChanged: (v) => row.purchasePrice = parseTrNumber(v),
+          onChanged: (v) {
+            final parsed = parseTrNumber(v);
+            row.purchasePrice = parsed;
+            // Elle girilen değeri de mevcut çarpana göre "ham" değere geri
+            // çevirip saklar — çarpan sonradan değişirse bu satır da tutarlı
+            // kalsın diye (bkz. ExtractedRow.rawPurchasePrice dokümantasyonu).
+            row.rawPurchasePrice = _multiplier == 0 ? parsed : parsed / _multiplier;
+          },
         ),
       )),
       DataCell(SizedBox(
