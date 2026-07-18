@@ -70,24 +70,56 @@ class ProductRepository {
   // "Durum" (Çok Satan/Tükendi/Pasif/Boş) `products` tablosunda bir sütun
   // DEĞİL — `product_status` view'ından hesaplanır (bkz. 0016_product_status.sql)
   // ve view'ın `products`'a tanımlı bir FK'si olmadığından PostgREST embed
-  // filtresi desteklemiyor. Bu yüzden önce eşleşen id'ler ayrı bir sorguyla
-  // çekilir, sonra ana sorguya `inFilter('id', ids)` olarak eklenir
-  // (fetchStatuses/fetchByBarcodes'daki toplu-sorgu deseniyle aynı yaklaşım).
-  // Dönüş `null` = "durum filtresi yok", boş liste = "hiç eşleşme yok".
-  Future<List<String>?> _resolveStatusFilterIds(String? status) async {
-    if (status == null) return null;
-    final query = _client.from('product_status').select('product_id');
-    final rows = await (status == 'bos' ? query.filter('status', 'is', null) : query.eq('status', status));
-    return (rows as List).map((r) => (r as Map)['product_id'] as String).toList();
+  // filtresi desteklemiyor. İLK sürüm önce eşleşen id'leri ayrı bir sorguyla
+  // çekip ana sorguya `inFilter('id', ids)` olarak ekliyordu — ama "Pasif" gibi
+  // çok sayıda ürünü kapsayan bir durumda bu id listesi URL'yi aşırı uzatıp
+  // "Bad Request (400)" hatası veriyordu (canlıda gözlemlendi). Bu yüzden durum
+  // filtresi aktifken TÜM sorgu (arama+grup+sütun filtreleri+durum+sayfalama)
+  // tek bir RPC çağrısında sunucuda birleştirilir (bkz. 0017_search_products_rpc.sql)
+  // — id listesi asla istemciye/URL'ye geri dönmez. Durum filtresi YOKSA eski
+  // (daha basit, iyi test edilmiş) PostgREST sorgu zinciri kullanılmaya devam eder.
+  Map<String, dynamic> _searchProductsParams({String? query, String? groupId, required ProductFilters filters}) {
+    return {
+      'p_query': (query != null && query.trim().isNotEmpty) ? query.trim() : null,
+      'p_group_id': (groupId != null && groupId.isNotEmpty) ? groupId : null,
+      'p_status': filters.status,
+      'p_barcode': filters.barcode,
+      'p_stock_code': filters.stockCode,
+      'p_unit': filters.unit,
+      'p_group_name': filters.groupName,
+      'p_parent_group_name': filters.parentGroupName,
+      'p_stock_min': filters.stockMin,
+      'p_stock_max': filters.stockMax,
+      'p_critical_stock_min': filters.criticalStockMin,
+      'p_critical_stock_max': filters.criticalStockMax,
+      'p_vat_min': filters.vatMin,
+      'p_vat_max': filters.vatMax,
+      'p_purchase_min': filters.purchaseMin,
+      'p_purchase_max': filters.purchaseMax,
+      'p_price1_min': filters.price1Min,
+      'p_price1_max': filters.price1Max,
+      'p_price2_min': filters.price2Min,
+      'p_price2_max': filters.price2Max,
+    };
   }
 
   Future<List<Product>> fetchAll({String? query, String? groupId, ProductFilters? filters}) async {
-    // Durum filtresi tek seferde çözülür (döngü başına DEĞİL — >1000 ürünlü
-    // kataloglarda gereksiz tekrar sorgu olmasın diye).
-    List<String>? statusIds;
-    if (filters != null) {
-      statusIds = await _resolveStatusFilterIds(filters.status);
-      if (statusIds != null && statusIds.isEmpty) return [];
+    if (filters != null && filters.status != null) {
+      const batch = 1000;
+      final all = <Product>[];
+      var page = 0;
+      while (true) {
+        final rows = await _client.rpc('search_products', params: {
+          ..._searchProductsParams(query: query, groupId: groupId, filters: filters),
+          'p_limit': batch,
+          'p_offset': page * batch,
+        });
+        final list = (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
+        all.addAll(list);
+        if (list.length < batch) break;
+        page++;
+      }
+      return all;
     }
     // PostgREST sunucu tarafı varsayılan olarak en fazla 1000 satır döndürür.
     // Tüm ürünleri almak için 1000'lik sayfalarla döngüsel çekeriz.
@@ -104,7 +136,6 @@ class ProductRepository {
       }
       if (filters != null) {
         builder = _applyColumnFilters(builder, filters);
-        if (statusIds != null) builder = builder.inFilter('id', statusIds);
       }
       final from = page * batch;
       final rows = await builder.order('name').range(from, from + batch - 1);
@@ -123,6 +154,18 @@ class ProductRepository {
     int page = 0,
     int pageSize = 50,
   }) async {
+    if (filters != null && filters.status != null) {
+      // +1 üst sınır: ekran "sonraki sayfa var mı" kontrolünü
+      // `_products.length > kProductPageSize` ile yapıyor (bkz.
+      // products_list_screen.dart `_hasMore`) — eski `.range()` deseniyle
+      // aynı "1 fazla çek" yaklaşımı.
+      final rows = await _client.rpc('search_products', params: {
+        ..._searchProductsParams(query: query, groupId: groupId, filters: filters),
+        'p_limit': pageSize + 1,
+        'p_offset': page * pageSize,
+      });
+      return (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
+    }
     var builder = _client.from('products').select('*, product_groups(name, parent_group:parent_group_id(name))');
     if (query != null && query.trim().isNotEmpty) {
       builder = builder.or(_buildSearchOr(query.trim()));
@@ -132,11 +175,6 @@ class ProductRepository {
     }
     if (filters != null) {
       builder = _applyColumnFilters(builder, filters);
-      final statusIds = await _resolveStatusFilterIds(filters.status);
-      if (statusIds != null) {
-        if (statusIds.isEmpty) return [];
-        builder = builder.inFilter('id', statusIds);
-      }
     }
     final from = page * pageSize;
     final rows = await builder.order('name').range(from, from + pageSize);

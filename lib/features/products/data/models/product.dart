@@ -75,9 +75,13 @@ class Product {
       stockCode: map['stock_code'] as String?,
       groupId: map['group_id'] as String?,
       groupName: group?['name'] as String? ?? map['group_name'] as String?,
+      // Düz (join'siz) satır kaynakları için fallback — bkz. `search_products`
+      // RPC'si (0017_search_products_rpc.sql): `product_groups` embed'i yok,
+      // `parent_group_name` düz bir sütun olarak gelir (groupName'in
+      // `?? map['group_name']` deseniyle aynı mantık).
       parentGroupName: (group?['parent_group'] is Map)
           ? (group!['parent_group'] as Map)['name'] as String?
-          : null,
+          : map['parent_group_name'] as String?,
       unit: map['unit'] as String? ?? 'Adet',
       originCountry: map['origin_country'] as String?,
       stockQuantity: map['stock_quantity'] as num? ?? 0,
