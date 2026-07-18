@@ -152,6 +152,27 @@ void main() {
       expect(row.purchasePrice, 90.0);
       expect(row.rawPurchasePrice, 90.0);
     });
+
+    test('fatura başlığındaki alıcı adı / firma adı / e-posta ürün satırı olarak sayılmaz', () {
+      final bands = [
+        ColumnBand(type: ColumnType.name, left: 0, right: 300),
+        ColumnBand(type: ColumnType.quantity, left: 300, right: 360),
+      ];
+      final items = [
+        // Fatura üst bilgisi — sayfanın üstünde, ürün tablosundan ayrı bir satır kümesi.
+        const PositionedText(text: 'ERDİNÇ ÇAKALOĞLU / NİCE YAPI', x: 10, y: 10, width: 200, height: 12),
+        const PositionedText(text: 'BENİM DİDİM MAĞAZASI', x: 10, y: 30, width: 150, height: 12),
+        const PositionedText(text: 'erdinc.cakaloglu@gmail.com', x: 10, y: 50, width: 150, height: 12),
+        // Gerçek ürün satırı.
+        const PositionedText(text: 'GERÇEK ÜRÜN', x: 10, y: 100, width: 80, height: 12),
+        const PositionedText(text: '5', x: 310, y: 100, width: 10, height: 12),
+      ];
+
+      final rows = extractRows(items: items, bands: bands);
+
+      expect(rows, hasLength(1));
+      expect(rows.single.name, 'GERÇEK ÜRÜN');
+    });
   });
 
   group('consolidateDuplicateBarcodes', () {

@@ -83,8 +83,29 @@ List<ExtractedRow> extractRows({
     if (!row.isEmpty) result.add(row);
   }
 
-  return result;
+  return result.where((row) => !_looksLikeNonProduct(row)).toList();
 }
+
+// Fatura üst/alt bilgisinde çıkan alıcı adı, firma adı, e-posta gibi ürün
+// OLMAYAN metinler — bantlar tam sayfa yüksekliğinde olduğundan (KARAR:
+// sütun başına tek dikdörtgen) bu satırlar bazen "Ürün Adı" bandına da
+// düşüp sahte satır üretiyordu. Kullanıcının kendi işletme kimliği burada
+// sabit bir liste olarak tutuluyor; başka metinler önizleme ızgarasında
+// elle silinebilir (satır başına çöp kutusu ikonu zaten var).
+const _knownNonProductPhrases = [
+  'ERDİNÇ ÇAKALOĞLU',
+  'BENİM DİDİM',
+];
+
+bool _looksLikeNonProduct(ExtractedRow row) {
+  if (row.name.contains('@')) return true;
+  final upperName = _trUpper(row.name);
+  return _knownNonProductPhrases.any((phrase) => upperName.contains(_trUpper(phrase)));
+}
+
+// Türkçe büyük harf katlaması: Dart'ın yerleşik toUpperCase'i i/İ, ı/I
+// çiftlerini yanlış katlar (bkz. product_repository.dart'taki aynı desen).
+String _trUpper(String s) => s.replaceAll('i', 'İ').replaceAll('ı', 'I').toUpperCase();
 
 /// Ürün adı sütunundaki metin öğelerini birleştirir — YALNIZ aralarında
 /// gerçek görsel boşluk varsa (bir sonraki öğe bir öncekinin bittiği yerden
