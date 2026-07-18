@@ -71,7 +71,7 @@ List<ExtractedRow> extractRows({
         case ColumnType.barcode:
           row.barcode = cleanBarcode(cellItems.map((e) => e.text).join());
         case ColumnType.name:
-          row.name = cellItems.map((e) => e.text.trim()).where((t) => t.isNotEmpty).join(' ');
+          row.name = _joinNameItems(cellItems);
         case ColumnType.quantity:
           row.quantity = parseTrNumber(cellItems.map((e) => e.text).join());
         case ColumnType.purchasePrice:
@@ -82,6 +82,27 @@ List<ExtractedRow> extractRows({
   }
 
   return result;
+}
+
+/// Ürün adı sütunundaki metin öğelerini birleştirir — YALNIZ aralarında
+/// gerçek görsel boşluk varsa (bir sonraki öğe bir öncekinin bittiği yerden
+/// belirgin uzaktaysa) araya boşluk eklenir. Bu ayrım şart: bazı PDF
+/// üreticileri Türkçe noktalı büyük "İ" harfini farklı bir font alt-kümesiyle
+/// (ve dolayısıyla ayrı bir pdf.js metin öğesi olarak, ama aralarında hiç
+/// gerçek boşluk olmadan) yazar — kör bir `.join(' ')` bu durumda İ'nin
+/// önüne ve arkasına yanlış boşluk sokuyordu.
+String _joinNameItems(List<PositionedText> items) {
+  if (items.isEmpty) return '';
+  final buffer = StringBuffer(items.first.text);
+  for (var i = 1; i < items.length; i++) {
+    final prev = items[i - 1];
+    final cur = items[i];
+    final gap = cur.x - (prev.x + prev.width);
+    final avgHeight = (prev.height + cur.height) / 2;
+    if (avgHeight > 0 && gap > avgHeight * 0.2) buffer.write(' ');
+    buffer.write(cur.text);
+  }
+  return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 /// Aynı barkodlu satırları birleştirir: adetler toplanır (additive), fiyat

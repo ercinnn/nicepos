@@ -56,6 +56,25 @@ void main() {
       expect(row.purchasePrice, 90.0);
     });
 
+    test('font değişimi nedeniyle ayrı öğe olarak gelen "İ" harfi etrafına boşluk eklenmez', () {
+      // Bazı PDF üreticileri Türkçe noktalı büyük İ'yi farklı bir font
+      // alt-kümesiyle, ayrı bir pdf.js metin öğesi olarak yazar — ama
+      // aralarında GERÇEK bir boşluk yoktur (öğeler tam bitişik/örtüşük).
+      final bands = [
+        ColumnBand(type: ColumnType.name, left: 0, right: 300),
+      ];
+      final items = [
+        const PositionedText(text: 'ÇEKECEĞ', x: 10, y: 100, width: 50, height: 12),
+        const PositionedText(text: 'İ', x: 60, y: 100, width: 8, height: 12), // bitişik, boşluksuz
+        const PositionedText(text: ' MODELİ', x: 68, y: 100, width: 45, height: 12),
+      ];
+
+      final rows = extractRows(items: items, bands: bands);
+
+      expect(rows, hasLength(1));
+      expect(rows.single.name, 'ÇEKECEĞİ MODELİ');
+    });
+
     test('iki satır y-konumuna göre ayrı kümelenir', () {
       final bands = [
         ColumnBand(type: ColumnType.name, left: 0, right: 200),
