@@ -53,8 +53,9 @@ String _fmt(num v) {
 
 class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
   final Map<int, _RowCtrls> _ctrls = {};
-  final TextEditingController _multiplierCtrl = TextEditingController(text: '1');
-  double _multiplier = 1;
+  final TextEditingController _purchaseMultiplierCtrl = TextEditingController(text: '1');
+  final TextEditingController _saleMultiplierCtrl = TextEditingController(text: '1');
+  double _purchaseMultiplier = 1;
 
   _RowCtrls _ctrlsFor(int index) => _ctrls.putIfAbsent(index, () => _RowCtrls(widget.rows[index]));
 
@@ -63,7 +64,8 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
     for (final c in _ctrls.values) {
       c.dispose();
     }
-    _multiplierCtrl.dispose();
+    _purchaseMultiplierCtrl.dispose();
+    _saleMultiplierCtrl.dispose();
     super.dispose();
   }
 
@@ -71,15 +73,33 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
   // (iskonto/+KDV) — kullanıcı burada sabit bir çarpan girer, tüm satırların
   // alış fiyatı `rawPurchasePrice * çarpan` olarak yeniden hesaplanır. Ham
   // değer korunduğu için çarpan istenildiği kadar değiştirilebilir.
-  void _applyMultiplier() {
-    final parsed = parseTrNumber(_multiplierCtrl.text);
+  void _applyPurchaseMultiplier() {
+    final parsed = parseTrNumber(_purchaseMultiplierCtrl.text);
     final multiplier = parsed == 0 ? 1.0 : parsed.toDouble();
     setState(() {
-      _multiplier = multiplier;
+      _purchaseMultiplier = multiplier;
       for (var i = 0; i < widget.rows.length; i++) {
         final row = widget.rows[i];
         row.purchasePrice = row.rawPurchasePrice * multiplier;
         _ctrls[i]?.purchasePrice.text = _fmt(row.purchasePrice);
+      }
+    });
+    widget.onRowsChanged();
+  }
+
+  // Barkodu sistemde ZATEN KAYITLI satırlarda Satış Fiyatı ürünün mevcut
+  // price1'i (bkz. liste_gir_screen.dart _confirmColumns) — dokunulmaz. Bu
+  // çarpan yalnız barkodu YENİ (sistemde eşleşmeyen) satırlar için, o satırın
+  // (çarpan uygulanmış) alış fiyatı üzerinden bir satış fiyatı önerisi kurar.
+  void _applySaleMultiplier() {
+    final parsed = parseTrNumber(_saleMultiplierCtrl.text);
+    final multiplier = parsed == 0 ? 1.0 : parsed.toDouble();
+    setState(() {
+      for (var i = 0; i < widget.rows.length; i++) {
+        final row = widget.rows[i];
+        if (row.existingProductId != null) continue;
+        row.salePrice = row.purchasePrice * multiplier;
+        _ctrls[i]?.salePrice.text = _fmt(row.salePrice);
       }
     });
     widget.onRowsChanged();
@@ -106,7 +126,21 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildMultiplierRow(),
+        _buildMultiplierRow(
+          label: 'Alış Fiyatı Çarpanı:',
+          controller: _purchaseMultiplierCtrl,
+          onApply: _applyPurchaseMultiplier,
+          helperText: 'Listede yazan alış fiyatı gerçek alış fiyatından farklıysa (iskonto/+KDV) '
+              'çarpan girin — ör. %34 iskonto için 0,66, +%20 KDV için 1,2. Aynıysa 1 bırakın.',
+        ),
+        const SizedBox(height: 8),
+        _buildMultiplierRow(
+          label: 'Satış Fiyatı Çarpanı (yalnız yeni ürünler):',
+          controller: _saleMultiplierCtrl,
+          onApply: _applySaleMultiplier,
+          helperText: 'Barkodu sistemde zaten kayıtlı ürünlerde mevcut satış fiyatı korunur. '
+              'Barkodu YENİ olan ürünlerde satış fiyatı, alış fiyatı × bu çarpan olarak hesaplanır.',
+        ),
         const SizedBox(height: 10),
         Expanded(
           child: SingleChildScrollView(
@@ -139,7 +173,12 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
     );
   }
 
-  Widget _buildMultiplierRow() {
+  Widget _buildMultiplierRow({
+    required String label,
+    required TextEditingController controller,
+    required VoidCallback onApply,
+    required String helperText,
+  }) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -148,25 +187,25 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
         border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
       ),
       child: Row(children: [
-        const Text('Alış Fiyatı Çarpanı:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         const SizedBox(width: 8),
         SizedBox(
           width: 90,
           child: TextField(
-            controller: _multiplierCtrl,
+            controller: controller,
             textAlign: TextAlign.center,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(), filled: true, fillColor: Colors.white),
-            onSubmitted: (_) => _applyMultiplier(),
+            onSubmitted: (_) => onApply(),
           ),
         ),
         const SizedBox(width: 8),
-        ElevatedButton(onPressed: _applyMultiplier, child: const Text('Uygula')),
+        ElevatedButton(onPressed: onApply, child: const Text('Uygula')),
         const SizedBox(width: 12),
-        const Expanded(
+        Expanded(
           child: Text(
-            'Listede yazan alış fiyatı gerçek alış fiyatından farklıysa (iskonto/+KDV) çarpan girin — ör. %34 iskonto için 0,66, +%20 KDV için 1,2. Aynıysa 1 bırakın.',
-            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            helperText,
+            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),
         ),
       ]),
@@ -216,7 +255,7 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
             // Elle girilen değeri de mevcut çarpana göre "ham" değere geri
             // çevirip saklar — çarpan sonradan değişirse bu satır da tutarlı
             // kalsın diye (bkz. ExtractedRow.rawPurchasePrice dokümantasyonu).
-            row.rawPurchasePrice = _multiplier == 0 ? parsed : parsed / _multiplier;
+            row.rawPurchasePrice = _purchaseMultiplier == 0 ? parsed : parsed / _purchaseMultiplier;
           },
         ),
       )),
@@ -227,6 +266,11 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
           textAlign: TextAlign.right,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+          // Barkodu YENİ (sistemde eşleşmeyen) ürünlerde satış fiyatı tahmini/
+          // girilmesi gereken bir değerdir → kırmızı, dikkat çeksin. Barkodu
+          // zaten kayıtlı ürünlerde mevcut fiyat gösterildiği için otomatik
+          // (siyah) renk yeterli.
+          style: TextStyle(color: row.existingProductId == null ? AppColors.danger : null),
           onChanged: (v) => row.salePrice = parseTrNumber(v),
         ),
       )),
