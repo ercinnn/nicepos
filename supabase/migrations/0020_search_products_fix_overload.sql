@@ -1,0 +1,181 @@
+-- =============================================================================
+-- 0020: search_products fonksiyon çakışması (overload) düzeltmesi
+-- =============================================================================
+-- 0019_search_products_sort.sql iki yeni parametre (`p_sort_column`,
+-- `p_sort_ascending`) ekledi — ama bunları `p_limit`/`p_offset`'ten ÖNCEYE
+-- koyduğu için fonksiyonun parametre TİP LİSTESİ değişti. Postgres'te
+-- `CREATE OR REPLACE FUNCTION` yalnız isim + parametre tipleri BİREBİR aynıysa
+-- "değiştirir"; tip listesi farklıysa AYNI isimde YENİ bir overload
+-- oluşturur. Sonuç: veritabanında `search_products` adında iki fonksiyon
+-- (eski 0017/0018 imzası + yeni 0019 imzası) birikti — `grant`/çağrı gibi
+-- imza belirtmeyen komutlar "function name is not unique" hatası verdi
+-- (canlıda gözlemlendi).
+--
+-- Çözüm: `public` şemasındaki TÜM `search_products` overload'ları (imzadan
+-- bağımsız, pg_proc üzerinden) DROP edilir, sonra fonksiyon TEK bir tanım
+-- olarak temiz şekilde yeniden oluşturulur.
+--
+-- Uygulama: DDL anon key ile çalıştırılamaz → Supabase SQL Editor'da uygulanır.
+
+do $$
+declare
+  r record;
+begin
+  for r in
+    select p.oid::regprocedure as signature
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where p.proname = 'search_products' and n.nspname = 'public'
+  loop
+    execute format('drop function %s', r.signature);
+  end loop;
+end $$;
+
+create or replace function search_products(
+  p_query text default null,
+  p_group_id uuid default null,
+  p_status text default null,
+  p_barcode text default null,
+  p_stock_code text default null,
+  p_unit text default null,
+  p_group_name text default null,
+  p_parent_group_name text default null,
+  p_stock_min numeric default null,
+  p_stock_max numeric default null,
+  p_critical_stock_min numeric default null,
+  p_critical_stock_max numeric default null,
+  p_vat_min numeric default null,
+  p_vat_max numeric default null,
+  p_purchase_min numeric default null,
+  p_purchase_max numeric default null,
+  p_price1_min numeric default null,
+  p_price1_max numeric default null,
+  p_price2_min numeric default null,
+  p_price2_max numeric default null,
+  p_sort_column text default 'name',
+  p_sort_ascending boolean default true,
+  p_limit int default 50,
+  p_offset int default 0
+)
+returns table (
+  id uuid,
+  barcode text,
+  name text,
+  stock_code text,
+  group_id uuid,
+  unit text,
+  origin_country text,
+  stock_quantity numeric,
+  critical_stock numeric,
+  purchase_price numeric,
+  purchase_price_vat_included boolean,
+  price1 numeric,
+  price1_vat_included boolean,
+  price2 numeric,
+  price2_vat_included boolean,
+  vat_rate numeric,
+  weight numeric,
+  description text,
+  image_url text,
+  quick_list_order integer,
+  is_online_active boolean,
+  updated_at timestamptz,
+  group_name text,
+  parent_group_name text
+)
+language sql
+stable
+security invoker
+as $$
+  with weekly_sales as materialized (
+    select
+      si.product_id,
+      width_bucket(
+        extract(epoch from (now() - s.sale_date)) / 86400.0,
+        0, 28, 4
+      ) as week_bucket,
+      sum(si.quantity) as qty
+    from sale_items si
+    join sales s on s.id = si.sale_id
+    where si.product_id is not null
+      and s.sale_date >= now() - interval '28 days'
+      and s.sale_date < now()
+    group by 1, 2
+  ),
+  cok_satan as materialized (
+    select product_id
+    from weekly_sales
+    where qty >= 1
+    group by product_id
+    having count(distinct week_bucket) = 4
+  )
+  select
+    p.id, p.barcode, p.name, p.stock_code, p.group_id, p.unit, p.origin_country,
+    p.stock_quantity, p.critical_stock, p.purchase_price, p.purchase_price_vat_included,
+    p.price1, p.price1_vat_included, p.price2, p.price2_vat_included, p.vat_rate,
+    p.weight, p.description, p.image_url, p.quick_list_order, p.is_online_active,
+    p.updated_at,
+    pg.name as group_name,
+    parent_pg.name as parent_group_name
+  from products p
+  left join product_groups pg on pg.id = p.group_id
+  left join product_groups parent_pg on parent_pg.id = pg.parent_group_id
+  left join cok_satan cs on p_status is not null and cs.product_id = p.id
+  where
+    (p_query is null or p_query = '' or
+      p.name ilike '%'||p_query||'%' or
+      p.barcode ilike '%'||p_query||'%' or
+      p.stock_code ilike '%'||p_query||'%')
+    and (p_group_id is null or p.group_id = p_group_id)
+    and (
+      p_status is null
+      or (p_status = 'cok_satan' and cs.product_id is not null)
+      or (p_status = 'tukendi' and cs.product_id is null and p.stock_quantity <= 0)
+      or (p_status = 'pasif' and cs.product_id is null and p.stock_quantity > 0
+          and p.updated_at < now() - interval '1 year')
+      or (p_status = 'bos' and cs.product_id is null and p.stock_quantity > 0
+          and p.updated_at >= now() - interval '1 year')
+    )
+    -- Barkod: BİREBİR eşleşme (eskiden ilike '%...%' idi).
+    and (p_barcode is null or p.barcode = p_barcode)
+    and (p_stock_code is null or p.stock_code ilike '%'||p_stock_code||'%')
+    and (p_unit is null or p.unit ilike '%'||p_unit||'%')
+    and (p_group_name is null or pg.name ilike '%'||p_group_name||'%')
+    and (p_parent_group_name is null or parent_pg.name ilike '%'||p_parent_group_name||'%')
+    and (p_stock_min is null or p.stock_quantity >= p_stock_min)
+    and (p_stock_max is null or p.stock_quantity <= p_stock_max)
+    and (p_critical_stock_min is null or p.critical_stock >= p_critical_stock_min)
+    and (p_critical_stock_max is null or p.critical_stock <= p_critical_stock_max)
+    and (p_vat_min is null or p.vat_rate >= p_vat_min)
+    and (p_vat_max is null or p.vat_rate <= p_vat_max)
+    and (p_purchase_min is null or p.purchase_price >= p_purchase_min)
+    and (p_purchase_max is null or p.purchase_price <= p_purchase_max)
+    and (p_price1_min is null or p.price1 >= p_price1_min)
+    and (p_price1_max is null or p.price1 <= p_price1_max)
+    and (p_price2_min is null or p.price2 >= p_price2_min)
+    and (p_price2_max is null or p.price2 <= p_price2_max)
+  order by
+    case when p_sort_column = 'name' and p_sort_ascending then p.name end asc nulls last,
+    case when p_sort_column = 'name' and not p_sort_ascending then p.name end desc nulls last,
+    case when p_sort_column = 'barcode' and p_sort_ascending then p.barcode end asc nulls last,
+    case when p_sort_column = 'barcode' and not p_sort_ascending then p.barcode end desc nulls last,
+    case when p_sort_column = 'stock_quantity' and p_sort_ascending then p.stock_quantity end asc nulls last,
+    case when p_sort_column = 'stock_quantity' and not p_sort_ascending then p.stock_quantity end desc nulls last,
+    case when p_sort_column = 'critical_stock' and p_sort_ascending then p.critical_stock end asc nulls last,
+    case when p_sort_column = 'critical_stock' and not p_sort_ascending then p.critical_stock end desc nulls last,
+    case when p_sort_column = 'vat_rate' and p_sort_ascending then p.vat_rate end asc nulls last,
+    case when p_sort_column = 'vat_rate' and not p_sort_ascending then p.vat_rate end desc nulls last,
+    case when p_sort_column = 'purchase_price' and p_sort_ascending then p.purchase_price end asc nulls last,
+    case when p_sort_column = 'purchase_price' and not p_sort_ascending then p.purchase_price end desc nulls last,
+    case when p_sort_column = 'price1' and p_sort_ascending then p.price1 end asc nulls last,
+    case when p_sort_column = 'price1' and not p_sort_ascending then p.price1 end desc nulls last,
+    case when p_sort_column = 'price2' and p_sort_ascending then p.price2 end asc nulls last,
+    case when p_sort_column = 'price2' and not p_sort_ascending then p.price2 end desc nulls last,
+    p.name asc
+  limit p_limit offset p_offset;
+$$;
+
+-- Bu noktada `public` şemasında `search_products` adında TEK fonksiyon var
+-- (yukarıdaki DO bloğu tüm eski overload'ları temizledi) — imza belirtmeden
+-- GRANT güvenle çalışır.
+grant execute on function search_products to anon, authenticated;
