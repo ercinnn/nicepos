@@ -4,20 +4,25 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class DashboardRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
-  // ── Geçmiş yıl aylık toplam cache'i (process ömürlü) ──────────────────────
+  // ── Geçmiş yıl aylık toplam cache'i (instance ömürlü) ──────────────────────
   // Cari yıldan ÖNCEKI yılların (y < DateTime.now().year) 12'lik aylık toplam
-  // listeleri artık DEĞİŞMEZ → bir kez hesaplanınca burada saklanır ve tekrar
-  // Supabase'den çekilmez. `dashboardRepositoryProvider` autoDispose olduğu için
-  // her build'de yeni bir DashboardRepository örneği doğar; bu yüzden cache
-  // `static` (örnek düzeyinde değil, sınıf/process düzeyinde) tutulur.
+  // listeleri artık DEĞİŞMEZ → bir kez hesaplanınca bu ÖRNEK içinde saklanır.
   // Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
   //
   // NOT: Aylık toplama artık sunucuda `sales_monthly_totals` görünümünde yapılır
   // (bkz. supabase/migrations/0010_sales_monthly_totals.sql). İstemci yıl×ay
-  // başına tek satır çeker; binlerce `sales` satırını taşımaz. Bu cache yine de
-  // korunur: geçmiş yıllar değişmediği için oturum boyunca tekrar sorgu atmayı
-  // engeller.
-  static final Map<int, List<num>> _pastYearsCache = {};
+  // başına tek satır çeker; binlerce `sales` satırını taşımaz.
+  //
+  // ⚠️ ÖNCEDEN `static` idi (process ömrü boyunca, tüm DashboardRepository
+  // örnekleri arasında paylaşılan tek bir cache). Bu, mobilde soğuk açılışta
+  // (Supabase oturumu tam oturmadan) İLK sorgu boş/sıfır dönerse, o boş sonucun
+  // UYGULAMA KAPATILANA KADAR kalıcı olarak "geçmiş yıl = sıfır" diye
+  // dondurulmasına yol açıyordu (`historicalYearlyProvider` autoDispose'a
+  // çevrilse bile static cache bu hatayı hayatta tutardı). Artık instance
+  // alanı: `historicalYearlyProvider` her yeniden oluştuğunda (dashboard'a her
+  // dönüşte) taze bir `DashboardRepository` + boş cache ile başlar — küçük bir
+  // tekrar-sorgu maliyeti karşılığında kalıcı-yanlış-veri riski ortadan kalkar.
+  final Map<int, List<num>> _pastYearsCache = {};
 
   // PostgREST numeric alanları (ör. görünümdeki sum) num veya String olarak
   // gelebilir; ikisini de güvenle sayıya çevirir.

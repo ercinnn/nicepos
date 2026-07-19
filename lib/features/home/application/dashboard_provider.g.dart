@@ -148,7 +148,7 @@ final last365DaysRevenueProvider = AutoDisposeFutureProvider<num>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef Last365DaysRevenueRef = AutoDisposeFutureProviderRef<num>;
-String _$dailySalesHash() => r'e8254c7773e76085b0967828bee531f9177f1c64';
+String _$dailySalesHash() => r'4878beab527d4f745e39e068c1663752c980109b';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -172,34 +172,82 @@ class _SystemHash {
 }
 
 /// Son [days] günün günlük satış verileri.
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
-/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
+/// autoDispose (ÖNCEDEN keepAlive'dı — bkz. aşağıdaki not): dashboard'a her
+/// dönüşte yeniden çekilir.
+///
+/// NOT (mobil bug düzeltmesi): bu provider + `currentYearMonthly` +
+/// `historicalYearly` üçü ÖNCEDEN `keepAlive: true` idi — diğer tüm dashboard
+/// provider'ları (stat kartları) autoDispose. Android'de uygulama soğuk
+/// açılışında (Supabase oturumu/token henüz tam oturmamışken) bu üçünün İLK
+/// sorgusu boş/sıfır sonuç dönerse, keepAlive bu kötü sonucu SÜREÇ ÖMRÜ
+/// BOYUNCA kalıcı olarak dondurur — kullanıcı anasayfayı tekrar ziyaret etse
+/// bile tazelenmez (autoDispose stat kartları ise her ziyarette kendiliğinden
+/// düzelir). Web'de bu sorun gözlenmemesi muhtemelen daha hızlı/istikrarlı
+/// bağlantı + daha sık sayfa yenilemesiyle örtüşüyor olmasından kaynaklanıyor.
+/// Düzeltme: bu üçü de autoDispose'a çevrildi — küçük bir performans
+/// maliyetiyle (her ziyarette yeniden sorgu) kalıcı-yanlış-veri riski ortadan
+/// kaldırıldı. Finansal rakamlar gösteren bir ekranda doğruluk önceliklidir.
 ///
 /// Copied from [dailySales].
 @ProviderFor(dailySales)
 const dailySalesProvider = DailySalesFamily();
 
 /// Son [days] günün günlük satış verileri.
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
-/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
+/// autoDispose (ÖNCEDEN keepAlive'dı — bkz. aşağıdaki not): dashboard'a her
+/// dönüşte yeniden çekilir.
+///
+/// NOT (mobil bug düzeltmesi): bu provider + `currentYearMonthly` +
+/// `historicalYearly` üçü ÖNCEDEN `keepAlive: true` idi — diğer tüm dashboard
+/// provider'ları (stat kartları) autoDispose. Android'de uygulama soğuk
+/// açılışında (Supabase oturumu/token henüz tam oturmamışken) bu üçünün İLK
+/// sorgusu boş/sıfır sonuç dönerse, keepAlive bu kötü sonucu SÜREÇ ÖMRÜ
+/// BOYUNCA kalıcı olarak dondurur — kullanıcı anasayfayı tekrar ziyaret etse
+/// bile tazelenmez (autoDispose stat kartları ise her ziyarette kendiliğinden
+/// düzelir). Web'de bu sorun gözlenmemesi muhtemelen daha hızlı/istikrarlı
+/// bağlantı + daha sık sayfa yenilemesiyle örtüşüyor olmasından kaynaklanıyor.
+/// Düzeltme: bu üçü de autoDispose'a çevrildi — küçük bir performans
+/// maliyetiyle (her ziyarette yeniden sorgu) kalıcı-yanlış-veri riski ortadan
+/// kaldırıldı. Finansal rakamlar gösteren bir ekranda doğruluk önceliklidir.
 ///
 /// Copied from [dailySales].
 class DailySalesFamily
     extends Family<AsyncValue<List<({DateTime date, num amount})>>> {
   /// Son [days] günün günlük satış verileri.
-  /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-  /// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
-  /// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
+  /// autoDispose (ÖNCEDEN keepAlive'dı — bkz. aşağıdaki not): dashboard'a her
+  /// dönüşte yeniden çekilir.
+  ///
+  /// NOT (mobil bug düzeltmesi): bu provider + `currentYearMonthly` +
+  /// `historicalYearly` üçü ÖNCEDEN `keepAlive: true` idi — diğer tüm dashboard
+  /// provider'ları (stat kartları) autoDispose. Android'de uygulama soğuk
+  /// açılışında (Supabase oturumu/token henüz tam oturmamışken) bu üçünün İLK
+  /// sorgusu boş/sıfır sonuç dönerse, keepAlive bu kötü sonucu SÜREÇ ÖMRÜ
+  /// BOYUNCA kalıcı olarak dondurur — kullanıcı anasayfayı tekrar ziyaret etse
+  /// bile tazelenmez (autoDispose stat kartları ise her ziyarette kendiliğinden
+  /// düzelir). Web'de bu sorun gözlenmemesi muhtemelen daha hızlı/istikrarlı
+  /// bağlantı + daha sık sayfa yenilemesiyle örtüşüyor olmasından kaynaklanıyor.
+  /// Düzeltme: bu üçü de autoDispose'a çevrildi — küçük bir performans
+  /// maliyetiyle (her ziyarette yeniden sorgu) kalıcı-yanlış-veri riski ortadan
+  /// kaldırıldı. Finansal rakamlar gösteren bir ekranda doğruluk önceliklidir.
   ///
   /// Copied from [dailySales].
   const DailySalesFamily();
 
   /// Son [days] günün günlük satış verileri.
-  /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-  /// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
-  /// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
+  /// autoDispose (ÖNCEDEN keepAlive'dı — bkz. aşağıdaki not): dashboard'a her
+  /// dönüşte yeniden çekilir.
+  ///
+  /// NOT (mobil bug düzeltmesi): bu provider + `currentYearMonthly` +
+  /// `historicalYearly` üçü ÖNCEDEN `keepAlive: true` idi — diğer tüm dashboard
+  /// provider'ları (stat kartları) autoDispose. Android'de uygulama soğuk
+  /// açılışında (Supabase oturumu/token henüz tam oturmamışken) bu üçünün İLK
+  /// sorgusu boş/sıfır sonuç dönerse, keepAlive bu kötü sonucu SÜREÇ ÖMRÜ
+  /// BOYUNCA kalıcı olarak dondurur — kullanıcı anasayfayı tekrar ziyaret etse
+  /// bile tazelenmez (autoDispose stat kartları ise her ziyarette kendiliğinden
+  /// düzelir). Web'de bu sorun gözlenmemesi muhtemelen daha hızlı/istikrarlı
+  /// bağlantı + daha sık sayfa yenilemesiyle örtüşüyor olmasından kaynaklanıyor.
+  /// Düzeltme: bu üçü de autoDispose'a çevrildi — küçük bir performans
+  /// maliyetiyle (her ziyarette yeniden sorgu) kalıcı-yanlış-veri riski ortadan
+  /// kaldırıldı. Finansal rakamlar gösteren bir ekranda doğruluk önceliklidir.
   ///
   /// Copied from [dailySales].
   DailySalesProvider call(int days) {
@@ -229,17 +277,41 @@ class DailySalesFamily
 }
 
 /// Son [days] günün günlük satış verileri.
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
-/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
+/// autoDispose (ÖNCEDEN keepAlive'dı — bkz. aşağıdaki not): dashboard'a her
+/// dönüşte yeniden çekilir.
+///
+/// NOT (mobil bug düzeltmesi): bu provider + `currentYearMonthly` +
+/// `historicalYearly` üçü ÖNCEDEN `keepAlive: true` idi — diğer tüm dashboard
+/// provider'ları (stat kartları) autoDispose. Android'de uygulama soğuk
+/// açılışında (Supabase oturumu/token henüz tam oturmamışken) bu üçünün İLK
+/// sorgusu boş/sıfır sonuç dönerse, keepAlive bu kötü sonucu SÜREÇ ÖMRÜ
+/// BOYUNCA kalıcı olarak dondurur — kullanıcı anasayfayı tekrar ziyaret etse
+/// bile tazelenmez (autoDispose stat kartları ise her ziyarette kendiliğinden
+/// düzelir). Web'de bu sorun gözlenmemesi muhtemelen daha hızlı/istikrarlı
+/// bağlantı + daha sık sayfa yenilemesiyle örtüşüyor olmasından kaynaklanıyor.
+/// Düzeltme: bu üçü de autoDispose'a çevrildi — küçük bir performans
+/// maliyetiyle (her ziyarette yeniden sorgu) kalıcı-yanlış-veri riski ortadan
+/// kaldırıldı. Finansal rakamlar gösteren bir ekranda doğruluk önceliklidir.
 ///
 /// Copied from [dailySales].
 class DailySalesProvider
-    extends FutureProvider<List<({DateTime date, num amount})>> {
+    extends AutoDisposeFutureProvider<List<({DateTime date, num amount})>> {
   /// Son [days] günün günlük satış verileri.
-  /// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-  /// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
-  /// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
+  /// autoDispose (ÖNCEDEN keepAlive'dı — bkz. aşağıdaki not): dashboard'a her
+  /// dönüşte yeniden çekilir.
+  ///
+  /// NOT (mobil bug düzeltmesi): bu provider + `currentYearMonthly` +
+  /// `historicalYearly` üçü ÖNCEDEN `keepAlive: true` idi — diğer tüm dashboard
+  /// provider'ları (stat kartları) autoDispose. Android'de uygulama soğuk
+  /// açılışında (Supabase oturumu/token henüz tam oturmamışken) bu üçünün İLK
+  /// sorgusu boş/sıfır sonuç dönerse, keepAlive bu kötü sonucu SÜREÇ ÖMRÜ
+  /// BOYUNCA kalıcı olarak dondurur — kullanıcı anasayfayı tekrar ziyaret etse
+  /// bile tazelenmez (autoDispose stat kartları ise her ziyarette kendiliğinden
+  /// düzelir). Web'de bu sorun gözlenmemesi muhtemelen daha hızlı/istikrarlı
+  /// bağlantı + daha sık sayfa yenilemesiyle örtüşüyor olmasından kaynaklanıyor.
+  /// Düzeltme: bu üçü de autoDispose'a çevrildi — küçük bir performans
+  /// maliyetiyle (her ziyarette yeniden sorgu) kalıcı-yanlış-veri riski ortadan
+  /// kaldırıldı. Finansal rakamlar gösteren bir ekranda doğruluk önceliklidir.
   ///
   /// Copied from [dailySales].
   DailySalesProvider(int days)
@@ -289,7 +361,8 @@ class DailySalesProvider
   }
 
   @override
-  FutureProviderElement<List<({DateTime date, num amount})>> createElement() {
+  AutoDisposeFutureProviderElement<List<({DateTime date, num amount})>>
+  createElement() {
     return _DailySalesProviderElement(this);
   }
 
@@ -309,13 +382,15 @@ class DailySalesProvider
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin DailySalesRef on FutureProviderRef<List<({DateTime date, num amount})>> {
+mixin DailySalesRef
+    on AutoDisposeFutureProviderRef<List<({DateTime date, num amount})>> {
   /// The parameter `days` of this provider.
   int get days;
 }
 
 class _DailySalesProviderElement
-    extends FutureProviderElement<List<({DateTime date, num amount})>>
+    extends
+        AutoDisposeFutureProviderElement<List<({DateTime date, num amount})>>
     with DailySalesRef {
   _DailySalesProviderElement(super.provider);
 
@@ -464,54 +539,59 @@ class _MonthlySalesProviderElement
 }
 
 String _$currentYearMonthlyHash() =>
-    r'd0e2723fa1b32a7f25703be23d89171a3a62e5e1';
+    r'62648446bf1e46a48014fa750ee083ced02d6a4a';
 
 /// Cari yılın aylık satış verileri (çok-yıl karşılaştırma grafiğinin HIZLI ilk
 /// çizimi için). Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi.
 /// Küçük aralık sorgusu → grafik cari yıl çizgisini hemen gösterebilsin diye
 /// geçmiş yıllardan ayrıldı.
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Tradeoff: yeni satış eklenince cari yıl otomatik yenilenmez;
-/// gerekirse `ref.invalidate(currentYearMonthlyProvider)` ile elle tazelenir.
+/// autoDispose (ÖNCEDEN keepAlive'dı) — bkz. `dailySales` üzerindeki not:
+/// mobilde soğuk açılışta oluşabilecek geçici bir boş/sıfır sonucun kalıcı
+/// cache'lenmesini önlemek için dashboard'a her dönüşte yeniden çekilir.
 ///
 /// Copied from [currentYearMonthly].
 @ProviderFor(currentYearMonthly)
-final currentYearMonthlyProvider = FutureProvider<Map<int, List<num>>>.internal(
-  currentYearMonthly,
-  name: r'currentYearMonthlyProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$currentYearMonthlyHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+final currentYearMonthlyProvider =
+    AutoDisposeFutureProvider<Map<int, List<num>>>.internal(
+      currentYearMonthly,
+      name: r'currentYearMonthlyProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$currentYearMonthlyHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef CurrentYearMonthlyRef = FutureProviderRef<Map<int, List<num>>>;
-String _$historicalYearlyHash() => r'de73cacbc1d5a090b7009780481845dc7050dc56';
+typedef CurrentYearMonthlyRef =
+    AutoDisposeFutureProviderRef<Map<int, List<num>>>;
+String _$historicalYearlyHash() => r'8d8e4e3058fb0c834deab0bd57060d51aab6e400';
 
 /// Geçmiş yılların (y < cari yıl) aylık satış verileri — grafiğe ARKADAN dolar.
 /// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Ayrıca geçmiş yıllar `DashboardRepository` içinde process-ömürlü
-/// static cache'te tutulur; provider invalidate edilse bile geçmiş yıllar
-/// yeniden çekilmez. Geçmiş yıllar değişmediği için keepAlive risksizdir.
+/// autoDispose (ÖNCEDEN keepAlive'dı) — bkz. `dailySales` üzerindeki not.
+/// `DashboardRepository._pastYearsCache` de artık STATIC değil, instance
+/// alanı (bkz. repository) — provider yeniden oluştuğunda cache de sıfırdan
+/// başlar, böylece kötü/boş bir ilk sonuç geçmiş yılları kalıcı olarak
+/// "sıfır" diye dondurmaz. Geçmiş yıllar gerçekten değişmez, ama küçük bir
+/// tekrar-sorgu maliyeti kalıcı-yanlış-veri riskinden daha ucuzdur.
 ///
 /// Copied from [historicalYearly].
 @ProviderFor(historicalYearly)
-final historicalYearlyProvider = FutureProvider<Map<int, List<num>>>.internal(
-  historicalYearly,
-  name: r'historicalYearlyProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$historicalYearlyHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+final historicalYearlyProvider =
+    AutoDisposeFutureProvider<Map<int, List<num>>>.internal(
+      historicalYearly,
+      name: r'historicalYearlyProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$historicalYearlyHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef HistoricalYearlyRef = FutureProviderRef<Map<int, List<num>>>;
+typedef HistoricalYearlyRef = AutoDisposeFutureProviderRef<Map<int, List<num>>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -40,10 +40,22 @@ Future<num> last365DaysRevenue(Last365DaysRevenueRef ref) =>
     ref.watch(dashboardRepositoryProvider).fetchLast365DaysRevenue();
 
 /// Son [days] günün günlük satış verileri.
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Tradeoff: yeni satış eklenince otomatik yenilenmez; gerekirse
-/// ileride `ref.invalidate(dailySalesProvider)` ile elle tazelenebilir.
-@Riverpod(keepAlive: true)
+/// autoDispose (ÖNCEDEN keepAlive'dı — bkz. aşağıdaki not): dashboard'a her
+/// dönüşte yeniden çekilir.
+///
+/// NOT (mobil bug düzeltmesi): bu provider + `currentYearMonthly` +
+/// `historicalYearly` üçü ÖNCEDEN `keepAlive: true` idi — diğer tüm dashboard
+/// provider'ları (stat kartları) autoDispose. Android'de uygulama soğuk
+/// açılışında (Supabase oturumu/token henüz tam oturmamışken) bu üçünün İLK
+/// sorgusu boş/sıfır sonuç dönerse, keepAlive bu kötü sonucu SÜREÇ ÖMRÜ
+/// BOYUNCA kalıcı olarak dondurur — kullanıcı anasayfayı tekrar ziyaret etse
+/// bile tazelenmez (autoDispose stat kartları ise her ziyarette kendiliğinden
+/// düzelir). Web'de bu sorun gözlenmemesi muhtemelen daha hızlı/istikrarlı
+/// bağlantı + daha sık sayfa yenilemesiyle örtüşüyor olmasından kaynaklanıyor.
+/// Düzeltme: bu üçü de autoDispose'a çevrildi — küçük bir performans
+/// maliyetiyle (her ziyarette yeniden sorgu) kalıcı-yanlış-veri riski ortadan
+/// kaldırıldı. Finansal rakamlar gösteren bir ekranda doğruluk önceliklidir.
+@riverpod
 Future<List<({DateTime date, num amount})>> dailySales(
         DailySalesRef ref, int days) =>
     ref.watch(dashboardRepositoryProvider).fetchDailySales(days);
@@ -58,19 +70,21 @@ Future<List<({DateTime date, num amount})>> monthlySales(
 /// çizimi için). Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi.
 /// Küçük aralık sorgusu → grafik cari yıl çizgisini hemen gösterebilsin diye
 /// geçmiş yıllardan ayrıldı.
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Tradeoff: yeni satış eklenince cari yıl otomatik yenilenmez;
-/// gerekirse `ref.invalidate(currentYearMonthlyProvider)` ile elle tazelenir.
-@Riverpod(keepAlive: true)
+/// autoDispose (ÖNCEDEN keepAlive'dı) — bkz. `dailySales` üzerindeki not:
+/// mobilde soğuk açılışta oluşabilecek geçici bir boş/sıfır sonucun kalıcı
+/// cache'lenmesini önlemek için dashboard'a her dönüşte yeniden çekilir.
+@riverpod
 Future<Map<int, List<num>>> currentYearMonthly(CurrentYearMonthlyRef ref) =>
     ref.watch(dashboardRepositoryProvider).fetchCurrentYearMonthly();
 
 /// Geçmiş yılların (y < cari yıl) aylık satış verileri — grafiğe ARKADAN dolar.
 /// Anahtar: yıl · değer: 12 elemanlı aylık toplam listesi (0=Ocak..11=Aralık).
-/// keepAlive: oturum boyunca cache'lenir → dashboard'a her dönüşte yeniden
-/// çekilmez. Ayrıca geçmiş yıllar `DashboardRepository` içinde process-ömürlü
-/// static cache'te tutulur; provider invalidate edilse bile geçmiş yıllar
-/// yeniden çekilmez. Geçmiş yıllar değişmediği için keepAlive risksizdir.
-@Riverpod(keepAlive: true)
+/// autoDispose (ÖNCEDEN keepAlive'dı) — bkz. `dailySales` üzerindeki not.
+/// `DashboardRepository._pastYearsCache` de artık STATIC değil, instance
+/// alanı (bkz. repository) — provider yeniden oluştuğunda cache de sıfırdan
+/// başlar, böylece kötü/boş bir ilk sonuç geçmiş yılları kalıcı olarak
+/// "sıfır" diye dondurmaz. Geçmiş yıllar gerçekten değişmez, ama küçük bir
+/// tekrar-sorgu maliyeti kalıcı-yanlış-veri riskinden daha ucuzdur.
+@riverpod
 Future<Map<int, List<num>>> historicalYearly(HistoricalYearlyRef ref) =>
     ref.watch(dashboardRepositoryProvider).fetchHistoricalYearlyMonthly();
