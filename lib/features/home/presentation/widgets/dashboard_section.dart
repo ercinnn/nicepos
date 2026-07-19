@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -74,25 +76,85 @@ class DashboardSection extends ConsumerWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Ekranın TEK kahramanı: bugünkü toplam ciro (₺). İri tabular rakam +
-/// hemen altında ince altın aksan rayı (rakam genişliğinin ~%40'ı, pill).
+/// hemen altında ışıldayan altın aksan rayı (rakamın TAM genişliği, pill).
 /// Veri: mevcut `todaySummaryProvider` (`d.revenue`) — yeni provider yok.
 // -12° cinsinden radyan (yalnız hero'nun asimetrik köşe kaması için) —
 // `dart:math` import etmeye değmeyecek tek kullanımlık sabit.
 const double _kHeroWedgeAngle = -0.2094395102393195;
 
-/// Anasayfa hero bandı — KARAR v1.15 (gradyan + asimetrik "dijital platform"
-/// yönü). §4 imzası (Hero Tutar + Altın Ray) korunur; yalnız hero'nun KENDİ
-/// yüzeyi zenginleşir — geri kalan uygulama (kartlar, tablolar, sidebar)
-/// sakin/beyaz kalmaya devam eder ("boldness tek yerde"). Yeni renk YOK,
-/// yalnız mevcut lacivert/altın rampasının bir durağı eklendi (`primaryDeep`).
-class _HeroBand extends ConsumerWidget {
+/// 0..1 döngüsel faz → yumuşak 0→1→0 nabzı (sin tabanlı). Hero'daki TÜM
+/// "nabız" efektleri (parıltı noktaları, ray parıltısı) bunu paylaşır.
+double _pulseWave(double phase) =>
+    (math.sin(phase * 2 * math.pi - math.pi / 2) + 1) / 2;
+
+class _GlintSpec {
+  final double top, right, size, delay;
+  const _GlintSpec(
+      {required this.top,
+      required this.right,
+      required this.size,
+      required this.delay});
+}
+
+// 7 minik parıltı — köşe parıltısının etrafına yayılmış, boyut/gecikme
+// karışık (organik his). Sabit piksel konumları (kart köşe parıltısı/kama
+// gibi zaten sabit piksellerle konumlanıyor, aynı desen).
+const _kGlints = [
+  _GlintSpec(top: 18, right: 28, size: 7, delay: 0.0),
+  _GlintSpec(top: 44, right: 70, size: 5, delay: 0.6),
+  _GlintSpec(top: 30, right: 96, size: 4, delay: 1.2),
+  _GlintSpec(top: 6, right: 82, size: 6, delay: 1.8),
+  _GlintSpec(top: 60, right: 18, size: 4, delay: 2.4),
+  _GlintSpec(top: 10, right: 130, size: 5, delay: 3.0),
+  _GlintSpec(top: 70, right: 52, size: 4, delay: 3.6),
+];
+
+const double _kShimmerPeriod = 10.0; // saniye — kontrolcünün tam döngüsü
+
+/// Anasayfa hero bandı — KARAR v1.15/v1.16 (gradyan + asimetri + ışıltı,
+/// "dijital platform" yönü — görsel mockup turlarından geçip onaylandı).
+/// §4 imzası (Hero Tutar + Altın Ray) korunur; yalnız hero'nun KENDİ yüzeyi
+/// zenginleşir — geri kalan uygulama sakin/beyaz kalmaya devam eder.
+///
+/// TEK `AnimationController` (10sn döngü) tüm hareketli efektleri besler
+/// (kart geneli ışık taraması, ray üstü ışık huzmesi, ray parıltı nabzı, 7
+/// parıltı noktası) — performans için ayrı ayrı ticker açılmaz, hepsi bu
+/// TEK controller'ın `value`'undan faz hesabıyla türetilir. Erişilebilirlik:
+/// `MediaQuery.disableAnimations` (azaltılmış hareket) açıksa tüm animasyonlar
+/// durur, sabit-ama-güçlü bir ışıltı görünümüne düşer (CSS
+/// `prefers-reduced-motion` karşılığı).
+class _HeroBand extends ConsumerStatefulWidget {
   const _HeroBand();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HeroBand> createState() => _HeroBandState();
+}
+
+class _HeroBandState extends ConsumerState<_HeroBand>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final todayAsync = ref.watch(todaySummaryProvider);
     final yesterdayAsync = ref.watch(yesterdaySummaryProvider);
     final mobil = context.isMobile;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
 
     // Dünkü ciroya göre değişim — hero'nun yanında sakin rozet (ikinci tutar değil).
     final degisim = _yuzdeDegisim(
@@ -104,10 +166,10 @@ class _HeroBand extends ConsumerWidget {
       borderRadius: BorderRadius.circular(AppSizes.radiusXl),
       child: Container(
         width: double.infinity,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           // 3 duraklı lacivert gradyan (155°'ye yakın, sol-üstten sağ-alta) —
           // mevcut primary/primaryDark/primaryDeep rampası, yeni ton yok.
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment(-0.5, -1),
             end: Alignment(0.6, 1),
             colors: [
@@ -119,37 +181,36 @@ class _HeroBand extends ConsumerWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primaryDeep.withValues(alpha: 0.45),
+              color: Color(0x73081226), // primaryDeep ~%45 alfa
               blurRadius: 32,
-              offset: const Offset(0, 16),
+              offset: Offset(0, 16),
               spreadRadius: -12,
             ),
           ],
         ),
         child: Stack(
           children: [
-            // Asimetrik altın parıltı — yalnız sağ-üst köşede (imza altını,
-            // §5 "altın ekonomisi": dekor değil, hero'nun kendi vurgusu).
-            Positioned(
+            // Asimetrik altın parıltı — yalnız sağ-üst köşede, ışıltı isteğiyle
+            // güçlendirildi (%32 → %42).
+            const Positioned(
               top: -70,
               right: -50,
               child: IgnorePointer(
-                child: Container(
-                  width: 260,
-                  height: 260,
+                child: DecoratedBox(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        AppColors.gold.withValues(alpha: 0.32),
-                        AppColors.gold.withValues(alpha: 0.0),
+                        Color(0x6BC9A84C), // gold ~%42 alfa
+                        Color(0x00C9A84C),
                       ],
                     ),
                   ),
+                  child: SizedBox(width: 260, height: 260),
                 ),
               ),
             ),
-            // İnce ışık kaması — asimetriyi güçlendiren tek dekoratif öğe.
+            // İnce ışık kaması — v1 ile birebir aynı (şekil değiştirilmedi).
             Positioned(
               top: -90,
               right: -110,
@@ -174,6 +235,79 @@ class _HeroBand extends ConsumerWidget {
                 ),
               ),
             ),
+            // Kart geneli yavaş ışık taraması ("shimmer") — düşük alfa, 10sn döngü.
+            // Positioned DAİMA Stack'in DOĞRUDAN çocuğu olmalı (ParentDataWidget
+            // kısıtı) — IgnorePointer/AnimatedBuilder onun İÇİNDE, dışında değil.
+            if (!reduceMotion)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _ctrl,
+                    builder: (context, _) {
+                      // Gradyanı kendi ekseninde kaydırmak yerine (GradientTransform
+                      // yerine) başlangıç/bitiş hizasını `dx` kadar öteliyoruz — aynı
+                      // "background-position taraması" hissini verir, daha basit.
+                      final dx = math.sin(_ctrl.value * 2 * math.pi) * 1.4;
+                      return DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment(-1 + dx, -1),
+                            end: Alignment(1 + dx, 1),
+                            colors: [
+                              Colors.white.withValues(alpha: 0.0),
+                              Colors.white.withValues(alpha: 0.07),
+                              AppColors.gold.withValues(alpha: 0.16),
+                              Colors.white.withValues(alpha: 0.07),
+                              Colors.white.withValues(alpha: 0.0),
+                            ],
+                            stops: const [0.26, 0.44, 0.50, 0.56, 0.74],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            // 7 minik parıltı noktası.
+            if (!reduceMotion)
+              for (final g in _kGlints)
+                Positioned(
+                  top: g.top,
+                  right: g.right,
+                  child: IgnorePointer(
+                    child: AnimatedBuilder(
+                      animation: _ctrl,
+                      builder: (context, _) {
+                        final phase = (_ctrl.value * (_kShimmerPeriod / 4.2) +
+                                g.delay / 4.2) %
+                            1.0;
+                        final t = _pulseWave(phase);
+                        return Opacity(
+                          opacity: 0.12 + 0.88 * t,
+                          child: Transform.scale(
+                            scale: 0.6 + 0.7 * t,
+                            child: Container(
+                              width: g.size,
+                              height: g.size,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    Colors.white,
+                                    AppColors.goldLight
+                                        .withValues(alpha: 0.65),
+                                    Colors.white.withValues(alpha: 0.0),
+                                  ],
+                                  stops: const [0.0, 0.45, 0.75],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSizes.space20,
@@ -201,7 +335,7 @@ class _HeroBand extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: AppSizes.space20),
-                  // Hero tutar (solda/altta) + gradyanlı ray · Satış Adedi (sağda) — çapraz denge.
+                  // Hero tutar (solda/altta) + ışıldayan ray · Satış Adedi (sağda) — çapraz denge.
                   todayAsync.when(
                     loading: () =>
                         const Skeleton(width: 220, height: 40, radius: 8),
@@ -219,7 +353,11 @@ class _HeroBand extends ConsumerWidget {
                       children: [
                         Flexible(
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            // stretch: ray, üstündeki tutar metninin TAM
+                            // genişliğine yayılır (kullanıcı isteği — "sayı
+                            // boyunca uzat"). Column mainAxisSize.min olduğu
+                            // için genişliği zaten en geniş çocuk (tutar) belirler.
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
@@ -233,39 +371,19 @@ class _HeroBand extends ConsumerWidget {
                                   fontFeatures: const [
                                     FontFeature.tabularFigures()
                                   ],
+                                  shadows: [
+                                    Shadow(
+                                      color: AppColors.goldLight
+                                          .withValues(alpha: 0.22),
+                                      blurRadius: 26,
+                                    ),
+                                  ],
                                 ),
                               ),
                               const SizedBox(height: AppSizes.space8),
-                              // Altın ray artık düz dolgu değil, sağa doğru
-                              // soluklaşan gradyan + hafif parıltı (§4 imzası
-                              // korunur — ray yalnız hero'nun altında).
-                              FractionallySizedBox(
-                                alignment: Alignment.centerLeft,
-                                widthFactor: mobil ? 0.55 : 0.46,
-                                child: Container(
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(
-                                        AppSizes.radiusPill),
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppColors.gold,
-                                        AppColors.goldLight,
-                                        AppColors.goldLight
-                                            .withValues(alpha: 0.0),
-                                      ],
-                                      stops: const [0.0, 0.65, 1.0],
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.gold
-                                            .withValues(alpha: 0.55),
-                                        blurRadius: 10,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                              _AnimatedRail(
+                                  controller: _ctrl,
+                                  reduceMotion: reduceMotion),
                             ],
                           ),
                         ),
@@ -308,6 +426,110 @@ class _HeroBand extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Hero altın rayı — tutarın TAM genişliği kadar (üstteki Column'un
+/// `stretch` hizalamasıyla otomatik), sona doğru altından beyaza dönüp
+/// saydamlaşır; üstünde soldan sağa dolaşan bir ışık huzmesi + nabız gibi
+/// parlayıp sönen gölge. `reduceMotion` açıksa sabit ama güçlü bir gölgeye düşer.
+class _AnimatedRail extends StatelessWidget {
+  final Animation<double> controller;
+  final bool reduceMotion;
+
+  const _AnimatedRail({required this.controller, required this.reduceMotion});
+
+  static const _kSweepPeriod = 3.4;
+  static const _kGlowPeriod = 4.6;
+
+  static const _railGradient = LinearGradient(
+    colors: [
+      AppColors.gold,
+      AppColors.goldLight,
+      Colors.white,
+      Colors.transparent,
+    ],
+    stops: [0.0, 0.48, 0.72, 1.0],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    if (reduceMotion) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        child: Container(
+          height: 4,
+          decoration: BoxDecoration(
+            gradient: _railGradient,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.gold.withValues(alpha: 0.75),
+                blurRadius: 20,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final sweepPhase =
+            (controller.value * (_kShimmerPeriod / _kSweepPeriod)) % 1.0;
+        // İlk %55'te soldan sağa tara, kalan %45'te ekran dışında bekle
+        // (CSS keyframe deseninin aynısı — "tara, sonra dur").
+        final sweepT = sweepPhase < 0.55 ? sweepPhase / 0.55 : 1.0;
+        final glowPhase =
+            (controller.value * (_kShimmerPeriod / _kGlowPeriod)) % 1.0;
+        final glowT = _pulseWave(glowPhase);
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+          child: Container(
+            height: 4,
+            decoration: BoxDecoration(
+              gradient: _railGradient,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.gold.withValues(alpha: 0.55 + 0.45 * glowT),
+                  blurRadius: 14 + 16 * glowT,
+                ),
+              ],
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final w = constraints.maxWidth;
+                final bandWidth = w * 0.34;
+                final left = -bandWidth + sweepT * (w + bandWidth * 2);
+                return Stack(
+                  children: [
+                    Positioned(
+                      left: left,
+                      top: 0,
+                      bottom: 0,
+                      width: bandWidth,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white.withValues(alpha: 0.0),
+                              Colors.white.withValues(alpha: 0.95),
+                              Colors.white.withValues(alpha: 0.0),
+                            ],
+                            stops: const [0.0, 0.5, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
