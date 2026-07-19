@@ -1138,6 +1138,11 @@ class _ProductsTableState extends State<_ProductsTable> {
   }
 
   Future<void> _onGuncelle(Product p) async {
+    // Enter tuşu / satır dışına tıklama gibi birden fazla tetikleyici aynı
+    // anda ateşleyebilir (bkz. _cell — her hane kendi TapRegion.onTapOutside'ı
+    // ile çağırır) — satır zaten kapandıysa veya kayıt sürüyorsa yinelenen
+    // çağrıyı sessizce yoksay.
+    if (!_editingIds.contains(p.id) || _savingIds.contains(p.id)) return;
     final ctrls = _ctrlsFor(p);
     final name = ctrls.name.text.trim();
     if (name.isEmpty) {
@@ -1594,30 +1599,40 @@ class _ProductsTableState extends State<_ProductsTable> {
             tooltip: 'Düzenle',
             onPressed: () => context.go('/products/${p.id}'),
           ),
-          if (editing) ...[
-            saving
-                ? const Padding(
-                    padding: EdgeInsets.all(AppSizes.space8),
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+          if (editing)
+            // Aynı satırın düzenlenebilir haneleriyle AYNI TapRegion grubunda
+            // (bkz. _cell) — aksi halde bu butonlara tıklamak da "satır dışına
+            // tıklama" sayılıp onTapOutside'ı gereksiz/çakışan şekilde tetikler.
+            TapRegion(
+              groupId: p.id,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  saving
+                      ? const Padding(
+                          padding: EdgeInsets.all(AppSizes.space8),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.check_circle_outline,
+                              size: 18, color: AppColors.success),
+                          tooltip: 'Güncelle',
+                          onPressed: () => _onGuncelle(p),
+                        ),
+                  if (!saving)
+                    IconButton(
+                      icon: const Icon(Icons.close,
+                          size: 18, color: AppColors.textMuted),
+                      tooltip: 'Vazgeç',
+                      onPressed: () => _exitEdit(p.id),
                     ),
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.check_circle_outline,
-                        size: 18, color: AppColors.success),
-                    tooltip: 'Güncelle',
-                    onPressed: () => _onGuncelle(p),
-                  ),
-            if (!saving)
-              IconButton(
-                icon: const Icon(Icons.close,
-                    size: 18, color: AppColors.textMuted),
-                tooltip: 'Vazgeç',
-                onPressed: () => _exitEdit(p.id),
+                ],
               ),
-          ],
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline,
                 size: 18, color: AppColors.danger),
@@ -1641,8 +1656,20 @@ class _ProductsTableState extends State<_ProductsTable> {
     bool numeric = false,
   }) {
     if (_editingIds.contains(p.id)) {
-      return _editableField(controllerOf(_ctrlsFor(p)),
-          width: width, bold: bold, numeric: numeric);
+      // Aynı satırın tüm haneleri (+ Güncelle/Vazgeç butonları, bkz.
+      // _buildCells) AYNI groupId ile TapRegion'a sarılır — Enter'a basmak
+      // VEYA bu grubun DIŞINDA bir yere (başka bir ürünün hanesi, boş alan)
+      // tıklamak satırı otomatik kaydedip kapatır (_onGuncelle zaten
+      // yinelenen çağrılara karşı korumalı).
+      return TapRegion(
+        groupId: p.id,
+        onTapOutside: (_) => _onGuncelle(p),
+        child: _editableField(controllerOf(_ctrlsFor(p)),
+            width: width,
+            bold: bold,
+            numeric: numeric,
+            onSubmit: () => _onGuncelle(p)),
+      );
     }
     return SizedBox(
       width: width,
@@ -1669,7 +1696,10 @@ class _ProductsTableState extends State<_ProductsTable> {
 
   // Düzenleme moduna geçmiş bir satır için canlı metin alanı.
   Widget _editableField(TextEditingController ctrl,
-      {required double width, bool bold = false, bool numeric = false}) {
+      {required double width,
+      bool bold = false,
+      bool numeric = false,
+      required VoidCallback onSubmit}) {
     return SizedBox(
       width: width,
       child: TextField(
@@ -1680,6 +1710,7 @@ class _ProductsTableState extends State<_ProductsTable> {
             ? const TextInputType.numberWithOptions(decimal: true)
             : TextInputType.text,
         inputFormatters: numeric ? _decimalInputFormatters : null,
+        onSubmitted: (_) => onSubmit(),
         style: TextStyle(
           fontSize: 12,
           fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
@@ -1748,8 +1779,8 @@ class _ProductsTableState extends State<_ProductsTable> {
           displayText: () => formatCurrency(p.purchasePrice),
         ));
       case ProductColumn.fiyat1:
-        // Eşlenik barkod grubundaysa grup için "esas" fiyat (en yüksek price1)
-        // gösterilir; düzenleme modu hâlâ ham p.price1 üzerinden çalışır.
+        // Eşlenik barkod grubundaysa grup için "esas" fiyat (en son güncellenen
+        // satır) gösterilir; düzenleme modu hâlâ ham p.price1 üzerinden çalışır.
         return DataCell(_cell(
           p,
           width: 90,
