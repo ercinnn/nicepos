@@ -502,7 +502,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                           itemBuilder: (context, i) => _ProductMobileCard(
                             product: _displayProducts[i],
                             onDelete: _deleteProduct,
-                            hasEquivalent: _equivalents.containsKey(_displayProducts[i].id),
+                            equivalent: _equivalents[_displayProducts[i].id],
                             onEquivalentChanged: _loadProducts,
                           ),
                         ),
@@ -1713,13 +1713,19 @@ class _ProductsTableState extends State<_ProductsTable> {
             style: const TextStyle(color: AppColors.textSecondary)));
       case ProductColumn.stok:
         // Dokununca düzenlenebilir (kritik stok rozeti bu haneden kalktı —
-        // düzenlenebilir metin alanıyla birlikte sürmüyor).
+        // düzenlenebilir metin alanıyla birlikte sürmüyor). Eşlenik barkod
+        // grubundaysa "kendi_stok(grup_toplamı)" formatında gösterilir —
+        // düzenleme modu hâlâ ham p.stockQuantity üzerinden çalışır.
         return DataCell(_cell(
           p,
           width: 80,
           numeric: true,
           controllerOf: (c) => c.stock,
-          displayText: () => formatNumber(p.stockQuantity),
+          displayText: () {
+            final agg = widget.equivalents[p.id];
+            if (agg == null) return formatNumber(p.stockQuantity);
+            return '${formatNumber(p.stockQuantity)}(${formatNumber(agg.totalStock)})';
+          },
         ));
       case ProductColumn.kritikStok:
         return DataCell(Text(formatNumber(p.criticalStock),
@@ -1737,13 +1743,18 @@ class _ProductsTableState extends State<_ProductsTable> {
           displayText: () => formatCurrency(p.purchasePrice),
         ));
       case ProductColumn.fiyat1:
+        // Eşlenik barkod grubundaysa grup için "esas" fiyat (en yüksek price1)
+        // gösterilir; düzenleme modu hâlâ ham p.price1 üzerinden çalışır.
         return DataCell(_cell(
           p,
           width: 90,
           numeric: true,
           bold: true,
           controllerOf: (c) => c.price1,
-          displayText: () => formatCurrency(p.price1),
+          displayText: () {
+            final agg = widget.equivalents[p.id];
+            return formatCurrency(agg?.groupPrice1 ?? p.price1);
+          },
         ));
       case ProductColumn.fiyat2:
         return DataCell(Text(formatCurrency(p.price2), style: _kTabular));
@@ -1866,8 +1877,8 @@ class _EquivalentBarcodeDialogState extends ConsumerState<_EquivalentBarcodeDial
 
   @override
   Widget build(BuildContext context) {
-    // En son güncellenen (grubun "esas" satırı) — fetchGroupMembers zaten
-    // updated_at DESC sıralı döner, ilk eleman "Esas".
+    // Fiyatı en yüksek (grubun "esas" satırı) — fetchGroupMembers zaten
+    // price1 DESC sıralı döner, ilk eleman "Esas".
     final latestId = _members.isEmpty ? null : _members.first.id;
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
@@ -1970,13 +1981,13 @@ class _EquivalentBarcodeDialogState extends ConsumerState<_EquivalentBarcodeDial
 class _ProductMobileCard extends StatelessWidget {
   final Product product;
   final Future<void> Function(Product) onDelete;
-  final bool hasEquivalent;
+  final EquivalentAggregate? equivalent;
   final VoidCallback onEquivalentChanged;
 
   const _ProductMobileCard({
     required this.product,
     required this.onDelete,
-    this.hasEquivalent = false,
+    this.equivalent,
     required this.onEquivalentChanged,
   });
 
@@ -2010,7 +2021,7 @@ class _ProductMobileCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (hasEquivalent)
+                      if (equivalent != null)
                         IconButton(
                           icon: const Icon(Icons.error, color: AppColors.danger, size: 16),
                           tooltip: 'Eşlenik barkod var',
@@ -2050,7 +2061,7 @@ class _ProductMobileCard extends StatelessWidget {
                     const Text('Stok: ',
                         style: TextStyle(
                             fontSize: 11, color: AppColors.textMuted)),
-                    _StockSignal(product: p, compact: true),
+                    _StockSignal(product: p, equivalent: equivalent, compact: true),
                   ],
                 ),
                 const SizedBox(height: AppSizes.space4),
@@ -2109,22 +2120,29 @@ class _InfoChip extends StatelessWidget {
 // normal  (stok > eşik)     → nötr tabular, vurgu yok
 //
 // Altın KULLANILMAZ; tablo "kırmızı duvar"a dönmesin diye yalnız riskli satır konuşur.
+//
+// Eşlenik barkod grubundaysa eşik kontrolü ve gösterim grubun TOPLAM stoğuna
+// göre yapılır (kendi stoğu 0 olsa bile grup toplamı pozitifse Tükendi sayılmaz).
 class _StockSignal extends StatelessWidget {
   final Product product;
+  final EquivalentAggregate? equivalent;
 
   /// Mobil çip için daha küçük tipografi.
   final bool compact;
 
-  const _StockSignal({required this.product, this.compact = false});
+  const _StockSignal({required this.product, this.equivalent, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
-    final stock = product.stockQuantity;
+    final ownStock = product.stockQuantity;
+    final effectiveStock = equivalent?.totalStock ?? ownStock;
     final fontSize = compact ? 11.0 : 13.0;
-    final value = formatNumber(stock);
+    final value = equivalent == null
+        ? formatNumber(ownStock)
+        : '${formatNumber(ownStock)}(${formatNumber(equivalent!.totalStock)})';
 
     // Tükendi — en belirgin: danger dolu rozet.
-    if (stock <= 0) {
+    if (effectiveStock <= 0) {
       return Container(
         padding: const EdgeInsets.symmetric(
             horizontal: AppSizes.space8, vertical: AppSizes.space2),
@@ -2146,7 +2164,7 @@ class _StockSignal extends StatelessWidget {
     }
 
     // Kritik — danger metin + ince rozet (hafif zemin).
-    if (stock <= product.criticalStock) {
+    if (effectiveStock <= product.criticalStock) {
       return Container(
         padding: const EdgeInsets.symmetric(
             horizontal: AppSizes.space6, vertical: AppSizes.space2),
