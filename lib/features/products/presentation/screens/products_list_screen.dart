@@ -375,6 +375,11 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     _showTopRightToast(context, 'Ürün güncellendi');
     // Stok/fiyat değişimi Durum'u etkileyebilir (Tükendi/Pasif) → tazele.
     _loadStatuses();
+    // Eşlenik Barkod: bu satır bir gruptaysa, düzenleme onu grubun en son
+    // güncellenen (dolayısıyla "esas" fiyatı belirleyen) satırı yapmış olabilir.
+    // _equivalents cache'i tazelenmezse Fiyat 1/Stok hücreleri (agg.groupPrice1
+    // üzerinden gösterilir) yeniden aratılana kadar eski değeri göstermeye devam eder.
+    if (updated.equivalentGroupId != null) _loadEquivalents();
   }
 
   // ── Seçim yardımcıları ───────────────────────────────────────────────────────
