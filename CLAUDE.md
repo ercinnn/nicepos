@@ -137,7 +137,7 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` annotation ile üre
 | `todaySummaryProvider` / `yesterdaySummaryProvider` / `monthSummaryProvider` / `lastMonthRevenueProvider` | `autoDispose` | Dashboard stat kartları |
 | `yearToDateRevenueProvider` / `last365DaysRevenueProvider` | `autoDispose` | "Yıllık Ciro" (YTD) / "Son 365 Günlük Ciro" kartları — `sales_revenue_between` RPC (bkz. Veritabanı notu) |
 | `dailySalesProvider(days)` | `autoDispose family` | Dashboard günlük satış grafiği (8/15/30 gün). `monthlySalesProvider` hâlâ tanımlı ama dashboard'da artık kullanılmıyor |
-| `currentYearMonthlyProvider` / `historicalYearlyProvider` | `keepAlive` | Yıllık aylık toplamlar (cari yıl / geçmiş yıllar) — hem "Yıllık Ciro Karşılaştırma" hem "Yıllık Ortalama Ciro" grafiği bu ikisini paylaşır |
+| `currentYearMonthlyProvider` / `historicalYearlyProvider` | `autoDispose` | Yıllık aylık toplamlar (cari yıl / geçmiş yıllar) — hem "Yıllık Ciro Karşılaştırma" hem "Yıllık Ortalama Ciro" grafiği bu ikisini paylaşır. **ÖNCEDEN `keepAlive` idi** — mobilde soğuk açılışta kalıcı-sıfır bug'ına yol açtığı için `dailySalesProvider` ile birlikte autoDispose'a çevrildi (bkz. Dashboard notu) |
 | `customerSalesProvider(query)` / `customerPaymentsProvider(id)` | `autoDispose family` | Müşteri geçmiş işlemleri |
 
 ### Satış Akışı
@@ -181,7 +181,29 @@ Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir
 ### Dashboard (Anasayfa)
 
 `lib/features/home/.../widgets/dashboard_section.dart` — kısayol kartlarının altında:
-- **Hero bandı:** bugünkü ciro (büyük tabular rakam + altın ray) + dünden % değişim rozeti
+- **Hero bandı (KARAR v1.15/v1.16 — design-tokens §4 sonu):** bugünkü ciro artık düz beyaz kart
+  değil, 3 duraklı lacivert gradyan (`primary → primaryDark → primaryDeep`) + sağ-üst köşede
+  asimetrik altın parıltı + ince ışık kaması üzerinde beyaz tabular rakam + dünden % değişim rozeti
+  (`_DegisimBadgeOnDark`, camsı/koyu-zemin varyantı — beyaz zemindeki `_DegisimBadge`'den AYRI).
+  Altın ray artık rakamın **TAM genişliği** kadar (`CrossAxisAlignment.stretch`), sona doğru
+  beyaza dönüp saydamlaşır. Masaüstünde sağda "SATIŞ ADEDİ" mini-istatistiği (mobilde gizli).
+  - **Işıltı/animasyon (`_HeroBandState`, `ConsumerStatefulWidget` + `SingleTickerProviderStateMixin`):**
+    TEK `AnimationController` (10sn döngü, `..repeat()`) kart geneli yavaş ışık taraması + ray
+    üstü dolaşan ışık huzmesi + ray parıltı nabzı + 7 minik parıltı noktasının HEPSİNİ besler —
+    her efekt kendi ticker'ını AÇMAZ, `_ctrl.value`'dan faz hesabıyla (`_pulseWave` helper'ı,
+    farklı periyotlar için `(controller.value * (10/periyot)) % 1.0`) türetilir. Performans +
+    tutarlılık için bu desen korunmalı; yeni bir "nabız/tarama" efekti eklenirse AYRI bir
+    `AnimationController` AÇILMAMALI, mevcut `_ctrl`'den faz türetilmeli.
+  - **Erişilebilirlik:** `MediaQuery.of(context).disableAnimations` (azaltılmış hareket) açıksa
+    TÜM animasyonlar durur, sabit-ama-güçlü bir ışıltı görünümüne düşer (`_AnimatedRail`'in
+    `reduceMotion` dalı).
+  - ⚠️ **Flutter `Positioned` dersi:** `Positioned` DAİMA `Stack`'in DOĞRUDAN çocuğu olmalı —
+    `IgnorePointer(child: AnimatedBuilder(... return Positioned.fill(...) ...))` gibi bir ara
+    widget'ın İÇİNE gömülürse "Incorrect use of ParentDataWidget" hatasıyla TÜM dashboard çöker
+    (bu widget testiyle yakalandı, `flutter analyze` görmez). Doğrusu: `Positioned` EN DIŞTA,
+    `IgnorePointer`/`AnimatedBuilder` onun İÇİNDE.
+  - Geri kalan ekranlardaki hero'lar (Kasa, Müşteri, Raporlar) BU tasarımı almadı — yalnız
+    Anasayfa. Detaylar: `design-tokens.md` §4 sonu (KARAR v1.15/v1.16).
 - **Stat kartları satırı (`_StatCardsRow`):** Satış Adedi / Aylık Ciro / Aylık Adet. Masaüstünde
   `IntrinsicHeight(Row(crossAxisAlignment: stretch, [Expanded...]))`.
   ⚠️ **Önemli:** Bu Row kaydırılabilir sayfada (sınırsız yükseklik) `IntrinsicHeight` olmadan
@@ -195,6 +217,18 @@ Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir
   (Pzt..Pzr, `DateTime.weekday`). Eski Aylık Satış grafiği kaldırıldı.
 - **Regresyon testi:** `test/dashboard_render_test.dart` — masaüstü genişliğinde dashboard'u sahte
   provider'larla render edip "infinite height" hatası atmadığını + grafiğin göründüğünü doğrular.
+- **⚠️ Mobil "3 grafik sıfır görünüyor" bug'ı + düzeltmesi (`keepAlive` → `autoDispose`):**
+  `dailySalesProvider`/`currentYearMonthlyProvider`/`historicalYearlyProvider` ÖNCEDEN
+  `keepAlive` idi (diğer tüm dashboard provider'ları — stat kartları — `autoDispose`). Android'de
+  soğuk açılışta (Supabase oturumu/token tam oturmadan) bu üçünün İLK sorgusu boş/sıfır dönerse,
+  `keepAlive` bu kötü sonucu **süreç ömrü boyunca kalıcı** dondurur — anasayfaya tekrar dönülse
+  bile düzelmez (autoDispose stat kartları her ziyarette kendiliğinden düzelirdi, bu yüzden onlarda
+  sorun yoktu). Web'de gözlenmemesi muhtemelen daha hızlı/istikrarlı bağlantıyla örtüşüyor. Düzeltme:
+  üçü de `autoDispose`'a çevrildi + `DashboardRepository._pastYearsCache` (geçmiş yıl aylık toplam
+  cache'i) `static` (process ömürlü, TÜM instance'lar arası paylaşılan) yerine INSTANCE alanı yapıldı
+  — aksi halde provider autoDispose olsa bile static cache kötü ilk sonucu kalıcı tutmaya devam
+  ederdi. Trade-off: geçmiş yıllar artık her dashboard ziyaretinde bir kez daha sorgulanır (küçük
+  maliyet) — finansal rakamlarda kalıcı-yanlış-veri riskinden daha ucuz.
 - **Yıllık Ciro / Son 365 Günlük Ciro kartları — sunucu tarafı SUM:** `DashboardRepository.fetchYearToDateRevenue()`,
   `fetchLast365DaysRevenue()`, `fetchLastMonthRevenue()` eskiden o tarih aralığındaki TÜM `sales`
   satırlarını sayfalayarak çekip Dart'ta topluyordu (~5sn). Artık `sales_revenue_between(start_ts,
@@ -232,6 +266,14 @@ Sabit kolonlar sırası: Checkbox · **Durum** · # · Ürün Adı · (dinamik k
   kaydedince satır otomatik display moduna döner. Başarılı güncellemede sağ üstte **2 saniyelik**
   toast bildirimi (`_showTopRightToast` — `SnackBar` değil, `OverlayEntry`; alt köşede değil sağ
   üstte çıkması için).
+- **Otomatik kaydet-kapat (`TapRegion`):** Düzenlenen satırın TÜM haneleri (+ Güncelle/Vazgeç
+  butonları) AYNI `groupId: p.id` ile `TapRegion`'a sarılır. **Enter** (`TextField.onSubmitted`)
+  VEYA bu grubun DIŞINDA bir yere (başka bir ürünün hanesi, boş alan) tıklamak (`onTapOutside`)
+  satırı otomatik kaydedip kapatır — aksi halde birden fazla satır aynı anda açık kalabiliyordu.
+  Aynı satırın kendi haneleri arası geçiş (ör. Stok→Fiyat 1) VE Güncelle/Vazgeç butonları AYNI
+  gruba dahil olduğu için yanlışlıkla "dışarı tıklama" sayılmaz. `_onGuncelle` yinelenen çağrılara
+  karşı korumalı (`if (!_editingIds.contains(p.id) || _savingIds.contains(p.id)) return;`) —
+  Enter + dışarı-tıklama aynı anda tetiklenirse sorun çıkarmaz.
 - **Durum sütunu (`_StatusBadge`):** Çok Satan (yeşil) / Tükendi (kırmızı) / Pasif (gri) / boş.
   Sunucuda `product_status` view'ından (`0016_product_status.sql`) tek sorguyla çekilir
   (`ProductRepository.fetchStatuses(ids)`, sayfadaki ürün id'leriyle filtreli — ana ürün sorgusundan
@@ -273,6 +315,64 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
   Onay dialogu: başlık "Ürünü Sil", metin `"$ad" ürününü silmek istediğinize emin misiniz?`,
   butonlar **Hayır** / **Sil** (kırmızı). `ProductRepository.delete()` çağırır, foreign-key
   hatasında ("bu ürüne ait satış kaydı var") anlaşılır mesaj gösterir.
+
+### Eşlenik Barkod
+
+Bazı ürünler tedarikçilerden farklı barkodlarla stoğa giriyor (aynı fiziksel ürün — ör. bir kepçe —
+hem barkod A hem barkod B ile ayrı ayrı satır olarak girilmiş). Bu özellik, kullanıcının bu satırları
+"eşlenik" işaretleyebilmesini sağlar; sonuçta hangi barkod okutulursa okutulsun stok/fiyat **grup
+toplamı** olarak davranır, ama ham veriler asla değiştirilmez.
+
+- **Depolama modeli (KARAR):** `products.equivalent_group_id` (uuid, nullable) yalnızca "hangi
+  satırlar aynı grupta" bilgisini tutar. Ham sütunlar (`stock_quantity`, `price1` vb.) HİÇ
+  değiştirilmez/senkronize edilmez — her satır DB'de olduğu gibi kalır (tedarikçi/parti takibi
+  bozulmaz). Toplamlar SADECE okuma anında `product_equivalent_aggregate` view'ı ile hesaplanır.
+- **Fiyat kuralı (birkaç kez değişti, GÜNCEL/kesin hâl önemli):** grup için "esas" fiyat
+  (`price1`/`price2`/`purchase_price`/`vat_rate`) grubun **EN SON GÜNCELLENEN** satırından alınır
+  (`0021` orijinal karar). `0022` bunu geçici olarak "en yüksek price1" yapmıştı, kullanıcı bu
+  kararı geri aldı → `0024` orijinal "en son güncellenen" kuralına döndü. **Yeni migration
+  yazarken bu geçmişi tekrar etme** — kesin kural: en son güncellenen kazanır.
+- **Stok gösterimi:** Ürünler listesinde gruplu bir satırın Stok hücresi `"kendi_stok(grup_toplamı)"`
+  formatında (ör. `5(12)`) — kendi stoğu 0 olsa bile grup toplamı pozitifse **Tükendi YAZMAZ**.
+  Fiyat 1 hücresi grubun esas fiyatını gösterir. Her iki hücrenin **düzenleme modu** (tıkla-düzenle)
+  hâlâ HAM `p.stockQuantity`/`p.price1` üzerinden çalışır — yalnız salt-okunur GÖRÜNTÜLEME değişir.
+- **Durum grup-farkında (`product_status` view, `0022`→`0023`):** Tükendi artık
+  `product_equivalent_aggregate.total_stock`'a bakar (satırın kendi stoğuna değil). Çok Satan
+  artık grubun TOPLAM satışına bakar (hangi barkod satılırsa satılsın, grup geneli son 4 haftanın
+  her birinde ≥1 ise TÜM üyeler Çok Satan). Pasif artık grubun EN YENİ `updated_at`'ine bakar (bir
+  üye aktifse hiçbiri Pasif sayılmaz). Gruplanmamış ürünlerde davranış DEĞİŞMEDİ.
+- **Migration sırası (sırayla uygulanmalı, `supabase/migrations/`):**
+  `0021_equivalent_barcodes.sql` (sütun + index + `product_equivalent_aggregate` view) →
+  `0022_equivalent_barcode_max_price_and_status.sql` (fiyat kuralı geçici "en yüksek" + Tükendi
+  grup-bazlı) → `0023_equivalent_barcode_status_full.sql` (Çok Satan + Pasif grup-bazlı) →
+  `0024_equivalent_barcode_price_latest_updated.sql` (fiyat kuralı "en son güncellenen"e geri
+  alındı). Hepsi `product_equivalent_aggregate`/`product_status`'u `create or replace` ile
+  yeniden tanımlar — DDL anon key ile çalıştırılamaz, Supabase SQL Editor'da elle uygulanır.
+- **`ProductRepository` yeni metodlar:** `fetchEquivalentAggregates(ids)` (`fetchStatuses` ile
+  birebir aynı "ikincil, id'ye göre" desen), `fetchGroupMembers(groupId)` (fiyata göre azalan
+  sıralı — "esas" üye ilk sırada), `linkEquivalentBarcode(idA, idB)` (grup birleştirme mantığı
+  dahil), `unlinkEquivalentBarcode(id)` (tek kişilik kalan grup otomatik temizlenir).
+  `fetchByBarcode` sonucu gruplu bir satırsa DÖNEN nesnede stok/fiyatı agregatla override eder
+  (DB'ye yazılmaz) — satış ekranı + `BarcodeCache._load()` (tek toplu sorgu, N+1 yok) bu sayede
+  hangi barkod okutulursa okutulsun doğru grup toplamını gösterir. **`fetchByBarcodes` (Liste Gir
+  için) BİLEREK ham bırakıldı** — agregat döndürseydi yanlış satıra yanlış miktar eklenirdi.
+- **⚠️ KRİTİK gotcha — `toInsertMap()`:** `Product.equivalentGroupId` alanı `toInsertMap()`'e
+  KESİNLİKLE DAHİL EDİLMEZ (`id`/`group_name` gibi hariç tutulanlara eklendi). Aksi halde normal
+  bir `update()` çağrısı (satır içi düzenleme, ürün formu kaydetme) her seferinde
+  `equivalent_group_id: null` gönderip mevcut grup bağlantısını SESSİZCE kırar. Grup bağlantısı
+  SADECE `linkEquivalentBarcode`/`unlinkEquivalentBarcode` ile değişir.
+- **UI:** Ürünler listesinde gruplu satırların adı yanında kırmızı **"!"** ikonu
+  (`_EquivalentBarcodeDialog` açar — grup üyelerini listeler, "Esas" rozeti + tekil "Bağlantıyı
+  Kaldır"). Ürün formu "Diğer Detaylar" sekmesinin EN BAŞINDA `EquivalentBarcodeSection` —
+  mevcut grubu gösterir + barkod/isim arayarak yeni üye ekler; yeni (kaydedilmemiş) üründe devre
+  dışı ("önce ürünü kaydedin"). "Ürün Özet" diyaloğu (`_ProductSummaryDialogState._load()`) bir
+  grubu **TEK ürün** sayar (agregat stok/fiyatla, ziyaret edilen ikinci+ üyeler atlanır) — çift
+  sayım (60+60) önlenir.
+- **Bilinen bug + düzeltme:** Satır içi Fiyat 1 düzenlemesinden sonra `_updateProduct` yalnız
+  `_loadStatuses()`'ı tazeliyordu, `_equivalents` cache'ini DEĞİL — bu yüzden gruplu bir ürünün
+  fiyatı güncellenince ekran (agregat fiyatı gösteren hücre) DB'deki yeni değeri yansıtmıyordu, yeniden
+  aratana kadar eski görünüyordu. Düzeltme: `_updateProduct` artık güncellenen satır gruplu ise
+  `_loadEquivalents()`'ı da çağırır.
 
 ### Liste Gir — Tedarikçi Listesi İçe Aktarma
 
@@ -376,6 +476,11 @@ ekranı** (tasarım: design-tokens **KARAR v1.10** — **ekran hero'su YOK**, st
 - `sales_revenue_between(start_ts, end_ts)` RPC (`0015_sales_revenue_rpc.sql`): `sale_date` index'i ile tek `SUM(total_amount)` sorgusu — dashboard YTD/365-gün/geçen-ay ciro kartları bunu kullanır (bkz. Dashboard notu). `security invoker` (varsayılan), RLS `sales` tablosuyla aynı.
 - `product_status` view (`0016_product_status.sql`): Ürünler tablosundaki **Durum** sütununun kaynağı. Öncelik Çok Satan > Tükendi > Pasif > boş. Çok Satan = son 4 haftanın (bugüne göre kayan 7'şer günlük 4 pencere, takvim haftası DEĞİL) HER birinde ≥1 adet satış — `sale_items`/`sales` üzerinden hesaplanır. Tükendi = `stock_quantity <= 0`. Pasif = `products.updated_at` 1 yıldan eski — stok satışla (`decrement_product_stock`/`increment_product_stock` RPC'leri) VEYA elle düzenlemeyle (`Product.toInsertMap()`) değiştiğinde HER ikisi de `updated_at`'i günceller, yani bu tek alan "stok + satış + fiyat" aktivitesinin hepsini kapsar. `ProductRepository.fetchStatuses(ids)` ile `product_id` filtreli okunur (ana ürün sorgusundan ayrı, ikinci istek).
 - `search_products(...)` RPC (`0017`→`0018`→`0019`→`0020`, tek fonksiyon — her migration `create or replace` ile üzerine yazar): Ürünler tablosu Durum filtresi aktifken arama+grup+sütun filtreleri+durum+sıralama+sayfalamayı TEK sorguda sunucuda birleştirir (bkz. Ürünler Sayfası notu — id-listesi URL taşması ve statement-timeout derslerinin detayı orada). `products` + `product_groups` (grup/üst grup adı) + inline `weekly_sales`/`cok_satan` (`MATERIALIZED` CTE) döndürür; `Product.fromMap()`'in düz-sütun fallback'i (`group_name`/`parent_group_name`) bu RPC'nin `product_groups` embed'i OLMAYAN düz satır şekli için gerekli. **Parametre listesini değiştiren migration yazarken önce `DO $$ ... DROP FUNCTION ... $$` ile eski overload'ları temizle** (bkz. `0020`) — aksi halde `CREATE OR REPLACE` yeni bir overload yaratır, isim çakışması hatası verir.
+- **Eşlenik Barkod (`0021`→`0022`→`0023`→`0024`, detaylar Ürünler Sayfası → "Eşlenik Barkod" notunda):**
+  `products.equivalent_group_id` (uuid) + `product_equivalent_aggregate` view (grup toplam stok +
+  "esas" fiyat, `0021`/`0024`) + `product_status`'un Tükendi/Çok Satan/Pasif dallarının grup-bazlı
+  hâli (`0022`/`0023`). Hepsi `create or replace view` — yeni tablo/sütun eklemez, yalnız iki
+  view'ı yeniden tanımlar. Ham `products` satırları asla değişmez (view'lar salt-okunur agregasyon).
 
 ### Deploy — GitHub Pages
 
