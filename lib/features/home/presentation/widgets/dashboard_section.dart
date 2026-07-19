@@ -76,6 +76,15 @@ class DashboardSection extends ConsumerWidget {
 /// Ekranın TEK kahramanı: bugünkü toplam ciro (₺). İri tabular rakam +
 /// hemen altında ince altın aksan rayı (rakam genişliğinin ~%40'ı, pill).
 /// Veri: mevcut `todaySummaryProvider` (`d.revenue`) — yeni provider yok.
+// -12° cinsinden radyan (yalnız hero'nun asimetrik köşe kaması için) —
+// `dart:math` import etmeye değmeyecek tek kullanımlık sabit.
+const double _kHeroWedgeAngle = -0.2094395102393195;
+
+/// Anasayfa hero bandı — KARAR v1.15 (gradyan + asimetrik "dijital platform"
+/// yönü). §4 imzası (Hero Tutar + Altın Ray) korunur; yalnız hero'nun KENDİ
+/// yüzeyi zenginleşir — geri kalan uygulama (kartlar, tablolar, sidebar)
+/// sakin/beyaz kalmaya devam eder ("boldness tek yerde"). Yeni renk YOK,
+/// yalnız mevcut lacivert/altın rampasının bir durağı eklendi (`primaryDeep`).
 class _HeroBand extends ConsumerWidget {
   const _HeroBand();
 
@@ -91,84 +100,270 @@ class _HeroBand extends ConsumerWidget {
       yesterdayAsync.valueOrNull?.revenue.toDouble(),
     );
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.space20,
-        vertical: AppSizes.space20,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-        boxShadow: AppSizes.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Etiket + karşılaştırma rozeti
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: AppSizes.space8,
-            runSpacing: AppSizes.space4,
-            children: [
-              const Text(
-                'BUGÜNKÜ CİRO',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.8,
-                  color: AppColors.textMuted,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppSizes.radiusXl),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          // 3 duraklı lacivert gradyan (155°'ye yakın, sol-üstten sağ-alta) —
+          // mevcut primary/primaryDark/primaryDeep rampası, yeni ton yok.
+          gradient: const LinearGradient(
+            begin: Alignment(-0.5, -1),
+            end: Alignment(0.6, 1),
+            colors: [
+              AppColors.primary,
+              AppColors.primaryDark,
+              AppColors.primaryDeep,
+            ],
+            stops: [0.0, 0.58, 1.0],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryDeep.withValues(alpha: 0.45),
+              blurRadius: 32,
+              offset: const Offset(0, 16),
+              spreadRadius: -12,
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            // Asimetrik altın parıltı — yalnız sağ-üst köşede (imza altını,
+            // §5 "altın ekonomisi": dekor değil, hero'nun kendi vurgusu).
+            Positioned(
+              top: -70,
+              right: -50,
+              child: IgnorePointer(
+                child: Container(
+                  width: 260,
+                  height: 260,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        AppColors.gold.withValues(alpha: 0.32),
+                        AppColors.gold.withValues(alpha: 0.0),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              if (degisim != null)
-                _DegisimBadge(yuzde: degisim, etiket: 'dünden'),
-            ],
-          ),
-          const SizedBox(height: AppSizes.space8),
-          // Hero tutar + altın ray
-          todayAsync.when(
-            loading: () => const Skeleton(width: 220, height: 40, radius: 8),
-            error: (e, s) => Text(
-              '—',
-              style: TextStyle(
-                fontSize: mobil ? 30 : 38,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textMuted,
+            ),
+            // İnce ışık kaması — asimetriyi güçlendiren tek dekoratif öğe.
+            Positioned(
+              top: -90,
+              right: -110,
+              child: IgnorePointer(
+                child: Transform.rotate(
+                  angle: _kHeroWedgeAngle,
+                  child: Container(
+                    width: 320,
+                    height: 420,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        stops: const [0.0, 0.55],
+                        colors: [
+                          Colors.white.withValues(alpha: 0.05),
+                          Colors.white.withValues(alpha: 0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-            data: (d) => IntrinsicWidth(
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space20,
+                vertical: AppSizes.space20,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    _currencyFmt.format(d.revenue),
-                    style: TextStyle(
-                      fontSize: mobil ? 30 : 38,
-                      fontWeight: FontWeight.w800,
-                      height: 1.05,
-                      letterSpacing: -0.5,
-                      color: AppColors.primary,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  const SizedBox(height: AppSizes.space6),
-                  // Altın aksan rayı — yalnızca hero tutarın altında (~%40).
-                  FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: 0.4,
-                    child: Container(
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: AppColors.gold,
-                        borderRadius:
-                            BorderRadius.circular(AppSizes.radiusPill),
+                  // Etiket + karşılaştırma rozeti — sağa/üste yaslı (asimetri).
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'BUGÜNKÜ CİRO',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.1,
+                          color: Colors.white.withValues(alpha: 0.62),
+                        ),
                       ),
+                      if (degisim != null)
+                        _DegisimBadgeOnDark(yuzde: degisim, etiket: 'dünden'),
+                    ],
+                  ),
+                  const SizedBox(height: AppSizes.space20),
+                  // Hero tutar (solda/altta) + gradyanlı ray · Satış Adedi (sağda) — çapraz denge.
+                  todayAsync.when(
+                    loading: () =>
+                        const Skeleton(width: 220, height: 40, radius: 8),
+                    error: (e, s) => Text(
+                      '—',
+                      style: TextStyle(
+                        fontSize: mobil ? 30 : 38,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    data: (d) => Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _currencyFmt.format(d.revenue),
+                                style: TextStyle(
+                                  fontSize: mobil ? 30 : 38,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.05,
+                                  letterSpacing: -0.5,
+                                  color: Colors.white,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: AppSizes.space8),
+                              // Altın ray artık düz dolgu değil, sağa doğru
+                              // soluklaşan gradyan + hafif parıltı (§4 imzası
+                              // korunur — ray yalnız hero'nun altında).
+                              FractionallySizedBox(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: mobil ? 0.55 : 0.46,
+                                child: Container(
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(
+                                        AppSizes.radiusPill),
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        AppColors.gold,
+                                        AppColors.goldLight,
+                                        AppColors.goldLight
+                                            .withValues(alpha: 0.0),
+                                      ],
+                                      stops: const [0.0, 0.65, 1.0],
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.gold
+                                            .withValues(alpha: 0.55),
+                                        blurRadius: 10,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!mobil) ...[
+                          const SizedBox(width: AppSizes.space16),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'SATIŞ ADEDİ',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.4,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              const SizedBox(height: AppSizes.space2),
+                              Text(
+                                '${d.count} adet',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// `_DegisimBadge`'in koyu (gradyan hero) zemin varyantı — camsı/parlayan
+/// pill. Diğer stat kartları (beyaz zemin) hâlâ `_DegisimBadge` kullanır,
+/// bu widget yalnız hero bandına özeldir.
+class _DegisimBadgeOnDark extends StatelessWidget {
+  final double yuzde;
+  final String etiket;
+
+  const _DegisimBadgeOnDark({required this.yuzde, this.etiket = 'dünden'});
+
+  @override
+  Widget build(BuildContext context) {
+    final artis = yuzde >= 0;
+    final renk = artis ? AppColors.success : AppColors.danger;
+    final glowRenk = artis ? const Color(0xFF3CC77C) : const Color(0xFFE0776A);
+    final ikon =
+        artis ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+    final yuzdeMetin = '${artis ? '+' : ''}${yuzde.toStringAsFixed(1)}%';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space8,
+        vertical: AppSizes.space4,
+      ),
+      decoration: BoxDecoration(
+        color: renk.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        border: Border.all(color: glowRenk.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(ikon, size: 12, color: glowRenk),
+          const SizedBox(width: AppSizes.space2),
+          Text(
+            yuzdeMetin,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: glowRenk,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
+          if (etiket.isNotEmpty) ...[
+            const SizedBox(width: AppSizes.space4),
+            Text(
+              etiket,
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.55),
+              ),
+            ),
+          ],
         ],
       ),
     );

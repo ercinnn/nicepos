@@ -10,6 +10,9 @@
 > Token = belge, kod = uygulama; ikisi senkron tutulur.
 >
 > Durum: **🟢 ONAYLANDI (v1)** — palet: lacivert+altın · imza: Hero tutar + altın ray.
+> **v1.15 (KARAR — ONAYLANDI):** Anasayfa hero bandı "dijital platform" yönüne gradyan +
+> asimetri kazandı (bkz. §4 sonu). Yeni renk YOK, yalnız `primaryDeep #081226` eklendi
+> (mevcut lacivert rampasının bir durağı).
 
 ---
 
@@ -131,6 +134,26 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
 - **Nerede GÖRÜNMEZ (sınır):** Liste satırlarındaki tutarlar, tablo hücreleri, ikincil
   toplamlar hero DEĞİLDİR (normal `type.body` tabular). Altın ray; kenarlık, bölücü
   veya dekor olarak ekrana serpiştirilmez.
+- **Anasayfa hero yüzeyi — gradyan + asimetri (KARAR v1.15 — ONAYLANDI, kullanıcı isteği:
+  "daha profesyonel, daha dijital platform hissi, renk geçişleri, asimetrik yapılar"):**
+  Yalnızca **Anasayfa Dashboard**'daki bugünkü-ciro hero'sunun KENDİ yüzeyi zenginleşir; §4
+  kuralları (tek hero, ray yalnız hero altında, tabular figür) DEĞİŞMEDİ — geri kalan ekranlar
+  ve hero'lar (Kasa, Müşteri, Raporlar) hâlâ düz beyaz kart + düz altın ray kullanır. "Boldness
+  tek yerde" ilkesi bu kararla ÇİĞNENMEDİ, tam tersi uygulandı: imzanın kendisi güçlendirildi.
+  - **Yüzey:** beyaz kart yerine 3 duraklı lacivert gradyan (`primary → primaryDark →
+    primaryDeep`, ~155° sol-üstten sağ-alta). `primaryDeep #081226` — mevcut lacivert
+    rampasının (primary/primaryDark/primaryMid/primaryLight) yeni bir durağı, yabancı hex değil.
+  - **Asimetri:** sağ-üst köşede altın (`gold`, ~%32 alfa) radyal parıltı + hafif döndürülmüş
+    (~-12°) beyaz-alfa ışık kaması; sol taraf sakin bırakılır — çapraz, merkezi-olmayan denge.
+  - **Metin/ray:** hero tutar + "SATIŞ ADEDİ" mini-istatistiği artık beyaz metin (koyu zemin);
+    altın ray düz dolgu yerine sağa doğru soluklaşan gradyan (`gold → goldLight → şeffaf`) +
+    hafif parıltı gölgesi. Değişim rozeti yeni `_DegisimBadgeOnDark` (camsı/yarı saydam yeşil-
+    kırmızı pill) — diğer ekranlardaki `_DegisimBadge` (beyaz zemin) DEĞİŞMEDİ, ayrı bileşen.
+  - **Yerleşim:** tutar+ray sola/alta, "Satış Adedi" sağa/üste (yalnız masaüstü) — tek sütun
+    yerine çapraz iki-nokta denge. Mobilde mini-istatistik gizlenir (dar genişlikte asimetri
+    yerine okunabilirlik önceliklidir).
+  - **Kapsam:** yalnız `_HeroBand` (Anasayfa). Diğer hero'lara (Kasa, Müşteri, Raporlar)
+    şimdilik uygulanmadı — beğenilirse aynı dil oraya da taşınabilir (ayrı KARAR gerekir).
 
 ---
 

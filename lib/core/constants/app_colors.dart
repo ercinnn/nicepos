@@ -4,6 +4,7 @@ class AppColors {
   // ── Marka / Primary ──────────────────────────────────────────────────────────
   static const primary     = Color(0xFF1B2A4A); // Lacivert
   static const primaryDark = Color(0xFF0F1D35); // Koyu lacivert
+  static const primaryDeep = Color(0xFF081226); // En koyu lacivert — KARAR v1.15, yalnız hero gradyanının 3. durağı
   static const primaryMid  = Color(0xFF243558); // Orta lacivert
   static const primaryLight= Color(0xFF3A5080); // Açık lacivert
 
