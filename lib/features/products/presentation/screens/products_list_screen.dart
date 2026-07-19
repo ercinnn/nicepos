@@ -1877,8 +1877,8 @@ class _EquivalentBarcodeDialogState extends ConsumerState<_EquivalentBarcodeDial
 
   @override
   Widget build(BuildContext context) {
-    // Fiyatı en yüksek (grubun "esas" satırı) — fetchGroupMembers zaten
-    // price1 DESC sıralı döner, ilk eleman "Esas".
+    // En son güncellenen (grubun "esas" satırı) — fetchGroupMembers zaten
+    // updated_at DESC sıralı döner, ilk eleman "Esas".
     final latestId = _members.isEmpty ? null : _members.first.id;
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {

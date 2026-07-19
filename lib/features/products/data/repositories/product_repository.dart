@@ -266,15 +266,14 @@ class ProductRepository {
 
   // Bir eşlenik barkod grubunun tüm üyelerini (ham satırlarıyla) döner —
   // Ürünler listesindeki "!" ikonu / ürün formundaki grup listesi bunu kullanır.
-  // Sıralama: fiyatı EN YÜKSEK satır üstte (grubun "esas" satırı — bkz.
-  // product_equivalent_aggregate view'ı, 0022 migration), eşitlikte en son
-  // güncellenen kazanır (ikincil sıralama).
+  // Sıralama: esas satır artık en son güncellenen (grubun "esas" satırı — bkz.
+  // product_equivalent_aggregate view'ı, 0024 migration — 0022'deki "en yüksek
+  // fiyat" kuralı geri alındı).
   Future<List<Product>> fetchGroupMembers(String groupId) async {
     final rows = await _client
         .from('products')
         .select('*, product_groups(name, parent_group:parent_group_id(name))')
         .eq('equivalent_group_id', groupId)
-        .order('price1', ascending: false)
         .order('updated_at', ascending: false);
     return (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
   }
