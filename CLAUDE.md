@@ -253,6 +253,16 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
 
 **Arama (`ProductRepository`):** `fetchAll(query)` Türkçe-duyarlı (İ/i, I/ı katlaması) — `name`/`barcode`/`stock_code` üzerinde `ilike` OR varyantları (`_buildSearchOr`).
 
+**Ürün adı büyük harf zorlaması:** `Product.toInsertMap()` ürün adını `trUpperCase()` (bkz. `core/utils/formatters.dart` — Türkçe-duyarlı i→İ, ı→I) ile kaydeder. `create()`/`update()` HER ikisi `toInsertMap()` üzerinden yazdığı için kaynak farketmeksizin (elle ürün formu, Excel İçe Aktar, Liste Gir, tablo satır içi düzenleme) tek noktadan uygulanır — ayrıca dokunmaya gerek yok. Mevcut küçük/karışık harfle kayıtlı ürünler geriye dönük otomatik güncellenmez, bir sonraki kayıtta düzelir.
+
+**Sütun Filtreleri ve Sıralama (masaüstü, `products_list_screen.dart`):**
+- Her sütun başlığında küçük bir filtre ikonu (`_headerWithFilter`) — tıklayınca sütuna özel dialog açılır: metin sütunları (Stok Kodu, Birim, Üst Grup, Grup Adı) "içerir" (ilike), **Barkod BİREBİR eşleşme** (`eq` — "002" yazınca yalnız barkodu tam "002" olan ürün gelir, `.ilike` DEĞİL), sayısal sütunlar (Stok, Kritik Stok, KDV, Alış, Fiyat 1/2) Min/Maks aralık, **Durum** sabit seçenek listesi (Tümü/Çok Satan/Tükendi/Pasif/Boş — `_StatusChoice` sarmalayıcı "Tümü" seçimini dialog'un doğal `null` iptal dönüşünden ayırt eder). Aktif filtreli ikon lacivert dolu görünür. Durum: `ProductFilters` (mutable, `data/models/product_filters.dart` — Liste Gir'deki `ExtractedRow` ile aynı mutable-model deseni), `_ProductsListScreenState._filters`.
+- **Sıralama:** sütun başlığına dokun → server-side sıralama (Flutter `DataTable`'ın yerleşik `sortColumnIndex`/`sortAscending`/`DataColumn.onSort` desteği kullanılır, özel ok ikonu gerekmez). Ürün Adı A-Z/Z-A + sayısal sütunlar (Barkod dahil, metin olarak) büyükten küçüğe/küçükten büyüğe. Beyaz liste: `ProductRepository.sortableColumns`; UI tarafı sütun→db-kolonu eşlemesi `_ProductsTableState._dbColumnFor`.
+- Filtreler/sıralama **server-side** — `fetchPaged`/`fetchAll`'a `filters`/`sortColumn`/`sortAscending` parametreleriyle geçer, sayfalamayla doğru çalışır (yalnız o an yüklü sayfayı süzmek YANLIŞ olurdu). Excel Aktar ve Ürün Özet de aktif filtre+sıralamayı hesaba katar.
+- **`search_products` RPC (`0017`-`0020` migration'ları) — YALNIZ Durum filtresi aktifken kullanılır:** "Durum" `products` tablosunda gerçek bir sütun değil, `product_status` view'ından hesaplanır (view'ın FK'si yok → PostgREST embed filtresi desteklemez). İLK yaklaşım (eşleşen id'leri çekip `id=in.(...)` ile ana sorguya eklemek) "Pasif" gibi çok sayıda ürünü kapsayan durumlarda URL'yi aşırı uzatıp **400 Bad Request** veriyordu; RPC'ye taşındıktan sonra da `product_status`'u TÜM `products`'a JOIN etmek planlayıcının haftalık-satış agregasyonunu **satır başına yeniden hesaplamasına** yol açıp **statement timeout (57014)** verdi — çözüm: `weekly_sales`/`cok_satan` CTE'lerini `MATERIALIZED` işaretlemek (tek seferlik hesaplama zorlanır, bkz. `0018`). Durum filtresi YOKSA repository eski basit PostgREST sorgu zincirini kullanmaya devam eder.
+  - ⚠️ **Migration dersi (tekrar düşmemek için):** `p_limit`/`p_offset`'ten ÖNCEYE yeni parametre eklemek (`0019`) fonksiyonun parametre TİP LİSTESİni değiştirdi — Postgres `CREATE OR REPLACE FUNCTION`'ı yalnız isim+tip listesi BİREBİR aynıysa "değiştirir", farklıysa aynı isimde YENİ bir overload yaratır. Sonuç: iki `search_products` birikti, imza belirtmeyen `GRANT`/çağrılar **"function name is not unique"** hatası verdi. Düzeltme (`0020`): `pg_proc` üzerinden o isimdeki TÜM overload'ları `DROP` edip fonksiyonu tek tanım olarak yeniden oluşturmak. **Bir RPC fonksiyonunun parametre listesini değiştiren her migration'da bu deseni (DO bloğuyla eski overload'ları temizle → yeniden oluştur) baştan kullan.**
+  - `language sql` fonksiyonda sütun adı parametre olarak `ORDER BY`'a dinamik konulamaz (injection riski) — her sıralanabilir sütun için bir ASC+DESC `CASE` çifti yazılır, yalnız aktif olan çift her satırda non-null kalır.
+
 **Ürün formu (`product_form_screen.dart`):** Kâr alanı düzenlenebilir; kâr ↔ satış fiyatı çift yönlü hesaplanır. Sayısal girişlerde virgül **ve** nokta ondalık ayıracı kabul edilir.
 - **Mobilde ürün resmi ekleme alanı YOK** ("Ürün resmi ekle" bölümü yalnız masaüstü `Row`
   dalında kalır; `_buildProductInfoTab`'te `isMobile ? formFields : Row(...imageSection...)`).
@@ -263,6 +273,55 @@ Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
   Onay dialogu: başlık "Ürünü Sil", metin `"$ad" ürününü silmek istediğinize emin misiniz?`,
   butonlar **Hayır** / **Sil** (kırmızı). `ProductRepository.delete()` çağırır, foreign-key
   hatasında ("bu ürüne ait satış kaydı var") anlaşılır mesaj gösterir.
+
+### Liste Gir — Tedarikçi Listesi İçe Aktarma
+
+Ürünler sayfasının 4. sekmesi (`ProductsTabsScreen`, yalnız `context.isDesktop` — dikdörtgen çizimi
+mouse ile yapılır, pdf.js/Tesseract.js interop'u yalnız web'de çalışır). Tedarikçi PDF/JPEG
+listesini yükleyip renkli dikdörtgenlerle sütun işaretleyerek toplu ürün içe aktarma.
+
+- **Akış (`liste_gir_screen.dart`, adım-makinesi):** yükle → sütun seç → önizle/düzenle → kaydet.
+- **PDF render + metin çıkarma:** `web/vendor/pdfjs/` altında vendor edilmiş pdf.js (Apache-2.0,
+  pinned `5.4.624` — `pdf.min.mjs`/`pdf.worker.min.mjs`) + birinci parti `pdfjs_bridge.js` köprü
+  script'i (`window.nicePdfLoad`/`nicePdfRenderAndExtract`/`niceOcrRecognize`, JSON string dönüşleri
+  — JS nesne grafiği interop'undan kaçınmak için). `document_page_source_web.dart`/`_stub.dart`
+  (conditional export, `sale_print.dart` ile aynı `dart.library.js_interop` deseni) script'leri
+  **tembel** (yalnız ekran açılınca) enjekte eder.
+- **OCR yedek yolu:** metin katmanı yok/az tespit edilirse (`RenderedPage.hasUsableTextLayer`,
+  toplam karakter < eşik) veya doğrudan JPEG/PNG yüklenirse Tesseract.js (ücretsiz, tarayıcıda WASM,
+  jsdelivr CDN'den tembel yüklenir — Google Cloud Vision KULLANILMAZ, hesap/kart gerektirmez).
+- **Sütun seçimi (`liste_gir_column_select_step.dart`):** 4 sabit renkli çip — kırmızı=Barkod,
+  sarı=Ürün Adı, mavi=Adet, yeşil=Alış Fiyatı. Sütun başına TEK bant (yalnız X-aralığı, yükseklik
+  tam sayfa); kenar tutamaçlarıyla ince ayar. Çok sayfalı PDF'lerde AYNI X-aralığı tüm sayfalara
+  uygulanır (sayfa başına yeniden çizim istenmez).
+- **Çıkarma algoritması (`column_row_extractor.dart`, saf Dart, pdf.js VE Tesseract çıktısına karşı
+  aynı `PositionedText` şekliyle çalışır):** bant→tip sınıflandırma → y-konumuna göre satır kümeleme
+  (medyan yükseklik × 0.6 tolerans) → `_joinNameItems` yalnız GERÇEK görsel boşluk varsa araya boşluk
+  ekler (bazı PDF üreticileri Türkçe "İ"yi ayrı font alt-kümesiyle, bitişik ama ayrı bir metin öğesi
+  olarak yazar — kör `.join(' ')` yanlış boşluk sokuyordu). `_looksLikeNonProduct` fatura üst/alt
+  bilgisindeki alıcı/firma adını (`_knownNonProductPhrases` sabit liste) ve `@` içeren satırları
+  (e-posta) ürün olarak saymaz. `consolidateDuplicateBarcodes` aynı barkodlu satırları toplar (adet
+  additive, fiyat "son sıfır-olmayan değer kazanır").
+- **Türkçe sayı ayrıştırma (`tr_number_parser.dart`):** `parseTrNumber` binlik/ondalık ayraç
+  belirsizliğini çözer (`"1.234,56"` → `1234.56`) — `products_list_screen.dart`'taki basit
+  `_parseNum`'dan FARKLI, o bu belirsizliği çözmez.
+- **Önizleme ızgarası (`liste_gir_review_grid.dart`):** tüm satırlar her zaman düzenlenebilir (liste
+  küçük, `products_list_screen.dart`'taki "yalnız dokunulan satır" optimizasyonuna gerek yok). Font
+  boyutu küçültülmüş (`_cellFontSize`), Ürün Adı hanesi 1.5× geniş (390px).
+  - **Alış Fiyatı Çarpanı:** liste fiyatı iskonto/+KDV nedeniyle gerçek alış fiyatından farklıysa
+    (ör. 0,66 / 1,2) tüm satırlara uygulanır — `ExtractedRow.rawPurchasePrice` ham değeri saklar,
+    çarpan istenildiği kadar değiştirilebilir; satır elle düzenlenirse mevcut çarpana göre ham
+    değere geri çevrilip saklanır (tutarlılık korunur).
+  - **Satış Fiyatı Çarpanı (yalnız YENİ ürünler):** barkodu sistemde zaten kayıtlı ürünlerde satış
+    fiyatı ürünün mevcut `price1`'i (dokunulmaz, otomatik/siyah renk); barkodu YENİ olan ürünlerde
+    satış fiyatı kırmızı fontla vurgulanır (dikkat çeksin diye) ve bu çarpan `alış fiyatı × çarpan`
+    olarak öneri hesaplar.
+- **Kaydetme:** barkod sistemde eşleşirse **stok additive** (üzerine eklenir), **alış+satış fiyatı
+  replace** (yeni değerlerle değiştirilir); eşleşmezse/boşsa yeni ürün oluşturulur. Kaydetmeden hemen
+  önce güncel barkod listesiyle `fetchByBarcodes` tekrar sorgulanır (önizleme adımından beri elle
+  değişmiş olabilir).
+- **Testler:** `test/liste_gir_extractor_test.dart` — saf Dart, tarayıcı gerektirmez
+  (`extractRows`/`consolidateDuplicateBarcodes`/`parseTrNumber` senaryoları).
 
 ### Excel Export
 
@@ -316,6 +375,7 @@ ekranı** (tasarım: design-tokens **KARAR v1.10** — **ekran hero'su YOK**, st
 - RPC'ler: `generate_sale_code`, `increment_product_stock` (stok iadesi), stok düşürme.
 - `sales_revenue_between(start_ts, end_ts)` RPC (`0015_sales_revenue_rpc.sql`): `sale_date` index'i ile tek `SUM(total_amount)` sorgusu — dashboard YTD/365-gün/geçen-ay ciro kartları bunu kullanır (bkz. Dashboard notu). `security invoker` (varsayılan), RLS `sales` tablosuyla aynı.
 - `product_status` view (`0016_product_status.sql`): Ürünler tablosundaki **Durum** sütununun kaynağı. Öncelik Çok Satan > Tükendi > Pasif > boş. Çok Satan = son 4 haftanın (bugüne göre kayan 7'şer günlük 4 pencere, takvim haftası DEĞİL) HER birinde ≥1 adet satış — `sale_items`/`sales` üzerinden hesaplanır. Tükendi = `stock_quantity <= 0`. Pasif = `products.updated_at` 1 yıldan eski — stok satışla (`decrement_product_stock`/`increment_product_stock` RPC'leri) VEYA elle düzenlemeyle (`Product.toInsertMap()`) değiştiğinde HER ikisi de `updated_at`'i günceller, yani bu tek alan "stok + satış + fiyat" aktivitesinin hepsini kapsar. `ProductRepository.fetchStatuses(ids)` ile `product_id` filtreli okunur (ana ürün sorgusundan ayrı, ikinci istek).
+- `search_products(...)` RPC (`0017`→`0018`→`0019`→`0020`, tek fonksiyon — her migration `create or replace` ile üzerine yazar): Ürünler tablosu Durum filtresi aktifken arama+grup+sütun filtreleri+durum+sıralama+sayfalamayı TEK sorguda sunucuda birleştirir (bkz. Ürünler Sayfası notu — id-listesi URL taşması ve statement-timeout derslerinin detayı orada). `products` + `product_groups` (grup/üst grup adı) + inline `weekly_sales`/`cok_satan` (`MATERIALIZED` CTE) döndürür; `Product.fromMap()`'in düz-sütun fallback'i (`group_name`/`parent_group_name`) bu RPC'nin `product_groups` embed'i OLMAYAN düz satır şekli için gerekli. **Parametre listesini değiştiren migration yazarken önce `DO $$ ... DROP FUNCTION ... $$` ile eski overload'ları temizle** (bkz. `0020`) — aksi halde `CREATE OR REPLACE` yeni bir overload yaratır, isim çakışması hatası verir.
 
 ### Deploy — GitHub Pages
 
