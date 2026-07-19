@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/product.dart';
 import '../models/product_filters.dart';
+import '../models/equivalent_aggregate.dart';
 
 class ProductRepository {
   final SupabaseClient _client = Supabase.instance.client;
@@ -219,7 +221,117 @@ class ProductRepository {
   Future<Product?> fetchByBarcode(String barcode) async {
     final row = await _client.from('products').select('*, product_groups(name, parent_group:parent_group_id(name))').eq('barcode', barcode).maybeSingle();
     if (row == null) return null;
-    return Product.fromMap(Map<String, dynamic>.from(row));
+    final product = Product.fromMap(Map<String, dynamic>.from(row));
+    // Eşlenik Barkod: bu satır bir gruba aitse, DÖNEN nesneyi grup toplamı
+    // (stok = SUM) + grubun en son güncellenen satırının fiyat/alış bilgisiyle
+    // override et — DB'ye YAZMA yok, yalnız satış/etiket ekranlarının okuduğu
+    // değer grubu yansıtsın diye (bkz. 0021_equivalent_barcodes.sql).
+    if (product.equivalentGroupId != null) {
+      final aggregates = await fetchEquivalentAggregates([product.id]);
+      final agg = aggregates[product.id];
+      if (agg != null) {
+        return product.copyWith(
+          stockQuantity: agg.totalStock,
+          price1: agg.groupPrice1,
+          price2: agg.groupPrice2,
+          purchasePrice: agg.groupPurchasePrice,
+        );
+      }
+    }
+    return product;
+  }
+
+  // Eşlenik Barkod: görüntülenen sayfadaki ürünler için grup toplamlarını
+  // `product_equivalent_aggregate` view'ından (bkz. 0021_equivalent_barcodes.sql)
+  // tek sorguda çeker — `fetchStatuses` ile BİREBİR aynı desen (id listesiyle
+  // filtreli, ana ürün sorgusundan AYRI ikinci istek). Dönüş: product_id →
+  // agregat (yalnız eşlenik gruba sahip ürünler için anahtar içerir).
+  Future<Map<String, EquivalentAggregate>> fetchEquivalentAggregates(List<String> productIds) async {
+    if (productIds.isEmpty) return {};
+    try {
+      final rows = await _client
+          .from('product_equivalent_aggregate')
+          .select()
+          .inFilter('product_id', productIds);
+      return {
+        for (final row in (rows as List))
+          (row as Map)['product_id'] as String:
+              EquivalentAggregate.fromMap(Map<String, dynamic>.from(row)),
+      };
+    } catch (_) {
+      // Agregat bilgisi ikincil — sessizce yoksay, liste yine gösterilir.
+      return {};
+    }
+  }
+
+  // Bir eşlenik barkod grubunun tüm üyelerini (ham satırlarıyla) döner —
+  // Ürünler listesindeki "!" ikonu / ürün formundaki grup listesi bunu kullanır.
+  Future<List<Product>> fetchGroupMembers(String groupId) async {
+    final rows = await _client
+        .from('products')
+        .select('*, product_groups(name, parent_group:parent_group_id(name))')
+        .eq('equivalent_group_id', groupId)
+        .order('updated_at', ascending: false);
+    return (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
+  }
+
+  // İki ürünü eşlenik barkod olarak bağlar. Grup kuralları (KARAR):
+  //   - ikisi de grupsuzsa → yeni grup id'si üretilip ikisine de yazılır
+  //   - biri gruplu biri değilse → gruplu olmayan, diğerinin grubuna katılır
+  //   - ikisi de gruplu ve FARKLI gruplardaysa → B'nin grubundaki TÜM satırlar
+  //     A'nın grubuna taşınır (iki grup birleşir)
+  //   - ikisi de aynı gruptaysa → no-op
+  Future<void> linkEquivalentBarcode(String productIdA, String productIdB) async {
+    if (productIdA == productIdB) return;
+    final rows = await _client
+        .from('products')
+        .select('id, equivalent_group_id')
+        .inFilter('id', [productIdA, productIdB]);
+    final byId = {
+      for (final row in (rows as List))
+        (row as Map)['id'] as String: row['equivalent_group_id'] as String?,
+    };
+    final groupA = byId[productIdA];
+    final groupB = byId[productIdB];
+
+    if (groupA == null && groupB == null) {
+      final newGroupId = const Uuid().v4();
+      await _client
+          .from('products')
+          .update({'equivalent_group_id': newGroupId})
+          .inFilter('id', [productIdA, productIdB]);
+    } else if (groupA == null && groupB != null) {
+      await _client.from('products').update({'equivalent_group_id': groupB}).eq('id', productIdA);
+    } else if (groupA != null && groupB == null) {
+      await _client.from('products').update({'equivalent_group_id': groupA}).eq('id', productIdB);
+    } else if (groupA != groupB) {
+      // B'nin grubundaki tüm satırları A'nın grubuna taşı (grupları birleştir).
+      await _client.from('products').update({'equivalent_group_id': groupA}).eq('equivalent_group_id', groupB!);
+    }
+    // groupA == groupB (ikisi de aynı, null değil) → no-op.
+  }
+
+  // Bir ürünü eşlenik barkod grubundan çıkarır. Grupta tek satır kalırsa
+  // (tek kişilik grup anlamsız) o satırın da grup bağlantısı temizlenir.
+  Future<void> unlinkEquivalentBarcode(String productId) async {
+    final row = await _client
+        .from('products')
+        .select('equivalent_group_id')
+        .eq('id', productId)
+        .maybeSingle();
+    final groupId = row?['equivalent_group_id'] as String?;
+    if (groupId == null) return;
+
+    await _client.from('products').update({'equivalent_group_id': null}).eq('id', productId);
+
+    final remaining = await _client
+        .from('products')
+        .select('id')
+        .eq('equivalent_group_id', groupId);
+    if ((remaining as List).length == 1) {
+      final lastId = (remaining.first as Map)['id'] as String;
+      await _client.from('products').update({'equivalent_group_id': null}).eq('id', lastId);
+    }
   }
 
   // Liste Gir: birden çok barkodu tek sorguda arar (fetchStatuses'daki

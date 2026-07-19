@@ -14,6 +14,7 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/skeleton.dart';
 import '../../data/models/product.dart';
 import '../../data/models/product_filters.dart';
+import '../../data/models/equivalent_aggregate.dart';
 import '../../application/product_columns_provider.dart';
 import '../../application/products_provider.dart';
 import '../widgets/excel_import_dialog.dart';
@@ -95,6 +96,10 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
   // Ürün başına "Durum" (Çok Satan/Tükendi/Pasif) — bkz. `_loadStatuses`.
   Map<String, String?> _statuses = {};
+
+  // Eşlenik Barkod: ürün başına grup toplamı — bkz. `_loadEquivalents`.
+  // Yalnız bir gruba ait ürünler burada anahtar içerir (bkz. 0021 migration).
+  Map<String, EquivalentAggregate> _equivalents = {};
 
   // Arama kutusu debounce'u (250ms) — projedeki diğer canlı aramalarla aynı
   // desen (bkz. sales_screen.dart `_LiveProductSearchField`). Durum sütunu
@@ -190,6 +195,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         _loading = false;
       });
       _loadStatuses();
+      _loadEquivalents();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -209,6 +215,20 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       setState(() => _statuses = statuses);
     } catch (_) {
       // Durum bilgisi ikincil — sessizce yoksay, liste yine gösterilir.
+    }
+  }
+
+  // Eşlenik Barkod grup toplamlarını o an listelenen ürünler için ayrıca
+  // çeker (bkz. `_loadStatuses` ile aynı desen — ana ürün sorgusunu yavaşlatmaz).
+  Future<void> _loadEquivalents() async {
+    final ids = _products.map((p) => p.id).toList();
+    try {
+      final equivalents =
+          await ref.read(productRepositoryProvider).fetchEquivalentAggregates(ids);
+      if (!mounted) return;
+      setState(() => _equivalents = equivalents);
+    } catch (_) {
+      // Agregat bilgisi ikincil — sessizce yoksay, liste yine gösterilir.
     }
   }
 
@@ -482,6 +502,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                           itemBuilder: (context, i) => _ProductMobileCard(
                             product: _displayProducts[i],
                             onDelete: _deleteProduct,
+                            hasEquivalent: _equivalents.containsKey(_displayProducts[i].id),
+                            onEquivalentChanged: _loadProducts,
                           ),
                         ),
         ),
@@ -666,6 +688,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                             selectedIds: _selectedIds,
                             allSelected: _allSelected,
                             statuses: _statuses,
+                            equivalents: _equivalents,
+                            onEquivalentChanged: _loadProducts,
                             filters: _filters,
                             onFilterApply: _applyFilterChange,
                             sortColumn: _sortColumn,
@@ -821,20 +845,38 @@ class _ProductSummaryDialogState extends ConsumerState<_ProductSummaryDialog> {
 
   Future<void> _load() async {
     try {
-      final products = await ref.read(productRepositoryProvider).fetchAll(
+      final repo = ref.read(productRepositoryProvider);
+      final products = await repo.fetchAll(
             query: widget.query,
             groupId: widget.groupId,
             filters: widget.filters,
           );
+      // Eşlenik Barkod: gruplu ürünler Ürün Özet'te TEKİL sayılır (grubun
+      // toplam stoğu + en-son-satır fiyatı, çift sayım YOK) — bkz.
+      // 0021_equivalent_barcodes.sql. Grupsuz ürünler eskisi gibi kendi
+      // ham değerleriyle sayılır.
+      final ids = products.map((p) => p.id).toList();
+      final aggregates = await repo.fetchEquivalentAggregates(ids);
+      final countedGroups = <String>{};
+      int count = 0;
       num quantity = 0, cost = 0, sales = 0;
       for (final p in products) {
-        quantity += p.stockQuantity;
-        cost += p.purchasePrice * p.stockQuantity;
-        sales += p.price1 * p.stockQuantity;
+        final agg = aggregates[p.id];
+        if (agg == null) {
+          quantity += p.stockQuantity;
+          cost += p.purchasePrice * p.stockQuantity;
+          sales += p.price1 * p.stockQuantity;
+          count++;
+        } else if (countedGroups.add(p.equivalentGroupId!)) {
+          quantity += agg.totalStock;
+          cost += agg.groupPurchasePrice * agg.totalStock;
+          sales += agg.groupPrice1 * agg.totalStock;
+          count++;
+        }
       }
       if (!mounted) return;
       setState(() {
-        _count = products.length;
+        _count = count;
         _quantity = quantity;
         _cost = cost;
         _sales = sales;
@@ -970,6 +1012,8 @@ class _ProductsTable extends StatefulWidget {
   final Set<String> selectedIds;
   final bool allSelected;
   final Map<String, String?> statuses;
+  final Map<String, EquivalentAggregate> equivalents;
+  final VoidCallback onEquivalentChanged;
   final ProductFilters filters;
   final void Function(void Function(ProductFilters)) onFilterApply;
   final String sortColumn;
@@ -986,6 +1030,8 @@ class _ProductsTable extends StatefulWidget {
     required this.selectedIds,
     required this.allSelected,
     required this.statuses,
+    required this.equivalents,
+    required this.onEquivalentChanged,
     required this.filters,
     required this.onFilterApply,
     required this.sortColumn,
@@ -1503,12 +1549,32 @@ class _ProductsTableState extends State<_ProductsTable> {
       DataCell(Text('${i + 1}',
           style: const TextStyle(color: AppColors.textMuted))),
       // Ürün Adı — dokununca düzenlenebilir (eski genişliğin 2 katı + 2cm, 220→516).
-      DataCell(_cell(
-        p,
-        width: 516,
-        bold: true,
-        controllerOf: (c) => c.name,
-        displayText: () => p.name,
+      // Eşlenik Barkod grubu varsa yanında kırmızı "!" ikonu (bkz. _EquivalentBarcodeDialog).
+      DataCell(Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _cell(
+            p,
+            width: widget.equivalents.containsKey(p.id) ? 490 : 516,
+            bold: true,
+            controllerOf: (c) => c.name,
+            displayText: () => p.name,
+          ),
+          if (widget.equivalents.containsKey(p.id))
+            IconButton(
+              icon: const Icon(Icons.error, color: AppColors.danger, size: 18),
+              tooltip: 'Eşlenik barkod var',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => _EquivalentBarcodeDialog(
+                  groupId: p.equivalentGroupId!,
+                  onChanged: widget.onEquivalentChanged,
+                ),
+              ),
+            ),
+        ],
       )),
       // Dinamik hücreler
       ...ProductColumn.values
@@ -1731,6 +1797,171 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
+// ── Eşlenik Barkod grup dialogu ───────────────────────────────────────────────
+//
+// Ürünler listesindeki kırmızı "!" ikonuna (Ürün Adı yanında, masaüstü + mobil)
+// tıklanınca açılır — grubun tüm üyelerini (barkod, ad, stok, fiyat, güncelleme
+// tarihi) listeler, en son güncellenen "Esas" rozetiyle işaretlenir (bkz.
+// 0021_equivalent_barcodes.sql — fiyat/KDV bu satırdan alınır). Her satırda
+// "Bağlantıyı Kaldır" — kaldırınca dialog içi liste yenilenir; dialog kapanınca
+// `onChanged` çağrılıp arkadaki ürün listesi yeniden yüklenir.
+class _EquivalentBarcodeDialog extends ConsumerStatefulWidget {
+  final String groupId;
+  final VoidCallback onChanged;
+
+  const _EquivalentBarcodeDialog({required this.groupId, required this.onChanged});
+
+  @override
+  ConsumerState<_EquivalentBarcodeDialog> createState() => _EquivalentBarcodeDialogState();
+}
+
+class _EquivalentBarcodeDialogState extends ConsumerState<_EquivalentBarcodeDialog> {
+  bool _loading = true;
+  String? _error;
+  List<Product> _members = [];
+  bool _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final members = await ref.read(productRepositoryProvider).fetchGroupMembers(widget.groupId);
+      if (!mounted) return;
+      setState(() {
+        _members = members;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _unlink(Product p) async {
+    try {
+      await ref.read(productRepositoryProvider).unlinkEquivalentBarcode(p.id);
+      _changed = true;
+      if (!mounted) return;
+      if (_members.length <= 2) {
+        // Grupta artık 0 veya 1 satır kalacak — dialog'un konusu olan grup
+        // çözülmüş demektir, kapat.
+        Navigator.of(context).pop();
+        return;
+      }
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: AppColors.danger, content: Text('Bağlantı kaldırılamadı: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // En son güncellenen (grubun "esas" satırı) — fetchGroupMembers zaten
+    // updated_at DESC sıralı döner, ilk eleman "Esas".
+    final latestId = _members.isEmpty ? null : _members.first.id;
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop && _changed) widget.onChanged();
+      },
+      child: AlertDialog(
+        title: Row(
+          children: const [
+            Icon(Icons.error, color: AppColors.danger, size: 20),
+            SizedBox(width: 8),
+            Text('Eşlenik Barkod'),
+          ],
+        ),
+        content: SizedBox(
+          width: 420,
+          child: _loading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : _error != null
+                  ? Text('Grup yüklenemedi: $_error', style: const TextStyle(color: AppColors.danger))
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final m in _members)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: AppSizes.space8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: AppSizes.space12, vertical: AppSizes.space8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                              border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(m.name,
+                                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                                overflow: TextOverflow.ellipsis),
+                                          ),
+                                          if (m.id == latestId) ...[
+                                            const SizedBox(width: AppSizes.space6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: AppSizes.space6, vertical: AppSizes.space2),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.success.withValues(alpha: 0.12),
+                                                borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                                              ),
+                                              child: const Text('Esas',
+                                                  style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: AppColors.success)),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      const SizedBox(height: AppSizes.space4),
+                                      Text('Barkod: ${m.barcode ?? '-'}  ·  Stok: ${formatNumber(m.stockQuantity)}  ·  Fiyat: ${formatCurrency(m.price1)}',
+                                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.link_off, size: 18, color: AppColors.danger),
+                                  tooltip: 'Bağlantıyı Kaldır',
+                                  onPressed: () => _unlink(m),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Kapat'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Mobil ürün kartı ──────────────────────────────────────────────────────────
 //
 // Sol: ürün adı (üst) + barkod (alt)
@@ -1739,8 +1970,15 @@ class _StatusBadge extends StatelessWidget {
 class _ProductMobileCard extends StatelessWidget {
   final Product product;
   final Future<void> Function(Product) onDelete;
+  final bool hasEquivalent;
+  final VoidCallback onEquivalentChanged;
 
-  const _ProductMobileCard({required this.product, required this.onDelete});
+  const _ProductMobileCard({
+    required this.product,
+    required this.onDelete,
+    this.hasEquivalent = false,
+    required this.onEquivalentChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1759,14 +1997,34 @@ class _ProductMobileCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    p.name,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          p.name,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (hasEquivalent)
+                        IconButton(
+                          icon: const Icon(Icons.error, color: AppColors.danger, size: 16),
+                          tooltip: 'Eşlenik barkod var',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                          onPressed: () => showDialog<void>(
+                            context: context,
+                            builder: (_) => _EquivalentBarcodeDialog(
+                              groupId: p.equivalentGroupId!,
+                              onChanged: onEquivalentChanged,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: AppSizes.space4),
                   SelectableText(

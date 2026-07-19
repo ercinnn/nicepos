@@ -13,6 +13,7 @@ import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../data/models/product.dart';
 import '../../data/models/company.dart';
 import '../../application/products_provider.dart';
+import '../widgets/equivalent_barcode_section.dart';
 
 class ProductFormScreen extends ConsumerStatefulWidget {
   /// null ise yeni ürün, aksi halde düzenlenecek ürünün id'si.
@@ -789,6 +790,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Eşlenik Barkod — `_currentId` değişince (kaydedilmiş üründen
+          // yüklenince / barkodla getirilince) `key` widget'ı yeniden kurar,
+          // güncel ürünün grubunu yeniden yükler (bkz. `_applyProduct`).
+          EquivalentBarcodeSection(key: ValueKey(_currentId), productId: _currentId),
           Row(
             children: [
               Expanded(

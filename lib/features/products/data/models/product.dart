@@ -24,6 +24,11 @@ class Product {
   final String? imageUrl;
   final int? quickListOrder;
   final bool isOnlineActive;
+  // Eşlenik Barkod: bu satırın ait olduğu grup id'si (null = eşlenik değil).
+  // ⚠️ `toInsertMap()`'e KESİNLİKLE eklenmez — grup bağlantısı SADECE
+  // `ProductRepository.linkEquivalentBarcode`/`unlinkEquivalentBarcode` ile
+  // değiştirilir (bkz. product_repository.dart notu).
+  final String? equivalentGroupId;
 
   const Product({
     this.id = '',
@@ -49,6 +54,7 @@ class Product {
     this.imageUrl,
     this.quickListOrder,
     this.isOnlineActive = false,
+    this.equivalentGroupId,
   });
 
   double get profitMargin1 {
@@ -98,6 +104,7 @@ class Product {
       imageUrl: map['image_url'] as String?,
       quickListOrder: (map['quick_list_order'] as num?)?.toInt(),
       isOnlineActive: map['is_online_active'] as bool? ?? false,
+      equivalentGroupId: map['equivalent_group_id'] as String?,
     );
   }
 
@@ -137,6 +144,7 @@ class Product {
     bool? purchasePriceVatIncluded, num? price1, bool? price1VatIncluded,
     num? price2, bool? price2VatIncluded, num? vatRate, num? weight,
     String? description, String? imageUrl, int? quickListOrder, bool? isOnlineActive,
+    String? equivalentGroupId,
   }) {
     return Product(
       id: id ?? this.id, barcode: barcode ?? this.barcode, name: name ?? this.name,
@@ -155,6 +163,7 @@ class Product {
       description: description ?? this.description, imageUrl: imageUrl ?? this.imageUrl,
       quickListOrder: quickListOrder ?? this.quickListOrder,
       isOnlineActive: isOnlineActive ?? this.isOnlineActive,
+      equivalentGroupId: equivalentGroupId ?? this.equivalentGroupId,
     );
   }
 }

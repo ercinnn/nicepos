@@ -32,8 +32,30 @@ class BarcodeCache {
   Future<void> _load() async {
     try {
       final products = await _repo.fetchAll();
+      // Eşlenik Barkod: gruplu ürünlerin stok/fiyatını TEK toplu sorguyla
+      // (N+1 YOK) grup toplamına/en-son-satır fiyatına override et — hangi
+      // barkod okutulursa okutulsun sepete grubun güncel değeriyle eklensin
+      // (bkz. 0021_equivalent_barcodes.sql, ProductRepository.fetchByBarcode
+      // ile AYNI mantık).
+      final groupedIds = products
+          .where((p) => p.equivalentGroupId != null)
+          .map((p) => p.id)
+          .toList();
+      // `fetchEquivalentAggregates` boş listede zaten erken döner — ayrı bir
+      // dallanmaya gerek yok.
+      final aggregates = await _repo.fetchEquivalentAggregates(groupedIds);
       for (final p in products) {
-        put(p);
+        final agg = aggregates[p.id];
+        if (agg != null) {
+          put(p.copyWith(
+            stockQuantity: agg.totalStock,
+            price1: agg.groupPrice1,
+            price2: agg.groupPrice2,
+            purchasePrice: agg.groupPurchasePrice,
+          ));
+        } else {
+          put(p);
+        }
       }
       _loaded = true;
     } catch (_) {
