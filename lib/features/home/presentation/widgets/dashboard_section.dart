@@ -89,11 +89,12 @@ double _pulseWave(double phase) =>
 
 class _GlintSpec {
   final double top, right, size, delay;
-  const _GlintSpec(
-      {required this.top,
-      required this.right,
-      required this.size,
-      required this.delay});
+  const _GlintSpec({
+    required this.top,
+    required this.right,
+    required this.size,
+    required this.delay,
+  });
 }
 
 // 7 minik parıltı — köşe parıltısının etrafına yayılmış, boyut/gecikme
@@ -278,7 +279,8 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                     child: AnimatedBuilder(
                       animation: _ctrl,
                       builder: (context, _) {
-                        final phase = (_ctrl.value * (_kShimmerPeriod / 4.2) +
+                        final phase =
+                            (_ctrl.value * (_kShimmerPeriod / 4.2) +
                                 g.delay / 4.2) %
                             1.0;
                         final t = _pulseWave(phase);
@@ -294,8 +296,7 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                                 gradient: RadialGradient(
                                   colors: [
                                     Colors.white,
-                                    AppColors.goldLight
-                                        .withValues(alpha: 0.65),
+                                    AppColors.goldLight.withValues(alpha: 0.65),
                                     Colors.white.withValues(alpha: 0.0),
                                   ],
                                   stops: const [0.0, 0.45, 0.75],
@@ -317,17 +318,23 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Etiket + karşılaştırma rozeti — sağa/üste yaslı (asimetri).
+                  // Etiket Flexible: dar mobil genişlikte (ör. 375px) rozetle
+                  // birlikte satırı aşarsa sert overflow yerine yumuşak kısalır.
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'BUGÜNKÜ CİRO',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.1,
-                          color: Colors.white.withValues(alpha: 0.62),
+                      Flexible(
+                        child: Text(
+                          'BUGÜNKÜ CİRO',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.1,
+                            color: Colors.white.withValues(alpha: 0.62),
+                          ),
                         ),
                       ),
                       if (degisim != null)
@@ -369,12 +376,13 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                                   letterSpacing: -0.5,
                                   color: Colors.white,
                                   fontFeatures: const [
-                                    FontFeature.tabularFigures()
+                                    FontFeature.tabularFigures(),
                                   ],
                                   shadows: [
                                     Shadow(
-                                      color: AppColors.goldLight
-                                          .withValues(alpha: 0.22),
+                                      color: AppColors.goldLight.withValues(
+                                        alpha: 0.22,
+                                      ),
                                       blurRadius: 26,
                                     ),
                                   ],
@@ -382,8 +390,9 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                               ),
                               const SizedBox(height: AppSizes.space8),
                               _AnimatedRail(
-                                  controller: _ctrl,
-                                  reduceMotion: reduceMotion),
+                                controller: _ctrl,
+                                reduceMotion: reduceMotion,
+                              ),
                             ],
                           ),
                         ),
@@ -410,7 +419,7 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white.withValues(alpha: 0.92),
                                   fontFeatures: const [
-                                    FontFeature.tabularFigures()
+                                    FontFeature.tabularFigures(),
                                   ],
                                 ),
                               ),
@@ -548,8 +557,9 @@ class _DegisimBadgeOnDark extends StatelessWidget {
     final artis = yuzde >= 0;
     final renk = artis ? AppColors.success : AppColors.danger;
     final glowRenk = artis ? const Color(0xFF3CC77C) : const Color(0xFFE0776A);
-    final ikon =
-        artis ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+    final ikon = artis
+        ? Icons.arrow_upward_rounded
+        : Icons.arrow_downward_rounded;
     final yuzdeMetin = '${artis ? '+' : ''}${yuzde.toStringAsFixed(1)}%';
 
     return Container(
@@ -616,10 +626,12 @@ class _StatCardsRow extends ConsumerWidget {
     final currentYearAsync = ref.watch(currentYearMonthlyProvider);
     final last12MonthsAsync = ref.watch(monthlySalesProvider(12));
 
-    final adetSparkline =
-        dailyCountAsync.valueOrNull?.map((e) => e.count.toDouble()).toList();
-    final ciroSparkline =
-        dailyRevenueAsync.valueOrNull?.map((e) => e.amount.toDouble()).toList();
+    final adetSparkline = dailyCountAsync.valueOrNull
+        ?.map((e) => e.count.toDouble())
+        .toList();
+    final ciroSparkline = dailyRevenueAsync.valueOrNull
+        ?.map((e) => e.amount.toDouble())
+        .toList();
     final yillikCiroSparkline = currentYearAsync
         .valueOrNull?[DateTime.now().year]
         ?.sublist(0, DateTime.now().month)
@@ -972,8 +984,9 @@ class _DegisimBadge extends StatelessWidget {
     final artis = yuzde >= 0;
     // Semantik renk: kazanç → success, kayıp → danger (token §1).
     final renk = artis ? AppColors.success : AppColors.danger;
-    final ikon =
-        artis ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
+    final ikon = artis
+        ? Icons.arrow_upward_rounded
+        : Icons.arrow_downward_rounded;
     final yuzdeMetin = '${artis ? '+' : ''}${yuzde.toStringAsFixed(1)}%';
 
     return Row(
@@ -1012,10 +1025,7 @@ class _DegisimBadge extends StatelessWidget {
             child: Text(
               etiket,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.textMuted,
-              ),
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
           ),
         ],
@@ -1167,7 +1177,11 @@ class _SatisLineChart extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.show_chart_rounded, size: 28, color: AppColors.textMuted),
+            Icon(
+              Icons.show_chart_rounded,
+              size: 28,
+              color: AppColors.textMuted,
+            ),
             SizedBox(height: AppSizes.space8),
             Text(
               'Bu aralıkta satış yok',
@@ -1202,10 +1216,11 @@ class _SatisLineChart extends StatelessWidget {
           VerticalRangeAnnotation(
             x1: idx - 0.5,
             x2: idx + 0.5,
-            color: (veriler[idx].date.weekday == DateTime.saturday
-                    ? AppColors.gold
-                    : AppColors.danger)
-                .withValues(alpha: 0.09),
+            color:
+                (veriler[idx].date.weekday == DateTime.saturday
+                        ? AppColors.gold
+                        : AppColors.danger)
+                    .withValues(alpha: 0.09),
           ),
     ];
 
@@ -1237,18 +1252,22 @@ class _SatisLineChart extends StatelessWidget {
           show: true,
           border: Border(
             bottom: BorderSide(
-                color: AppColors.textMuted.withValues(alpha: 0.25)),
+              color: AppColors.textMuted.withValues(alpha: 0.25),
+            ),
             left: BorderSide(
-                color: AppColors.textMuted.withValues(alpha: 0.25)),
+              color: AppColors.textMuted.withValues(alpha: 0.25),
+            ),
           ),
         ),
 
         // Eksen başlıkları
         titlesData: FlTitlesData(
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -1365,8 +1384,18 @@ class _SatisLineChart extends StatelessWidget {
 // ayraçtır (semantik/imza rolü taşımaz), sıra: yıl indeksine göre atanır.
 
 const _ayKisaltma = [
-  'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-  'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+  'Oca',
+  'Şub',
+  'Mar',
+  'Nis',
+  'May',
+  'Haz',
+  'Tem',
+  'Ağu',
+  'Eyl',
+  'Eki',
+  'Kas',
+  'Ara',
 ];
 
 const int _baslangicYil = 2021;
@@ -1382,8 +1411,8 @@ Color _yilRengi(int yil) {
     AppColors.gold, // altın (burada imza değil, kategorik)
     AppColors.danger, // kiremit (burada hata değil, kategorik)
   ];
-  final idx = ((yil - _baslangicYil) % palet.length + palet.length) %
-      palet.length;
+  final idx =
+      ((yil - _baslangicYil) % palet.length + palet.length) % palet.length;
   return palet[idx];
 }
 
@@ -1441,14 +1470,16 @@ class _YillikKarsilastirmaCardState
             spacing: AppSizes.space8,
             runSpacing: AppSizes.space8,
             children: mevcutYillar
-                .map((yil) => _YilChip(
-                      yil: yil,
-                      renk: _yilRengi(yil),
-                      acik: _acikYillar.contains(yil),
-                      onTap: () => setState(() {
-                        if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
-                      }),
-                    ))
+                .map(
+                  (yil) => _YilChip(
+                    yil: yil,
+                    renk: _yilRengi(yil),
+                    acik: _acikYillar.contains(yil),
+                    onTap: () => setState(() {
+                      if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
+                    }),
+                  ),
+                )
                 .toList(),
           ),
           const SizedBox(height: AppSizes.space16),
@@ -1510,12 +1541,7 @@ class _YillikKarsilastirmaCardState
     // üstte küçük "Yükleniyor…" ipucu korunur (geçmiş gelince fl_chart
     // animasyonuyla içeri dolar, ipucu kalkar).
     if (historicalYukleniyor) {
-      return Stack(
-        children: [
-          grafik,
-          const _YukleniyorIpucu(),
-        ],
-      );
+      return Stack(children: [grafik, const _YukleniyorIpucu()]);
     }
     return grafik;
   }
@@ -1545,10 +1571,7 @@ class _YukleniyorIpucu extends StatelessWidget {
           SizedBox(width: AppSizes.space6),
           Text(
             'Yükleniyor…',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11,
-            ),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 11),
           ),
         ],
       ),
@@ -1681,17 +1704,21 @@ class _YillikLineChart extends StatelessWidget {
           show: true,
           border: Border(
             bottom: BorderSide(
-                color: AppColors.textMuted.withValues(alpha: 0.25)),
+              color: AppColors.textMuted.withValues(alpha: 0.25),
+            ),
             left: BorderSide(
-                color: AppColors.textMuted.withValues(alpha: 0.25)),
+              color: AppColors.textMuted.withValues(alpha: 0.25),
+            ),
           ),
         ),
 
         titlesData: FlTitlesData(
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -1797,12 +1824,15 @@ List<FlSpot> _kumulatifOrtalamaSpots(
     toplamCiro += aylik[ay - 1];
     final ayGunSayisi = (yil == buYil && ay == bugun.month)
         ? bugun.day
-        : DateTime(yil, ay + 1, 0).day; // ay'ın takvim gün sayısı (artık yıl dahil)
+        : DateTime(
+            yil,
+            ay + 1,
+            0,
+          ).day; // ay'ın takvim gün sayısı (artık yıl dahil)
     toplamGun += ayGunSayisi;
-    spots.add(FlSpot(
-      (ay - 1).toDouble(),
-      toplamGun == 0 ? 0 : toplamCiro / toplamGun,
-    ));
+    spots.add(
+      FlSpot((ay - 1).toDouble(), toplamGun == 0 ? 0 : toplamCiro / toplamGun),
+    );
   }
   return spots;
 }
@@ -1857,14 +1887,16 @@ class _YillikOrtalamaCiroCardState
             spacing: AppSizes.space8,
             runSpacing: AppSizes.space8,
             children: mevcutYillar
-                .map((yil) => _YilChip(
-                      yil: yil,
-                      renk: _yilRengi(yil),
-                      acik: _acikYillar.contains(yil),
-                      onTap: () => setState(() {
-                        if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
-                      }),
-                    ))
+                .map(
+                  (yil) => _YilChip(
+                    yil: yil,
+                    renk: _yilRengi(yil),
+                    acik: _acikYillar.contains(yil),
+                    onTap: () => setState(() {
+                      if (!_acikYillar.remove(yil)) _acikYillar.add(yil);
+                    }),
+                  ),
+                )
                 .toList(),
           ),
           const SizedBox(height: AppSizes.space16),
@@ -1916,9 +1948,7 @@ class _YillikOrtalamaCiroCardState
 
     final grafik = _YillikOrtalamaLineChart(veri: merged, acikYillar: acik);
     if (yukleniyor) {
-      return Stack(
-        children: [grafik, const _YukleniyorIpucu()],
-      );
+      return Stack(children: [grafik, const _YukleniyorIpucu()]);
     }
     return grafik;
   }
@@ -1994,17 +2024,21 @@ class _YillikOrtalamaLineChart extends StatelessWidget {
           show: true,
           border: Border(
             bottom: BorderSide(
-                color: AppColors.textMuted.withValues(alpha: 0.25)),
+              color: AppColors.textMuted.withValues(alpha: 0.25),
+            ),
             left: BorderSide(
-                color: AppColors.textMuted.withValues(alpha: 0.25)),
+              color: AppColors.textMuted.withValues(alpha: 0.25),
+            ),
           ),
         ),
 
         titlesData: FlTitlesData(
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
