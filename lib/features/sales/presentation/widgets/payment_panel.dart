@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +6,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/utils/tts_service.dart';
 import '../../application/barcode_focus_notifier.dart';
 import '../../application/payment_input_notifier.dart';
 import '../../application/sales_cart_notifier.dart';
@@ -376,52 +378,116 @@ class _HeroTotal extends StatelessWidget {
     final color = isReturnMode ? AppColors.danger : AppColors.primary;
     final rayColor = isReturnMode ? AppColors.danger : AppColors.gold;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          isReturnMode ? 'İADE TUTARI' : 'TOPLAM',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.8,
-            color: isReturnMode ? AppColors.danger : AppColors.textMuted,
-          ),
-        ),
-        const SizedBox(height: 2),
-        // Ray genişliği hero rakam genişliğine bağlanır (~%40) — sabit px yerine.
-        IntrinsicWidth(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                formatCurrency(amount),
+                isReturnMode ? 'İADE TUTARI' : 'TOPLAM',
                 style: TextStyle(
-                  fontSize: 38,
-                  fontWeight: FontWeight.w800,
-                  height: 1.05,
-                  letterSpacing: -0.5,
-                  color: color,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8,
+                  color: isReturnMode ? AppColors.danger : AppColors.textMuted,
                 ),
               ),
-              const SizedBox(height: AppSizes.space6),
-              // Altın aksan rayı — yalnızca hero tutarın altında belirir (~%40).
-              FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: 0.4,
-                child: Container(
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: rayColor,
-                    borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-                  ),
+              const SizedBox(height: 2),
+              // Ray genişliği hero rakam genişliğine bağlanır (~%40) — sabit px yerine.
+              IntrinsicWidth(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      formatCurrency(amount),
+                      style: TextStyle(
+                        fontSize: 38,
+                        fontWeight: FontWeight.w800,
+                        height: 1.05,
+                        letterSpacing: -0.5,
+                        color: color,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(height: AppSizes.space6),
+                    // Altın aksan rayı — yalnızca hero tutarın altında belirir (~%40).
+                    FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: 0.4,
+                      child: Container(
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: rayColor,
+                          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
+        if (kIsWeb) ...[
+          const SizedBox(width: AppSizes.space12),
+          _SpeakTotalButton(amount: amount),
+        ],
       ],
+    );
+  }
+}
+
+/// Hero toplamın yanındaki "İngilizce sesli oku" butonu — İngiliz bayrağı emoji
+/// ikonu (yeni bir asset/paket eklemeden platformlar arası tutarlı görünüm için
+/// emoji tercih edildi). Konuşma sırasında küçük bir yükleniyor göstergesine döner.
+class _SpeakTotalButton extends StatefulWidget {
+  final num amount;
+  const _SpeakTotalButton({required this.amount});
+
+  @override
+  State<_SpeakTotalButton> createState() => _SpeakTotalButtonState();
+}
+
+class _SpeakTotalButtonState extends State<_SpeakTotalButton> {
+  bool _speaking = false;
+
+  Future<void> _speak() async {
+    if (_speaking) return;
+    setState(() => _speaking = true);
+    try {
+      await speakAmountInEnglish(widget.amount);
+    } finally {
+      if (mounted) setState(() => _speaking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Toplamı İngilizce seslendir',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        onTap: _speak,
+        child: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.goldBorder),
+          ),
+          child: _speaking
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('🇬🇧', style: TextStyle(fontSize: 20)),
+        ),
+      ),
     );
   }
 }
