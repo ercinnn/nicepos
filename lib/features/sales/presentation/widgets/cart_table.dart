@@ -11,32 +11,94 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../products/data/repositories/product_repository.dart';
 import '../../application/sales_cart_notifier.dart';
 
-class CartTable extends ConsumerWidget {
+class CartTable extends ConsumerStatefulWidget {
   const CartTable({super.key});
 
+  // ─── Masaüstü sabit genişlikli tablo ─────────────────────────────────────
+  //
+  // Kolon genişlikleri (px): Seç 32 · İskonto 96 · Miktar 116 · Fiyat 160 ·
+  // Tutar 88 · Sil 40. Ürün sütunu kalan alanı alır; ancak en az _wProductMin
+  // korunur. Toplam genişlik panele sığmazsa tablo yatay kaydırılır (kırpma/
+  // çökme yok).
+  //
+  // İskonto sütunu eskiden 175px'lik satır içi alan idi; kompakt rozet + düzenleme
+  // dialog'una (_CompactDiscountCell) taşındığı için 96px'e indi → dar panelde
+  // ürün sütununa nefes kalır.
+  //
+  // Fiyat sütunu 160px'e genişletildi (KARAR v1.6): birim fiyat artık elle
+  // düzenlenebilir bir alan + yanında çıplak "Fiyat1 yap" radyosu (KARAR v1.6.1) /
+  // altında yeşil onay pill'i taşır.
+  //
+  // Seç sütunu (32px): çoklu satır seçimi için yuvarlak toggle — toplu %
+  // iskonto aksiyonunun (aşağıda _CartTableState) parçası. Tekil satır
+  // iskontosuna (_CompactDiscountCell) DOKUNMAZ.
+
+  static const double _wSelect     = 32;
+  static const double _wDisc       = 96;
+  static const double _wQty        = 116;
+  static const double _wPrice      = 160;
+  static const double _wTotal      = 88;
+  static const double _wDel        = 40;
+  static const double _wProductMin = 220; // ürün adının dikey karaktere çökmesini önler
+
+  static const TextStyle _headerStyle = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    color: AppColors.textSecondary,
+  );
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CartTable> createState() => _CartTableState();
+}
+
+class _CartTableState extends ConsumerState<CartTable> {
+  // ── Çoklu satır seçimi (yalnız toplu % iskonto aksiyonu için) ────────────
+  //
+  // Seçim, aktif müşteri sekmesindeki sepet kalemlerinin index'lerini tutar.
+  // Sekme değiştiğinde veya kalem sayısı değiştiğinde (ekleme/silme) index'ler
+  // artık güvenilir olmadığından seçim sessizce sıfırlanır.
+  final Set<int> _selected = {};
+  int? _lastActiveTab;
+  int? _lastItemCount;
+
+  void _toggle(int index) {
+    setState(() {
+      if (!_selected.remove(index)) _selected.add(index);
+    });
+  }
+
+  void _clearSelection() => setState(_selected.clear);
+
+  @override
+  Widget build(BuildContext context) {
     final salesState = ref.watch(salesCartProvider);
     final notifier = ref.read(salesCartProvider.notifier);
     final tab = salesState.active;
 
-    if (context.isMobile) {
-      return _buildMobileList(context, ref, tab, notifier);
+    if (_lastActiveTab != salesState.activeTab ||
+        _lastItemCount != tab.items.length) {
+      _lastActiveTab = salesState.activeTab;
+      _lastItemCount = tab.items.length;
+      _selected.clear();
     }
-    return _buildDesktopTable(context, ref, tab, notifier);
+
+    if (context.isMobile) {
+      return _buildMobileList(context, tab, notifier);
+    }
+    return _buildDesktopTable(context, tab, notifier);
   }
 
   // ─── Mobil kart listesi ──────────────────────────────────────────────────
 
   Widget _buildMobileList(
     BuildContext context,
-    WidgetRef ref,
     CustomerTabState tab,
     SalesCart notifier,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_selected.isNotEmpty) _buildMobileBulkBar(notifier),
         Expanded(
           child: tab.items.isEmpty
               ? const EmptyState(
@@ -53,6 +115,8 @@ class CartTable extends ConsumerWidget {
                     return _MobileCartItem(
                       item: item,
                       index: index,
+                      selected: _selected.contains(index),
+                      onToggleSelect: () => _toggle(index),
                       onQuantityChanged: (q) =>
                           notifier.updateItemQuantity(index, q),
                       onUnitPriceChanged: (p) =>
@@ -71,7 +135,7 @@ class CartTable extends ConsumerWidget {
           child: Row(
             children: [
               OutlinedButton.icon(
-                onPressed: () => _showAddMiscDialog(context, ref),
+                onPressed: () => _showAddMiscDialog(context),
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Muhtelif', style: TextStyle(fontSize: 12)),
               ),
@@ -149,36 +213,54 @@ class CartTable extends ConsumerWidget {
     );
   }
 
-  // ─── Masaüstü sabit genişlikli tablo ─────────────────────────────────────
-  //
-  // Kolon genişlikleri (px): İskonto 96 · Miktar 116 · Fiyat 160 · Tutar 88 · Sil 40
-  // Ürün sütunu kalan alanı alır; ancak en az _wProductMin korunur. Toplam genişlik
-  // panele sığmazsa tablo yatay kaydırılır (kırpma/çökme yok).
-  //
-  // İskonto sütunu eskiden 175px'lik satır içi alan idi; kompakt rozet + düzenleme
-  // dialog'una (_CompactDiscountCell) taşındığı için 96px'e indi → dar panelde
-  // ürün sütununa nefes kalır.
-  //
-  // Fiyat sütunu 160px'e genişletildi (KARAR v1.6): birim fiyat artık elle
-  // düzenlenebilir bir alan + yanında çıplak "Fiyat1 yap" radyosu (KARAR v1.6.1) /
-  // altında yeşil onay pill'i taşır.
-
-  static const double _wDisc       = 96;
-  static const double _wQty        = 116;
-  static const double _wPrice      = 160;
-  static const double _wTotal      = 88;
-  static const double _wDel        = 40;
-  static const double _wProductMin = 220; // ürün adının dikey karaktere çökmesini önler
-
-  static const TextStyle _headerStyle = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w600,
-    color: AppColors.textSecondary,
-  );
+  // ── Mobil toplu seçim çubuğu (aynı görsel dil, dar ekrana uygun kompakt) ──
+  Widget _buildMobileBulkBar(SalesCart notifier) {
+    return Container(
+      width: double.infinity,
+      color: AppColors.goldBg,
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space8),
+      child: Wrap(
+        spacing: AppSizes.space12,
+        runSpacing: AppSizes.space4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            '${_selected.length} ürün seçili',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => _showBulkPercentDialog(context, notifier),
+            icon: const Icon(Icons.percent, size: 15),
+            label: const Text('% İndirim', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.space8, vertical: AppSizes.space4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          TextButton(
+            onPressed: _clearSelection,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.space8, vertical: AppSizes.space4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Temizle', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildDesktopTable(
     BuildContext context,
-    WidgetRef ref,
     CustomerTabState tab,
     SalesCart notifier,
   ) {
@@ -192,11 +274,17 @@ class CartTable extends ConsumerWidget {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const fixed = _wDisc + _wQty + _wPrice + _wTotal + _wDel;
+              const fixed = CartTable._wSelect +
+                  CartTable._wDisc +
+                  CartTable._wQty +
+                  CartTable._wPrice +
+                  CartTable._wTotal +
+                  CartTable._wDel;
               const hPad = AppSizes.space12 * 2; // satır/başlık yatay iç boşluk
               final available = constraints.maxWidth;
               final room = available - fixed - hPad;
-              final productWidth = room >= _wProductMin ? room : _wProductMin;
+              final productWidth =
+                  room >= CartTable._wProductMin ? room : CartTable._wProductMin;
               final tableWidth = fixed + hPad + productWidth;
               final needsScroll = tableWidth > available + 0.5;
 
@@ -205,6 +293,8 @@ class CartTable extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // ── Toplu seçim çubuğu — yalnız en az bir satır seçiliyken ──
+                    if (_selected.isNotEmpty) _buildDesktopBulkBar(notifier),
                     _buildHeaderRow(productWidth),
                     const Divider(height: 1),
                     Expanded(
@@ -240,8 +330,46 @@ class CartTable extends ConsumerWidget {
           ),
         ),
         const Divider(height: 1),
-        _buildFooter(context, ref, tab, notifier),
+        _buildFooter(context, tab, notifier),
       ],
+    );
+  }
+
+  // ── Masaüstü toplu seçim çubuğu ────────────────────────────────────────────
+  Widget _buildDesktopBulkBar(SalesCart notifier) {
+    return Container(
+      color: AppColors.goldBg,
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space8),
+      child: Row(
+        children: [
+          Text(
+            '${_selected.length} ürün seçili',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: AppSizes.space12),
+          ElevatedButton.icon(
+            onPressed: () => _showBulkPercentDialog(context, notifier),
+            icon: const Icon(Icons.percent, size: 15),
+            label: const Text('Seçilenlere % İndirim Uygula'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.space12, vertical: AppSizes.space8),
+              textStyle: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: _clearSelection,
+            child: const Text('Seçimi Temizle'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -253,12 +381,14 @@ class CartTable extends ConsumerWidget {
           horizontal: AppSizes.space12, vertical: AppSizes.space8),
       child: Row(
         children: [
-          SizedBox(width: productWidth, child: const Text('Ürün', style: _headerStyle)),
-          SizedBox(width: _wDisc,  child: const Text('İskonto', style: _headerStyle)),
-          SizedBox(width: _wQty,   child: const Text('Miktar',  style: _headerStyle)),
-          SizedBox(width: _wPrice, child: const Text('Fiyat',   style: _headerStyle, textAlign: TextAlign.right)),
-          SizedBox(width: _wTotal, child: const Text('Tutar',   style: _headerStyle, textAlign: TextAlign.right)),
-          const SizedBox(width: _wDel),
+          // Seç sütunu — "tümünü seç" istenmedi, başlığı boş kalır.
+          const SizedBox(width: CartTable._wSelect),
+          SizedBox(width: productWidth, child: const Text('Ürün', style: CartTable._headerStyle)),
+          SizedBox(width: CartTable._wDisc,  child: const Text('İskonto', style: CartTable._headerStyle)),
+          SizedBox(width: CartTable._wQty,   child: const Text('Miktar',  style: CartTable._headerStyle)),
+          SizedBox(width: CartTable._wPrice, child: const Text('Fiyat',   style: CartTable._headerStyle, textAlign: TextAlign.right)),
+          SizedBox(width: CartTable._wTotal, child: const Text('Tutar',   style: CartTable._headerStyle, textAlign: TextAlign.right)),
+          const SizedBox(width: CartTable._wDel),
         ],
       ),
     );
@@ -274,6 +404,17 @@ class CartTable extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // ── Seç (çoklu satır seçimi — toplu % iskonto aksiyonu için) ──────
+          SizedBox(
+            width: CartTable._wSelect,
+            child: Center(
+              child: _RowSelectToggle(
+                key: ValueKey('row-select-$index'),
+                selected: _selected.contains(index),
+                onTap: () => _toggle(index),
+              ),
+            ),
+          ),
           // ── Ürün adı + barkod ───────────────────────────────────────────
           SizedBox(
             width: productWidth,
@@ -305,7 +446,7 @@ class CartTable extends ConsumerWidget {
           ),
           // ── İskonto (kompakt rozet → düzenleme dialog'u) ────────────────
           SizedBox(
-            width: _wDisc,
+            width: CartTable._wDisc,
             child: _CompactDiscountCell(
               value: item.discountValue,
               type: item.discountType,
@@ -315,7 +456,7 @@ class CartTable extends ConsumerWidget {
           ),
           // ── Miktar ───────────────────────────────────────────────────────
           SizedBox(
-            width: _wQty,
+            width: CartTable._wQty,
             child: _QuantityControl(
               key: ValueKey('qty-$index'),
               quantity: item.quantity,
@@ -324,7 +465,7 @@ class CartTable extends ConsumerWidget {
           ),
           // ── Birim fiyat (elle düzenlenebilir + "Fiyat1 yap") ─────────────
           SizedBox(
-            width: _wPrice,
+            width: CartTable._wPrice,
             child: _UnitPriceControl(
               key: ValueKey('price-$index'),
               unitPrice: item.unitPrice,
@@ -334,7 +475,7 @@ class CartTable extends ConsumerWidget {
           ),
           // ── Satır tutarı ─────────────────────────────────────────────────
           SizedBox(
-            width: _wTotal,
+            width: CartTable._wTotal,
             child: Text(
               formatCurrency(item.total),
               textAlign: TextAlign.right,
@@ -347,7 +488,7 @@ class CartTable extends ConsumerWidget {
           ),
           // ── Sil ──────────────────────────────────────────────────────────
           SizedBox(
-            width: _wDel,
+            width: CartTable._wDel,
             child: IconButton(
               icon: const Icon(Icons.delete_outline,
                   size: 18, color: AppColors.danger),
@@ -367,7 +508,6 @@ class CartTable extends ConsumerWidget {
   // hiçbir genişlikte toplamlar kırpılmaz (IntrinsicWidth + minWidth güvenlik ağı).
   Widget _buildFooter(
     BuildContext context,
-    WidgetRef ref,
     CustomerTabState tab,
     SalesCart notifier,
   ) {
@@ -430,8 +570,7 @@ class CartTable extends ConsumerWidget {
     );
   }
 
-  Future<void> _showAddMiscDialog(
-      BuildContext context, WidgetRef ref) async {
+  Future<void> _showAddMiscDialog(BuildContext context) async {
     final amountCtrl = TextEditingController();
     final noteCtrl = TextEditingController();
 
@@ -477,6 +616,86 @@ class CartTable extends ConsumerWidget {
     ref
         .read(salesCartProvider.notifier)
         .addMiscItem(amount, note: noteCtrl.text);
+  }
+
+  // ── Toplu % iskonto dialog'u ───────────────────────────────────────────────
+  //
+  // Mevcut _DiscountDialog %/₺ ikisini birden destekler — bu dialog KASITLI
+  // olarak SADECE yüzde alır (tip seçici YOK), seçili TÜM satırlara uygulanır.
+  // Tekil satır iskontosu (_CompactDiscountCell/_DiscountDialog) mekanizmasına
+  // dokunmaz; yalnızca aynı notifier metodunu (updateItemDiscount) döngüyle
+  // seçili her index için çağırır.
+  Future<void> _showBulkPercentDialog(
+      BuildContext context, SalesCart notifier) async {
+    final ctrl = TextEditingController();
+    final percent = await showDialog<num>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Seçili ${_selected.length} Ürüne % İndirim'),
+        content: SizedBox(
+          width: 240,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'İndirim Yüzdesi', suffixText: '%'),
+            onSubmitted: (_) => Navigator.of(dialogContext)
+                .pop(num.tryParse(ctrl.text.replaceAll(',', '.')) ?? 0),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Vazgeç')),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext)
+                .pop(num.tryParse(ctrl.text.replaceAll(',', '.')) ?? 0),
+            child: const Text('Uygula'),
+          ),
+        ],
+      ),
+    );
+    if (percent == null || percent <= 0) return;
+    // Dialog kapandıktan SONRA state güncellemesi yapılır (proje kuralı).
+    for (final index in _selected) {
+      notifier.updateItemDiscount(index, percent, DiscountType.percent);
+    }
+    _clearSelection();
+  }
+}
+
+// ── Satır seçim toggle'ı (çoklu satır seçimi, toplu % iskonto aksiyonu) ────
+//
+// Satırın EN SOLUNDA. Ürün formu vb. yerlerdeki "Fiyat1 yap" radyosuyla
+// (_UnitPriceControl._buildPrice1Radio) AYNI boş/dolu ikon çiftini kullanır
+// ama TAMAMEN farklı bir konumda ve işlevdedir — karıştırılmamalı.
+class _RowSelectToggle extends StatelessWidget {
+  final bool selected;
+  final VoidCallback onTap;
+  final double size;
+
+  const _RowSelectToggle({
+    super.key,
+    required this.selected,
+    required this.onTap,
+    this.size = 20,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSizes.space4),
+        child: Icon(
+          selected ? Icons.check_circle : Icons.radio_button_unchecked,
+          size: size,
+          color: selected ? AppColors.primary : AppColors.textMuted,
+        ),
+      ),
+    );
   }
 }
 
@@ -561,6 +780,9 @@ class _AddMiscRowState extends ConsumerState<_AddMiscRow> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Seç sütunu — muhtelif ekleme satırı seçilebilir bir sepet kalemi
+        // DEĞİL, yalnız kolon hizası korunsun diye boş bırakılır.
+        const SizedBox(width: CartTable._wSelect),
         SizedBox(
           width: widget.productWidth,
           child: Row(
@@ -606,6 +828,8 @@ class _AddMiscRowState extends ConsumerState<_AddMiscRow> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
+        // Seç sütunu boş (hizayı korur) — bkz. _buildCollapsed.
+        const SizedBox(width: CartTable._wSelect),
         // ── Ürün adı ─────────────────────────────────────────────────────
         SizedBox(
           width: widget.productWidth,
@@ -682,11 +906,13 @@ class _AddMiscRowState extends ConsumerState<_AddMiscRow> {
 
 // ── Mobil sepet kartı ─────────────────────────────────────────────────────
 //
-// [%15 Adet] [%65 İsim / Barkod · Fiyat] [%20 Tutar]
+// [Seç] [%15 Adet] [%65 İsim / Barkod · Fiyat] [%20 Tutar]
 
 class _MobileCartItem extends StatelessWidget {
   final dynamic item;   // CartItem
   final int index;
+  final bool selected;
+  final VoidCallback onToggleSelect;
   final ValueChanged<num> onQuantityChanged;
   final ValueChanged<num> onUnitPriceChanged;
   final void Function(num value, DiscountType type) onDiscountChanged;
@@ -695,6 +921,8 @@ class _MobileCartItem extends StatelessWidget {
   const _MobileCartItem({
     required this.item,
     required this.index,
+    required this.selected,
+    required this.onToggleSelect,
     required this.onQuantityChanged,
     required this.onUnitPriceChanged,
     required this.onDiscountChanged,
@@ -734,6 +962,13 @@ class _MobileCartItem extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            // ── Seç (çoklu satır seçimi — toplu % iskonto aksiyonu) ────
+            _RowSelectToggle(
+              key: ValueKey('row-select-$index'),
+              selected: selected,
+              onTap: onToggleSelect,
+              size: 18,
+            ),
             // ── %15: Adet (dokunulabilir) ──────────────────────────
             GestureDetector(
               onTap: () => _editQuantity(context),
