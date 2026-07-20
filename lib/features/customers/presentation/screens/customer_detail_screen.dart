@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,8 +9,10 @@ import '../../../../core/utils/responsive.dart';
 import '../../application/customers_provider.dart';
 import '../../data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
+import '../../../sales/data/models/sale_item.dart';
 import '../../../sales/data/repositories/sales_repository.dart';
 import '../../../sales/presentation/screens/sale_edit_screen.dart';
+import '../../../sales/presentation/widgets/sale_print.dart';
 import '../widgets/customer_form_dialog.dart';
 
 /// Tablo para/sayı hücreleri için tabular figür (hizalı rakam) stili.
@@ -30,6 +33,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
   DateTime? _from;
   DateTime? _to;
   bool _busy = false; // toplu/tekil silme sırasında çift-tıklamayı engeller
+  final Set<String> _selectedSaleIds = {}; // toplu yazdırma için seçili satışlar
 
   @override
   Widget build(BuildContext context) {
@@ -255,6 +259,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     Text('Alışverişler',
                         style: Theme.of(context).textTheme.titleMedium),
                     const Spacer(),
+                    if (kIsWeb && _selectedSaleIds.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () =>
+                                _printSelectedSales(salesAsync.value ?? const []),
+                        icon: const Icon(Icons.print_outlined, size: 18),
+                        label: Text('Seçilenleri Yazdır (${_selectedSaleIds.length})'),
+                      ),
                     if ((salesAsync.value ?? const []).isNotEmpty)
                       _deleteAllButton(
                           () => _deleteAllSales(salesAsync.value ?? const [])),
@@ -294,6 +307,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     Text('Alışverişler',
                         style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(width: 12),
+                    if (kIsWeb && _selectedSaleIds.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () =>
+                                _printSelectedSales(salesAsync.value ?? const []),
+                        icon: const Icon(Icons.print_outlined, size: 18),
+                        label: Text('Seçilenleri Yazdır (${_selectedSaleIds.length})'),
+                      ),
                     if ((salesAsync.value ?? const []).isNotEmpty)
                       _deleteAllButton(
                           () => _deleteAllSales(salesAsync.value ?? const [])),
@@ -334,6 +356,8 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                     sales: sales,
                     onTap: _openSaleEdit,
                     onDelete: _deleteSale,
+                    selectedIds: _selectedSaleIds,
+                    onToggleSelect: _toggleSaleSelection,
                   ),
                   loading: () => const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
                   error: (e, _) => Padding(padding: const EdgeInsets.all(24), child: Text('Hata: $e')),
@@ -590,6 +614,41 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     ref.invalidate(totalCustomerDebtProvider);
   }
 
+  void _toggleSaleSelection(String saleId, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedSaleIds.add(saleId);
+      } else {
+        _selectedSaleIds.remove(saleId);
+      }
+    });
+  }
+
+  /// Seçili satışları TEK bir A4 dokümanında (yalnız web) art arda yazdırır.
+  Future<void> _printSelectedSales(List<Sale> allSales) async {
+    if (_busy || _selectedSaleIds.isEmpty) return;
+    final selected = allSales.where((s) => _selectedSaleIds.contains(s.id)).toList()
+      ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
+    if (selected.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      final itemsBySaleId = <String, List<SaleItem>>{};
+      for (final s in selected) {
+        itemsBySaleId[s.id] = await SalesRepository().fetchItems(s.id);
+      }
+      final customerName =
+          ref.read(customerByIdProvider(widget.customerId)).valueOrNull?.name ?? '';
+      printMultipleSalesA4(
+        customerName: customerName,
+        sales: selected,
+        itemsBySaleId: itemsBySaleId,
+      );
+      setState(() => _selectedSaleIds.clear());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Widget _deleteAllButton(VoidCallback onPressed) {
     return TextButton.icon(
       onPressed: _busy ? null : onPressed,
@@ -661,6 +720,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
       return;
     }
     await _runDelete(() => SalesRepository().deleteSale(s.id), '${s.saleCode} silindi.');
+    if (mounted) setState(() => _selectedSaleIds.remove(s.id));
   }
 
   Future<void> _deleteAllSales(List<Sale> sales) async {
@@ -674,6 +734,9 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         await SalesRepository().deleteSale(s.id);
       }
     }, '${sales.length} satış silindi.');
+    if (mounted) {
+      setState(() => _selectedSaleIds.removeAll(sales.map((s) => s.id)));
+    }
   }
 
   Future<void> _deletePayment(CustomerPayment p) async {
@@ -887,10 +950,14 @@ class _SalesTable extends StatelessWidget {
   final List<Sale> sales;
   final void Function(Sale) onTap;
   final void Function(Sale) onDelete;
+  final Set<String> selectedIds;
+  final void Function(String saleId, bool selected) onToggleSelect;
   const _SalesTable({
     required this.sales,
     required this.onTap,
     required this.onDelete,
+    required this.selectedIds,
+    required this.onToggleSelect,
   });
 
   @override
@@ -918,6 +985,13 @@ class _SalesTable extends StatelessWidget {
                   horizontal: 12, vertical: AppSizes.space12),
               child: Row(
                 children: [
+                  // Seçim kutucuğu — toplu yazdırma için (kendi dokunma alanını
+                  // yönetir, satırın InkWell'iyle çakışmaz).
+                  Checkbox(
+                    value: selectedIds.contains(s.id),
+                    onChanged: (v) => onToggleSelect(s.id, v ?? false),
+                    activeColor: AppColors.primary,
+                  ),
                   // Sol: satış kodu + tarih
                   Expanded(
                     child: Column(
@@ -997,25 +1071,50 @@ class _SalesTable extends StatelessWidget {
     }
 
     // Masaüstü: DataTable yatay kaydırmalı
+    // Seçim kutucuğu manuel bir DataColumn ile eklenir (products_list_screen.dart'taki
+    // checkbox/toplu-seçim deseniyle birebir tutarlı) — DataTable'ın kendi otomatik
+    // showCheckboxColumn'u devre dışı bırakılır, aksi halde onSelectChanged zaten
+    // tanımlı olduğu için Flutter ayrıca kendi (etiketsiz) checkbox sütununu ekler ve
+    // iki checkbox üst üste biner.
+    final allSelected =
+        sales.isNotEmpty && sales.every((s) => selectedIds.contains(s.id));
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        showCheckboxColumn: false,
         headingRowColor: const WidgetStatePropertyAll(AppColors.goldBg),
         headingTextStyle: Theme.of(context).textTheme.labelMedium,
-        columns: const [
-          DataColumn(label: Text('Satış Kodu')),
-          DataColumn(label: Text('Tarih')),
-          DataColumn(label: Text('Tutar'), numeric: true),
-          DataColumn(label: Text('İskonto'), numeric: true),
-          DataColumn(label: Text('Ödenen'), numeric: true),
-          DataColumn(label: Text('Kalan Borç'), numeric: true),
-          DataColumn(label: Text('Ödeme Tipi')),
-          DataColumn(label: Text('')),
+        columns: [
+          DataColumn(
+            label: Checkbox(
+              value: allSelected,
+              tristate: selectedIds.isNotEmpty && !allSelected,
+              onChanged: (_) {
+                for (final s in sales) {
+                  onToggleSelect(s.id, !allSelected);
+                }
+              },
+              activeColor: AppColors.primary,
+            ),
+          ),
+          const DataColumn(label: Text('Satış Kodu')),
+          const DataColumn(label: Text('Tarih')),
+          const DataColumn(label: Text('Tutar'), numeric: true),
+          const DataColumn(label: Text('İskonto'), numeric: true),
+          const DataColumn(label: Text('Ödenen'), numeric: true),
+          const DataColumn(label: Text('Kalan Borç'), numeric: true),
+          const DataColumn(label: Text('Ödeme Tipi')),
+          const DataColumn(label: Text('')),
         ],
         rows: sales.map((s) {
           return DataRow(
             onSelectChanged: (_) => onTap(s),
             cells: [
+              DataCell(Checkbox(
+                value: selectedIds.contains(s.id),
+                onChanged: (v) => onToggleSelect(s.id, v ?? false),
+                activeColor: AppColors.primary,
+              )),
               DataCell(Text(s.saleCode)),
               DataCell(Text(formatDateTime(s.saleDate))),
               DataCell(Text(formatCurrency(s.totalAmount), style: _tabular)),
