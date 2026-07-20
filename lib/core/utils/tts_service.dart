@@ -76,7 +76,8 @@ Map<String, dynamic>? _firstMatch(
 Future<void> _ensureVoice() async {
   if (_voiceReady) return;
   await _tts.setPitch(0.85);
-  await _tts.setSpeechRate(0.45);
+  // Kullanıcı geri bildirimi: önceki hız (0.45) çok yavaştı — 2 katına çıkarıldı.
+  await _tts.setSpeechRate(0.9);
   await _tts.setLanguage('en-GB');
 
   final voices = await _loadVoicesWithRetry();
