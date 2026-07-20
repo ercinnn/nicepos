@@ -154,6 +154,53 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     yerine okunabilirlik önceliklidir).
   - **Kapsam:** yalnız `_HeroBand` (Anasayfa). Diğer hero'lara (Kasa, Müşteri, Raporlar)
     şimdilik uygulanmadı — beğenilirse aynı dil oraya da taşınabilir (ayrı KARAR gerekir).
+- **Anasayfa kart yüzey tutarlılığı (KARAR v1.17 — ONAYLANDI, kullanıcı isteği: "hero
+  tasarımını tüm ana sayfaya parça parça uygulayalım", kapsam kullanıcı tarafından
+  "sadece yüzey dili / kart stili" olarak daraltıldı):** Hero'nun kendine özgü öğeleri
+  (koyu lacivert gradyan dolgu, altın radyal parıltı, ışıltı animasyonu, altın ray)
+  KESİNLİKLE genişletilmedi — §4 "ekran başına tek hero" ve "altın ray yalnız hero
+  altında" kuralları AYNEN geçerli. Genişleyen şey yalnız **kart çerçevesi dili**:
+  - Anasayfadaki TÜM destek kartları (`_StatCard`, Günlük Satış Grafiği, Yıllık Ciro
+    Karşılaştırma, Yıllık Ortalama Ciro) artık **aynı** `AppSizes.cardDecoration()`
+    kullanır (beyaz zemin + ince `goldBorder` kenarlık + `cardShadow` + `radiusLg`).
+    Önceden iki yıllık grafik kartı bilinçli olarak kenarlıksız bırakılmıştı ("HERO
+    değil" gerekçesiyle) — bu istisna kaldırıldı; ince kart kenarlığı zaten §5 "altın
+    ekonomisi"nin İZİN VERİLEN listesinde ("ince kart kenarlığı"), yani bu bir yeni
+    altın kullanımı DEĞİL, var olan izinli kullanımın tutarlı uygulanmasıdır.
+  - **Yasak kalan (değişmedi):** kartlara koyu lacivert dolgu, gold ray/şerit, radyal
+    parıltı veya ışıltı animasyonu eklenmedi — bunların hepsi hero'nun münhasır §4
+    imzasıdır. Bu KARAR yalnız "kenarlık/gölge/radius tutarlılığı" kapsar.
+- **Stat kartları — ikon + kategorik renk şeridi + mini sparkline (KARAR v1.18 —
+  ONAYLANDI, kullanıcı isteği: hero dilini anasayfaya yaymanın devamı, kullanıcı
+  4 seçenekten en kapsamlısını seçti):** `_StatCardsRow`'daki 5 kart (Satış Adedi,
+  Aylık Ciro, Aylık Adet, Yıllık Ciro, Son 365 Günlük Ciro) açık zemin + altın
+  kenarlık (§4 v1.17) korunarak "dijital panel" hissi kazanır. **Altın KULLANILMAZ**
+  (ray/şerit altın olamaz, §4/§5 altın ekonomisi AYNEN geçerli) — kimlik rengi
+  kategorik palet + ikon ile taşınır. Bu, **yeni bir bileşen dili DEĞİL**, mevcut
+  "Ödeme türü butonu" desenininin (§5: "tür kimliği sol renk şeridi + ikon/etiket
+  ile taşınır") stat kartlarına uyarlanmasıdır.
+  - **Sol renk şeridi (ince, ~3px, kart yüksekliği boyunca):** kategorik, seri renk
+    paletinden (§1) ama **altın HARİÇ** — 5 karta sabit atama: Satış Adedi →
+    `primary` (lacivert) · Aylık Ciro → `success` (yeşil — ciro/kazanç anlamıyla zaten
+    örtüşüyor) · Aylık Adet → `pos` (çelik mavi) · Yıllık Ciro → `splitPayment` (mor)
+    · Son 365 Günlük Ciro → `primaryLight` (açık lacivert). `danger` bilinçli
+    DIŞARIDA bırakıldı — uygulamanın başka yerlerinde (borç/kritik stok) net bir
+    "sorun" anlamı taşıyor; bir ciro kartında kafa karıştırır.
+  - **İkon:** başlığın solunda küçük, metrikle ilgili bir ikon (nötr `textSecondary`
+    veya kartın kendi kategorik rengi — uygulayan ekran tasarımcısı ikiden birini
+    tutarlı seçer).
+  - **Mini sparkline:** değerin altında, eksensiz/gridsiz/dolgusuz ince (1.5px) çizgi
+    grafik, kartın kategorik rengiyle çizilir (KARAR v1.4 "seri renk paleti" ile aynı
+    "çizgi var, dolgu yok" kuralı). Veri kartın periyoduyla TAM örtüşmek zorunda
+    değildir (gerçek dashboard sparkline'ları gibi yönsel eğilim gösterir) — kaynak:
+    Satış Adedi/Aylık Adet → günlük satış ADEDİ (yeni `dailySalesCountProvider`,
+    `dailySalesProvider`'ın adet karşılığı), Aylık Ciro → `dailySalesProvider(8)`,
+    Yıllık Ciro → `currentYearMonthlyProvider` (cari yıl aylık seri), Son 365 Günlük
+    Ciro → `monthlySalesProvider(12)` (zaten tanımlı, dashboard'da kullanılmıyordu).
+  - **Bu bir HERO DEĞİL:** §4 tek-hero kuralı ihlal edilmez — sparkline/şerit/ikon
+    hero'nun gradyan+ışıltı+altın-ray yoğunluğunun çok altında, salt "kimlik + trend
+    okunabilirliği" için. Veri yoksa/yükleniyorsa sparkline sessizce gizlenir (kartın
+    geri kalanı zaten `Skeleton` ile yükleniyor durumunu gösteriyor).
 
 ---
 

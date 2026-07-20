@@ -1295,12 +1295,9 @@ class _YillikKarsilastirmaCardState
     final ikisiDeHata = currentAsync.hasError && historicalAsync.hasError;
 
     return Container(
-      // HERO değil: yalnızca gölge + yuvarlatma, altın kenarlık/ray YOK.
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-        boxShadow: AppSizes.cardShadow,
-      ),
+      // HERO değil, ray YOK — ama KARAR v1.17 ile diğer anasayfa kartlarıyla
+      // aynı çerçeve dili (ince altın kenarlık + gölge) kullanılır.
+      decoration: AppSizes.cardDecoration(),
       padding: const EdgeInsets.all(AppSizes.cardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1714,11 +1711,9 @@ class _YillikOrtalamaCiroCardState
     final ikisiDeHata = currentAsync.hasError && historicalAsync.hasError;
 
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-        boxShadow: AppSizes.cardShadow,
-      ),
+      // HERO değil, ray YOK — ama KARAR v1.17 ile diğer anasayfa kartlarıyla
+      // aynı çerçeve dili (ince altın kenarlık + gölge) kullanılır.
+      decoration: AppSizes.cardDecoration(),
       padding: const EdgeInsets.all(AppSizes.cardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
