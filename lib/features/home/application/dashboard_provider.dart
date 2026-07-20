@@ -60,6 +60,12 @@ Future<List<({DateTime date, num amount})>> dailySales(
         DailySalesRef ref, int days) =>
     ref.watch(dashboardRepositoryProvider).fetchDailySales(days);
 
+/// Son [days] günün günlük satış ADEDİ verileri (stat kartı sparkline'ı için).
+@riverpod
+Future<List<({DateTime date, int count})>> dailySalesCount(
+        DailySalesCountRef ref, int days) =>
+    ref.watch(dashboardRepositoryProvider).fetchDailySalesCount(days);
+
 /// Son [months] ayın aylık satış verileri.
 @riverpod
 Future<List<({DateTime date, num amount})>> monthlySales(

@@ -200,6 +200,35 @@ class DashboardRepository {
       ..sort((a, b) => a.date.compareTo(b.date));
   }
 
+  // ── Son N günün günlük satış ADEDİNİ getir (stat kartı sparkline'ı için) ──
+  Future<List<({DateTime date, int count})>> fetchDailySalesCount(
+      int days) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: days - 1));
+    final rows = await _fetchAllRows('sale_date', start: start);
+
+    final Map<String, int> grouped = {};
+    for (var d = 0; d < days; d++) {
+      final day = start.add(Duration(days: d));
+      final key =
+          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      grouped[key] = 0;
+    }
+    for (final row in rows) {
+      final dt = DateTime.parse(row['sale_date'] as String).toLocal();
+      final key =
+          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      if (grouped.containsKey(key)) {
+        grouped[key] = grouped[key]! + 1;
+      }
+    }
+    return grouped.entries
+        .map((e) => (date: DateTime.parse(e.key), count: e.value))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+  }
+
   // ── Cari yılın aylık satış tutarları (yalnız bu yıl) ──────────────────────
   // Yıllık karşılaştırma grafiğinin HIZLI ilk çizimi için: yalnız cari yıl
   // (`DateTime.now().year`) `sales_monthly_totals` görünümünden çekilir (yıl

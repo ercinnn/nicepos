@@ -398,6 +398,145 @@ class _DailySalesProviderElement
   int get days => (origin as DailySalesProvider).days;
 }
 
+String _$dailySalesCountHash() => r'3e01e1bbfa242bfb20b784e7b2aa2de7c89c05c4';
+
+/// Son [days] günün günlük satış ADEDİ verileri (stat kartı sparkline'ı için).
+///
+/// Copied from [dailySalesCount].
+@ProviderFor(dailySalesCount)
+const dailySalesCountProvider = DailySalesCountFamily();
+
+/// Son [days] günün günlük satış ADEDİ verileri (stat kartı sparkline'ı için).
+///
+/// Copied from [dailySalesCount].
+class DailySalesCountFamily
+    extends Family<AsyncValue<List<({DateTime date, int count})>>> {
+  /// Son [days] günün günlük satış ADEDİ verileri (stat kartı sparkline'ı için).
+  ///
+  /// Copied from [dailySalesCount].
+  const DailySalesCountFamily();
+
+  /// Son [days] günün günlük satış ADEDİ verileri (stat kartı sparkline'ı için).
+  ///
+  /// Copied from [dailySalesCount].
+  DailySalesCountProvider call(int days) {
+    return DailySalesCountProvider(days);
+  }
+
+  @override
+  DailySalesCountProvider getProviderOverride(
+    covariant DailySalesCountProvider provider,
+  ) {
+    return call(provider.days);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'dailySalesCountProvider';
+}
+
+/// Son [days] günün günlük satış ADEDİ verileri (stat kartı sparkline'ı için).
+///
+/// Copied from [dailySalesCount].
+class DailySalesCountProvider
+    extends AutoDisposeFutureProvider<List<({DateTime date, int count})>> {
+  /// Son [days] günün günlük satış ADEDİ verileri (stat kartı sparkline'ı için).
+  ///
+  /// Copied from [dailySalesCount].
+  DailySalesCountProvider(int days)
+    : this._internal(
+        (ref) => dailySalesCount(ref as DailySalesCountRef, days),
+        from: dailySalesCountProvider,
+        name: r'dailySalesCountProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$dailySalesCountHash,
+        dependencies: DailySalesCountFamily._dependencies,
+        allTransitiveDependencies:
+            DailySalesCountFamily._allTransitiveDependencies,
+        days: days,
+      );
+
+  DailySalesCountProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.days,
+  }) : super.internal();
+
+  final int days;
+
+  @override
+  Override overrideWith(
+    FutureOr<List<({DateTime date, int count})>> Function(
+      DailySalesCountRef provider,
+    )
+    create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: DailySalesCountProvider._internal(
+        (ref) => create(ref as DailySalesCountRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        days: days,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<List<({DateTime date, int count})>>
+  createElement() {
+    return _DailySalesCountProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is DailySalesCountProvider && other.days == days;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, days.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin DailySalesCountRef
+    on AutoDisposeFutureProviderRef<List<({DateTime date, int count})>> {
+  /// The parameter `days` of this provider.
+  int get days;
+}
+
+class _DailySalesCountProviderElement
+    extends AutoDisposeFutureProviderElement<List<({DateTime date, int count})>>
+    with DailySalesCountRef {
+  _DailySalesCountProviderElement(super.provider);
+
+  @override
+  int get days => (origin as DailySalesCountProvider).days;
+}
+
 String _$monthlySalesHash() => r'74a220501d7415d9b3bbebe0129a0aa8f0319088';
 
 /// Son [months] ayın aylık satış verileri.

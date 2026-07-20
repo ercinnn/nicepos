@@ -608,8 +608,31 @@ class _StatCardsRow extends ConsumerWidget {
     final ytdAsync = ref.watch(yearToDateRevenueProvider);
     final last365Async = ref.watch(last365DaysRevenueProvider);
 
+    // KARAR v1.18 — sparkline kaynakları (kartın periyoduyla birebir örtüşmek
+    // zorunda değil, yalnız yönsel eğilim gösterir). Veri yoksa/yükleniyorsa
+    // null → kart sparkline'ı sessizce gizler.
+    final dailyCountAsync = ref.watch(dailySalesCountProvider(8));
+    final dailyRevenueAsync = ref.watch(dailySalesProvider(8));
+    final currentYearAsync = ref.watch(currentYearMonthlyProvider);
+    final last12MonthsAsync = ref.watch(monthlySalesProvider(12));
+
+    final adetSparkline =
+        dailyCountAsync.valueOrNull?.map((e) => e.count.toDouble()).toList();
+    final ciroSparkline =
+        dailyRevenueAsync.valueOrNull?.map((e) => e.amount.toDouble()).toList();
+    final yillikCiroSparkline = currentYearAsync
+        .valueOrNull?[DateTime.now().year]
+        ?.sublist(0, DateTime.now().month)
+        .map((v) => v.toDouble())
+        .toList();
+    final son365Sparkline = last12MonthsAsync.valueOrNull
+        ?.map((e) => e.amount.toDouble())
+        .toList();
+
     // Destek kartları: hero (bugünkü ciro) zaten gösterildiği için TEKRAR
-    // edilmez. Kalan metrikler sakin kartlarda — semantik % rozeti dışında renk yok.
+    // edilmez. Kalan metrikler sakin kartlarda — semantik % rozeti dışında
+    // renk taşımaz; kimlik artık sol renk şeridi + ikon + sparkline ile
+    // taşınır (KARAR v1.18, altın KULLANILMAZ).
     final cards = [
       _StatCardData(
         baslik: 'Satış Adedi',
@@ -624,6 +647,9 @@ class _StatCardsRow extends ConsumerWidget {
           yesterdayAsync.valueOrNull?.count.toDouble(),
         ),
         karsilastirmaEtiketi: 'dünden',
+        icon: Icons.point_of_sale_outlined,
+        renk: AppColors.primary,
+        sparkline: adetSparkline,
       ),
       _StatCardData(
         baslik: 'Aylık Ciro',
@@ -638,6 +664,9 @@ class _StatCardsRow extends ConsumerWidget {
           lastMonthAsync.valueOrNull?.toDouble(),
         ),
         karsilastirmaEtiketi: 'geçen aydan',
+        icon: Icons.payments_outlined,
+        renk: AppColors.success,
+        sparkline: ciroSparkline,
       ),
       _StatCardData(
         baslik: 'Aylık Adet',
@@ -649,6 +678,9 @@ class _StatCardsRow extends ConsumerWidget {
         ),
         degisim: null, // aylık adet için geçen ay adet verisi yok
         karsilastirmaEtiketi: '',
+        icon: Icons.inventory_2_outlined,
+        renk: AppColors.pos,
+        sparkline: adetSparkline,
       ),
       _StatCardData(
         baslik: 'Yıllık Ciro',
@@ -660,6 +692,9 @@ class _StatCardsRow extends ConsumerWidget {
         ),
         degisim: null, // YTD karşılaştırması yok
         karsilastirmaEtiketi: '',
+        icon: Icons.calendar_month_outlined,
+        renk: AppColors.splitPayment,
+        sparkline: yillikCiroSparkline,
       ),
       _StatCardData(
         baslik: 'Son 365 Günlük Ciro',
@@ -671,6 +706,9 @@ class _StatCardsRow extends ConsumerWidget {
         ),
         degisim: null,
         karsilastirmaEtiketi: '',
+        icon: Icons.timeline_outlined,
+        renk: AppColors.primaryLight,
+        sparkline: son365Sparkline,
       ),
     ];
 
@@ -679,7 +717,10 @@ class _StatCardsRow extends ConsumerWidget {
         crossAxisCount: 2,
         crossAxisSpacing: AppSizes.space12,
         mainAxisSpacing: AppSizes.space12,
-        childAspectRatio: 1.5,
+        // KARAR v1.18: ikon + sol renk şeridi + sparkline eklendiği için
+        // dikey alan büyüdü — 1.5 taşma yapıyordu (widget testiyle
+        // yakalandı, flutter analyze görmez), 1.1'e düşürüldü.
+        childAspectRatio: 1.1,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         children: cards.map((c) => _StatCard(data: c)).toList(),
@@ -718,6 +759,9 @@ class _StatCardData {
   final String? asyncDeger; // null → yükleniyor
   final double? degisim; // null → hesaplanamadı
   final String karsilastirmaEtiketi; // örn. 'dünden', 'geçen aydan'
+  final IconData icon; // KARAR v1.18 — başlık yanı metrik ikonu
+  final Color renk; // KARAR v1.18 — kategorik kimlik rengi (altın HARİÇ)
+  final List<double>? sparkline; // KARAR v1.18 — null → sessizce gizlenir
 
   const _StatCardData({
     required this.baslik,
@@ -725,6 +769,9 @@ class _StatCardData {
     required this.asyncDeger,
     required this.degisim,
     required this.karsilastirmaEtiketi,
+    required this.icon,
+    required this.renk,
+    required this.sparkline,
   });
 }
 
@@ -738,65 +785,146 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final degisim = data.degisim;
+    final sparkline = data.sparkline;
 
+    // Dış Container'ın kenarlık/gölge/radius'u AppSizes.cardDecoration()'dan
+    // (§4 v1.17 tutarlılığı) — sol renk şeridi ClipRRect ile aynı radius'a
+    // kırpılır, aksi halde kartın yuvarlatılmış köşesinden taşar.
     return Container(
       decoration: AppSizes.cardDecoration(),
-      padding: const EdgeInsets.all(AppSizes.cardPadding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Üst satır: başlık + dönem pill ────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Flexible(
-                child: Text(
-                  data.baslik,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.cardRadius),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Sol kategorik renk şeridi (KARAR v1.18, altın DEĞİL) ─────
+            Container(width: 3, color: data.renk),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSizes.cardPadding),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Üst satır: ikon + başlık + dönem pill ───────────
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(data.icon, size: 14, color: data.renk),
+                              const SizedBox(width: AppSizes.space4),
+                              Flexible(
+                                child: Text(
+                                  data.baslik,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: AppSizes.space6),
+                        _DonemPill(donem: data.donem),
+                      ],
+                    ),
+                    // KARAR v1.18: ikon satırı + sparkline eklendiği için
+                    // dikey alan sıkılaştırıldı (space12 → space8) — mobil
+                    // grid kartında taşmayı önler (widget testiyle bulundu,
+                    // flutter analyze görmez).
+                    const SizedBox(height: AppSizes.space8),
+
+                    // ── Değer (Inter tabular) ───────────────────────────
+                    data.asyncDeger == null
+                        ? const Skeleton(width: 90, height: 22, radius: 6)
+                        // Dar kartta büyük tutarlar kırpılmasın: tek satır
+                        // kalır, sığmazsa kırpmak yerine ölçek düşürülür
+                        // (asla büyütülmez).
+                        : FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              data.asyncDeger!,
+                              maxLines: 1,
+                              softWrap: false,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ),
+
+                    // ── Mini sparkline (KARAR v1.18) ────────────────────
+                    if (sparkline != null && sparkline.length >= 2) ...[
+                      const SizedBox(height: AppSizes.space4),
+                      _MiniSparkline(values: sparkline, renk: data.renk),
+                    ],
+
+                    // ── Değişim rozeti ───────────────────────────────────
+                    if (degisim != null) ...[
+                      const SizedBox(height: AppSizes.space4),
+                      _DegisimBadge(
+                        yuzde: degisim,
+                        etiket: data.karsilastirmaEtiketi,
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              const SizedBox(width: AppSizes.space6),
-              _DonemPill(donem: data.donem),
-            ],
-          ),
-          const SizedBox(height: AppSizes.space12),
-
-          // ── Değer (Inter tabular) ─────────────────────────────────────
-          data.asyncDeger == null
-              ? const Skeleton(width: 90, height: 22, radius: 6)
-              // Dar kartta büyük tutarlar kırpılmasın: tek satır kalır,
-              // sığmazsa kırpmak yerine ölçek düşürülür (asla büyütülmez).
-              : FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    data.asyncDeger!,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                      fontFeatures: [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ),
-
-          // ── Değişim rozeti ────────────────────────────────────────────
-          if (degisim != null) ...[
-            const SizedBox(height: AppSizes.space8),
-            _DegisimBadge(
-              yuzde: degisim,
-              etiket: data.karsilastirmaEtiketi,
             ),
           ],
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Mini Sparkline (KARAR v1.18 — trend çizgisi, eksensiz/gridsiz/dolgusuz) ─
+
+class _MiniSparkline extends StatelessWidget {
+  final List<double> values;
+  final Color renk;
+
+  const _MiniSparkline({required this.values, required this.renk});
+
+  @override
+  Widget build(BuildContext context) {
+    final spots = [
+      for (var i = 0; i < values.length; i++) FlSpot(i.toDouble(), values[i]),
+    ];
+    // maxY sıfırsa (ör. tüm periyot boş) düz bir çizgi çizilebilsin diye
+    // 0 yerine 1 kullanılır — mevcut dashboard grafiklerindeki
+    // "maxY == 0 ? ... : ..." koruma desenine eş.
+    final maxVal = values.reduce(math.max);
+    return SizedBox(
+      height: 18,
+      child: LineChart(
+        LineChartData(
+          gridData: const FlGridData(show: false),
+          titlesData: const FlTitlesData(show: false),
+          borderData: FlBorderData(show: false),
+          lineTouchData: const LineTouchData(enabled: false),
+          minY: 0,
+          maxY: maxVal == 0 ? 1 : maxVal * 1.1,
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: renk,
+              barWidth: 1.5,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(show: false),
+            ),
+          ],
+        ),
       ),
     );
   }
