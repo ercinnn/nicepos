@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../core/constants/app_colors.dart';
+import '../../../application/products_provider.dart';
 import '../../../data/models/liste_gir/extracted_row.dart';
+import '../../../data/models/product.dart';
 import '../../../data/services/liste_gir/tr_number_parser.dart';
 
 /// Liste Gir önizleme/düzenleme ızgarası — çıkarılan satırlar burada elle
@@ -12,14 +15,14 @@ import '../../../data/services/liste_gir/tr_number_parser.dart';
 /// `products_list_screen.dart`'taki "yalnız dokunulan satır düzenlenir"
 /// performans optimizasyonuna burada gerek yok, tüm satırlar zaten her
 /// zaman düzenlenebilir.
-class ListeGirReviewGrid extends StatefulWidget {
+class ListeGirReviewGrid extends ConsumerStatefulWidget {
   final List<ExtractedRow> rows;
   final VoidCallback onRowsChanged;
 
   const ListeGirReviewGrid({super.key, required this.rows, required this.onRowsChanged});
 
   @override
-  State<ListeGirReviewGrid> createState() => _ListeGirReviewGridState();
+  ConsumerState<ListeGirReviewGrid> createState() => _ListeGirReviewGridState();
 }
 
 class _RowCtrls {
@@ -51,11 +54,12 @@ String _fmt(num v) {
   return v.toStringAsFixed(2);
 }
 
-class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
+class _ListeGirReviewGridState extends ConsumerState<ListeGirReviewGrid> {
   final Map<int, _RowCtrls> _ctrls = {};
   final TextEditingController _purchaseMultiplierCtrl = TextEditingController(text: '1');
   final TextEditingController _saleMultiplierCtrl = TextEditingController(text: '1');
   double _purchaseMultiplier = 1;
+  final Set<int> _sendingIndexes = {};
 
   _RowCtrls _ctrlsFor(int index) => _ctrls.putIfAbsent(index, () => _RowCtrls(widget.rows[index]));
 
@@ -119,6 +123,58 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
   void _addEmptyRow() {
     setState(() => widget.rows.add(ExtractedRow()));
     widget.onRowsChanged();
+  }
+
+  // Tek satırı, `liste_gir_screen.dart`'ın toplu `_save()` mantığının birebir
+  // aynısıyla (eşleşme → additive stok/replace fiyat güncelleme; eşleşmezse
+  // yeni ürün) tek başına Supabase'e gönderir. Barkod önizleme adımından beri
+  // elle değişmiş olabileceği için, `_save()` ile AYNI tazelik kuralına uyarak
+  // göndermeden hemen önce `fetchByBarcodes` ile tekrar sorgulanır — satırın
+  // olası bayat `existingProductId`/`existingStock` alanlarına güvenilmez.
+  Future<void> _sendRow(int index) async {
+    if (_sendingIndexes.contains(index)) return;
+    final row = widget.rows[index];
+    setState(() => _sendingIndexes.add(index));
+    try {
+      final repo = ref.read(productRepositoryProvider);
+      final barcode = row.barcode;
+      final existingByBarcode = barcode.isEmpty ? <String, Product>{} : await repo.fetchByBarcodes([barcode]);
+      final existing = barcode.isEmpty ? null : existingByBarcode[barcode];
+      if (existing != null) {
+        final merged = existing.copyWith(
+          stockQuantity: existing.stockQuantity + row.quantity,
+          purchasePrice: row.purchasePrice,
+          price1: row.salePrice,
+        );
+        await repo.update(existing.id, merged);
+      } else {
+        await repo.create(Product(
+          barcode: row.barcode.isEmpty ? null : row.barcode,
+          name: row.name.isEmpty ? '(İsimsiz Ürün)' : row.name,
+          stockQuantity: row.quantity,
+          purchasePrice: row.purchasePrice,
+          price1: row.salePrice,
+        ));
+      }
+      if (!mounted) return;
+      // Gönderim sırasında başka satırlar silinmiş/eklenmiş olabilir — bu
+      // satırın GÜNCEL index'ini nesne kimliğiyle tekrar bul (yalnız stale
+      // `index`'e güvenme).
+      final currentIndex = widget.rows.indexOf(row);
+      if (currentIndex != -1) {
+        _removeRow(currentIndex);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ürün sisteme yüklendi')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sendingIndexes.remove(index));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gönderilemedi: $e'), backgroundColor: AppColors.danger),
+      );
+    }
   }
 
   @override
@@ -285,11 +341,33 @@ class _ListeGirReviewGridState extends State<ListeGirReviewGrid> {
         ),
       )),
       DataCell(SizedBox(width: 190, child: _StatusBadge(row: row))),
-      DataCell(IconButton(
+      DataCell(_buildRowActions(index)),
+    ]);
+  }
+
+  Widget _buildRowActions(int index) {
+    final sending = _sendingIndexes.contains(index);
+    if (sending) {
+      return const SizedBox(
+        width: 20,
+        height: 20,
+        child: Padding(
+          padding: EdgeInsets.all(2),
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      IconButton(
+        icon: const Icon(Icons.cloud_upload_outlined, color: AppColors.success, size: 20),
+        tooltip: 'Tekil gönder',
+        onPressed: () => _sendRow(index),
+      ),
+      IconButton(
         icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
         tooltip: 'Satırı sil',
         onPressed: () => _removeRow(index),
-      )),
+      ),
     ]);
   }
 }
