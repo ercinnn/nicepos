@@ -6,12 +6,13 @@ import 'english_number_words.dart';
 /// önerdiği kullanım şekli — her çağrıda yeni örnek oluşturmak gerekmez).
 final FlutterTts _tts = FlutterTts();
 bool _voiceReady = false;
+bool _basicsApplied = false;
+Future<void>? _warmupFuture;
 
 /// Web Speech API'de `getVoices()` ASENKRON yüklenir — ilk çağrıda genelde BOŞ
 /// liste döner (tarayıcının `voiceschanged` olayı henüz ateşlenmemiştir). Kısa
 /// aralıklarla birkaç kez tekrar denenir; aksi halde hiç İngilizce ses
-/// bulunamadığı sanılıp yanlışlıkla sistem varsayılanına (ör. Türkçe ses) düşülür
-/// — "İngilizce metni Türkçe aksanla okuma" şikâyetinin kök nedeni budur.
+/// bulunamadığı sanılıp yanlışlıkla sistem varsayılanına (ör. Türkçe ses) düşülür.
 Future<List<Map<String, dynamic>>> _loadVoicesWithRetry() async {
   for (var attempt = 0; attempt < 10; attempt++) {
     try {
@@ -65,42 +66,102 @@ Map<String, dynamic>? _firstMatch(
   return null;
 }
 
-/// İngilizce (tercihen İngiliz + erkek) bir ses bulmaya çalışır. Öncelik sırası:
-/// en-GB erkek → en-GB (herhangi cinsiyet) → İngilizce erkek (herhangi bölge)
-/// → İngilizce (herhangi). Hiç İngilizce ses yoksa yalnızca dil kodu 'en-GB'
-/// bırakılır (motor kendi varsayılanını kullanır — nadir/beklenmeyen durum).
-///
-/// Ses listesi boş dönerse (ör. tarayıcı henüz yüklemediyse) `_voiceReady`
-/// SET EDİLMEZ — bir sonraki "sesli oku" tıklamasında yeniden denenir; kalıcı
-/// olarak yanlış/varsayılan sesle takılı kalınmaz.
-Future<void> _ensureVoice() async {
+/// Hızlı/yerel ayarlar (dil, perde, hız) — ağ/asenkron ses listesi beklemeden
+/// hemen uygulanabilir, gecikme içermez. Her çağrı ayrı ayrı korumalı: bazı
+/// tarayıcılar/platformlar bu metotlardan birini desteklemeyip hata atabilir —
+/// biri başarısız olsa bile diğerleri denenir, hiçbiri yukarı sızmaz.
+Future<void> _applyBasics() async {
+  if (_basicsApplied) return;
+  _basicsApplied = true;
+  try {
+    await _tts.setPitch(0.85);
+  } catch (_) {}
+  try {
+    await _tts.setSpeechRate(0.9);
+  } catch (_) {}
+  try {
+    await _tts.setLanguage('en-GB');
+  } catch (_) {}
+}
+
+/// En iyi İngilizce (tercihen İngiliz + erkek) sesi arka planda arar — ses
+/// listesinin yüklenmesi birkaç yüz milisaniye sürebilir (bkz. `_loadVoicesWithRetry`).
+/// Öncelik sırası: en-GB erkek → en-GB (herhangi cinsiyet) → İngilizce erkek
+/// (herhangi bölge) → İngilizce (herhangi). Ses listesi boş dönerse veya
+/// `setVoice` platformda desteklenmiyor/hata veriyorsa SESSİZCE vazgeçilir —
+/// motor kendi varsayılan sesiyle okumaya devam eder (hiçbir durumda `speak()`
+/// çağrısının önüne geçilmez, bkz. `speakAmountInEnglish`).
+Future<void> _resolveVoice() async {
   if (_voiceReady) return;
-  await _tts.setPitch(0.85);
-  // Kullanıcı geri bildirimi: önceki hız (0.45) çok yavaştı — 2 katına çıkarıldı.
-  await _tts.setSpeechRate(0.9);
-  await _tts.setLanguage('en-GB');
+  await _applyBasics();
+  try {
+    final voices = await _loadVoicesWithRetry();
+    if (voices.isEmpty) return;
 
-  final voices = await _loadVoicesWithRetry();
-  if (voices.isEmpty) return;
+    final chosen = _firstMatch(voices, (v) => _isBritish(v) && _isMale(v)) ??
+        _firstMatch(voices, _isBritish) ??
+        _firstMatch(voices, (v) => _isEnglish(v) && _isMale(v)) ??
+        _firstMatch(voices, _isEnglish);
 
-  final chosen = _firstMatch(voices, (v) => _isBritish(v) && _isMale(v)) ??
-      _firstMatch(voices, _isBritish) ??
-      _firstMatch(voices, (v) => _isEnglish(v) && _isMale(v)) ??
-      _firstMatch(voices, _isEnglish);
-
-  if (chosen != null) {
-    await _tts.setVoice({
-      'name': chosen['name'].toString(),
-      'locale': chosen['locale'].toString(),
-    });
+    if (chosen != null) {
+      await _tts.setVoice({
+        'name': chosen['name'].toString(),
+        'locale': chosen['locale'].toString(),
+      });
+    }
+  } catch (_) {
+    // Ses seçimi başarısız oldu (ör. bu tarayıcıda setVoice desteklenmiyor) —
+    // motorun varsayılan sesiyle devam edilecek, uygulamayı çökertmez.
+  } finally {
+    // Başarısız olsa bile tekrar tekrar aynı hatayı denemeyi durdur.
+    _voiceReady = true;
   }
-  _voiceReady = true;
+}
+
+/// Sesi ÖNCEDEN ısıtır — "sesli oku" butonunu içeren widget ilk oluşturulduğunda
+/// (`initState`) çağrılmalıdır, tıklama anında DEĞİL. Birden çok kez çağrılması
+/// güvenlidir (idempotent, aynı Future paylaşılır).
+///
+/// ⚠️ KRİTİK (deploy'da sessiz kalma bug'ının kök nedeni): bazı tarayıcılar
+/// `speechSynthesis.speak()`'i yalnızca kullanıcı jestiyle (tıklama) SENKRONA
+/// YAKIN bir akışta çağrılırsa kabul eder — `localhost` genelde bu konuda daha
+/// gevşektir (Chrome'un medya/otomatik-oynatma politikaları localhost'u ayrıcalıklı
+/// tutar), ama gerçek bir deploy origin'inde (ör. GitHub Pages) araya ses listesi
+/// arama gecikmesi (yüzlerce ms – birkaç sn) girerse çağrı SESSİZCE reddedilebilir.
+/// Bu yüzden ses arama işi tıklamadan ÖNCE (widget `initState`'inde) başlatılır;
+/// `speakAmountInEnglish` bu işi ASLA beklemez.
+///
+/// `_resolveVoice()` bir `async` fonksiyon olsa da Dart'ta ilk `await`'e kadarki
+/// kısmı SENKRON çalışır — o kısımda senkron bir hata oluşursa (nadir ama
+/// mümkün) bu çağrının kendisi (initState içinde, sarmalayıcısız) çöker. Bu
+/// yüzden burada da ayrıca try/catch var.
+void warmupTts() {
+  if (_warmupFuture != null) return;
+  try {
+    _warmupFuture = _resolveVoice();
+  } catch (_) {
+    _warmupFuture = Future.value();
+  }
 }
 
 /// Verilen TL tutarını İngilizce olarak sesli okur (ör. 20 → "twenty turkish lira").
+/// Ses seçimi henüz bitmediyse BEKLEMEZ (kullanıcı jesti bağlamını korumak için,
+/// bkz. `warmupTts` notu) — `warmupTts()` önceden çağrılmışsa bu noktada genelde
+/// zaten tamamlanmıştır; değilse motor o an elindeki varsayılan sesle okur.
 /// Ardışık çağrılarda önceki seslendirme kesilip yenisi başlar (üst üste binmez).
+///
+/// ⚠️ Asıl "hiç ses çıkmıyor" bug'ının kök nedeni: önceki sürümde ses
+/// seçimindeki (`setVoice`/`getVoices`) bir hata YAKALANMADIĞI için
+/// `_tts.speak()`'e HİÇ ulaşılamıyordu — hata konsola "Uncaught Error" olarak
+/// sessizce (kullanıcıya görünmeden) sızıyordu. Şimdi `speak()` çağrısı
+/// yukarıdaki tüm hazırlık adımlarından BAĞIMSIZ olarak her zaman denenir.
 Future<void> speakAmountInEnglish(num amount) async {
-  await _ensureVoice();
-  await _tts.stop();
+  warmupTts(); // henüz başlamadıysa ateşle-unut (idempotent, BEKLENMEZ)
+  try {
+    await _applyBasics(); // hızlı/yerel — gecikme yok, kullanıcı jestini bozmaz
+  } catch (_) {}
+  try {
+    await _tts.stop();
+  } catch (_) {}
   await _tts.speak(amountToEnglishWords(amount));
 }

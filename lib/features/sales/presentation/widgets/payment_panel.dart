@@ -453,11 +453,23 @@ class _SpeakTotalButton extends StatefulWidget {
 class _SpeakTotalButtonState extends State<_SpeakTotalButton> {
   bool _speaking = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Ses seçimini ÖNCEDEN ısıt (tıklamayı bekleme) — bkz. tts_service.dart
+    // `warmupTts` notu: deploy origin'lerinde tıklama anında başlayan asenkron
+    // ses arama, kullanıcı jesti bağlamını bozup çağrıyı sessizce iptal ettirebilir.
+    warmupTts();
+  }
+
   Future<void> _speak() async {
     if (_speaking) return;
     setState(() => _speaking = true);
     try {
       await speakAmountInEnglish(widget.amount);
+    } catch (_) {
+      // Platform TTS çağrısı başarısız oldu — konsolu "uncaught" hatayla
+      // kirletmeden sessizce yut, kullanıcıya yalnızca buton eski haline döner.
     } finally {
       if (mounted) setState(() => _speaking = false);
     }
