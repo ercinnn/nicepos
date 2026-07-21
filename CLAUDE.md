@@ -1,28 +1,16 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Bu dosya, Claude Code'a bu depoda çalışırken rehberlik eder.
 
-## ⚑ Oturum Başlangıcı — Tasarım (ÖNCE BUNU OKU)
+## Agent'lar
 
-Bu proje **tasarım-lideri** agent mimarisiyle yürür (varsayılan agent: `tasarim-lideri`,
-bkz. `.claude/settings.json`). Her tasarım oturumuna şu sırayla başla:
+`.claude/agents/` altında 4 özel agent tanımlı:
+- **`tasarim-lideri`** — tasarım yönü/token kararları verir, `design/design-tokens.md`'nin tek sahibi. Kod yazmadan önce görsel bir karar gerekiyorsa buradan geçer.
+- **`ekran-tasarimcisi`** — `tasarim-lideri`nin onayladığı yönü Flutter koduna uygular (alt-agent).
+- **`gorsel-elestirmen`** — responsive/token uygunluğunu QA eder, kod yazmaz (alt-agent).
+- **`yazilim-uzmani`** — tasarım dışı somut görevler (bug fix, özellik, refactor) için genel amaçlı agent.
 
-1. **`design/design-tokens.md`** — tek doğru kaynak (TEK SOURCE OF TRUTH). Palet, tipografi,
-   spacing ve **imza öğesi (Hero Tutar + Altın Ray)** burada. Durum: **v1 ONAYLANDI** +
-   §5'e "Ödeme türü butonu" ve "Altın ekonomisi" maddeleri eklendi.
-2. **Memory'i oku** (kaldığın yer + sıradaki iş burada tutulur):
-   - `memory/MEMORY.md` (indeks)
-   - `memory/design-agent-workflow.md` (tasarım turunun güncel ilerleme durumu)
-
-**Güncel durum (özet):** Satış ekranı tasarımı **bitti** (2 görsel QA turu PASS + masaüstü
-sepet tablosu responsive kırılması düzeltildi). 🔴 **Sıradaki ilk iş:** son doğrulama QA
-turunu (`gorsel-elestirmen`) tekrar çalıştır — **1280/1366/1440px** responsive teyidi +
-`flutter analyze`. Ardından sıradaki ekran: **satış grafikleri**. Detaylar memory'de.
-
-> Kural: kod yazmadan önce yön ve token kararı `tasarim-lideri` üzerinden geçer; ekran
-> tasarımcıları token'ı okur ama değiştirmez.
-
-## Commands
+`design/design-tokens.md` tasarım sisteminin tek doğru kaynağıdır (palet, tipografi, spacing, §4 imza öğesi: Hero Tutar + Altın Ray, §5 bileşen notları + KARAR geçmişi). Ekran tasarımcıları bu dosyayı okur, değiştirmez.
 
 ## Supabase Kimlik Bilgileri
 
@@ -34,8 +22,8 @@ SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 ## Commands
 
 ```powershell
-# Yerel geliştirme — web
-flutter run -d chrome `
+# Yerel geliştirme — web (bu makinede `-d chrome` başarısız oluyor, web-server kullan)
+flutter run -d web-server --web-port=8765 `
   --dart-define=SUPABASE_URL=https://maogkrllltlxkfdwfsdj.supabase.co `
   "--dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hb2drcmxsbHRseGtmZHdmc2RqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MDk3NjQsImV4cCI6MjA5NzA4NTc2NH0.BsPCU9Hx1OuMf-JI7TU4I6SRuSKsLcmL2MIpQc2gKp0"
 
@@ -48,11 +36,13 @@ flutter analyze              # Lint / statik analiz
 flutter test                 # Tüm testleri çalıştır
 dart run build_runner build --delete-conflicting-outputs  # Riverpod kod üretimi
 
-# GitHub Pages deploy
+# GitHub Pages deploy — yeni bir paket eklendiyse (pubspec.yaml değiştiyse) ÖNCE
+# `flutter clean` + `flutter pub get` çalıştır (bkz. Deploy bölümündeki MissingPluginException notu)
 flutter build web --release --base-href /nicepos/ `
   --dart-define=SUPABASE_URL=https://maogkrllltlxkfdwfsdj.supabase.co `
   "--dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hb2drcmxsbHRseGtmZHdmc2RqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MDk3NjQsImV4cCI6MjA5NzA4NTc2NH0.BsPCU9Hx1OuMf-JI7TU4I6SRuSKsLcmL2MIpQc2gKp0"
-# Sonra: Remove-Item -Recurse -Force docs; Copy-Item -Recurse build\web docs; git add docs; git commit; git push
+# Sonra: Remove-Item -Recurse -Force docs; Copy-Item -Recurse build\web docs; git add docs build; git commit
+# Push kullanıcının kendisi tarafından yapılır (bkz. Deploy bölümü)
 
 # Android release APK
 flutter build apk --release `
@@ -63,12 +53,7 @@ flutter build apk --release `
 
 ## Ortam Değişkenleri
 
-`.env` kullanılmaz. Supabase değerleri dart-define ile build'e gömülür:
-
-1. **Yerel geliştirme:** `flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`
-2. **Web deploy / APK:** `flutter build ... --dart-define=...` ile derleme anında gömülür
-
-`lib/core/supabase/supabase_config.dart` — `String.fromEnvironment()` ile okur, eksikse `ConfigMissingScreen` gösterir.
+`.env` kullanılmaz. Supabase değerleri dart-define ile build'e gömülür (yerel `flutter run` ve `flutter build` aynı iki değişkeni ister). `lib/core/supabase/supabase_config.dart` — `String.fromEnvironment()` ile okur, eksikse `ConfigMissingScreen` gösterir.
 
 ## Platformlar
 
@@ -77,7 +62,7 @@ flutter build apk --release `
 | Web (GitHub Pages) | ✅ | `docs/` klasörü, base-href `/nicepos/` |
 | Android APK | ✅ | `android/` klasörü mevcut, INTERNET + CAMERA izinleri |
 
-**Gradle heap:** `android/gradle.properties` → `-Xmx3G` (8GB RAM makine için düşürüldü, OOM crash önlenir)
+**Gradle heap:** `android/gradle.properties` → `-Xmx3G` (8GB RAM makine için düşürüldü, OOM crash önlenir).
 
 ## Mimari
 
@@ -88,448 +73,117 @@ lib/
   core/
     constants/     # AppColors, AppSizes
     theme/         # app_theme.dart + app_theme.g.dart (Riverpod provider)
-    utils/
-      formatters.dart
-      responsive.dart   # isMobile (<650px), isDesktop extension on BuildContext
+    utils/         # formatters.dart, responsive.dart (isMobile <650px / isDesktop)
     supabase/      # SupabaseConfig, supabaseClientProvider
   app/             # Router, AppScaffold (web: sidebar + canlı saat; mobil: Drawer + BottomNav)
   features/
     auth/          # Login, ConfigMissingScreen
     home/          # Anasayfa — kısayol kart grid + Dashboard (stat kartları + grafikler)
-    products/      # Ürünler, Ürün Grupları
-    customers/     # Müşteri listesi, detay (geçmiş işlem yönetimi), ödeme
+    products/      # Ürünler, Ürün Grupları, Liste Gir
+    customers/     # Müşteri listesi, detay (geçmiş işlem yönetimi + toplu yazdırma), ödeme
     sales/         # Satış ekranı — 5 sekme, sepet, ödeme paneli, hızlı ürünler
     reports/       # Günlük / Tarihsel / Ürün raporları (3 sekme)
-    labels/        # Etiket — raf etiketi A4 yazdırma (24-hane barkod + Code128 + logo)
+    labels/        # Etiket — raf etiketi A4 yazdırma
     kasa/          # Kasa — gelir-gider defteri + mutabakat + firma giderleri
 ```
 
-### Responsive Tasarım
-
-Breakpoint: `lib/core/utils/responsive.dart`
-- `context.isMobile` → genişlik < 650px
-- `context.isDesktop` → genişlik ≥ 650px
-
-**AppScaffold:**
-- Desktop: daraltılabilir sol sidebar (220px / 56px) + üst bar'da **canlı tarih+saat** (`_LiveClock`, her saniye `Timer.periodic`; eski arama kutusunun yerinde) · e-posta · Çıkış
-- Mobil: AppBar + `Drawer` (tüm nav) + `BottomNavigationBar` (4 ana sekme)
-
 ### Tasarım Sistemi
 
-Tek kaynak: `lib/core/theme/app_theme.dart`
-- **`appThemeProvider`** — `@Riverpod(keepAlive: true)`
-- **Palet:** Beyaz arka plan, lacivert (#1B2A4A) butonlar, altın (#D4B86A) kenarlıklar
-- Renk sabitleri: `lib/core/constants/app_colors.dart`
+Tek kaynak: `lib/core/theme/app_theme.dart` (`appThemeProvider`, `@Riverpod(keepAlive: true)`). Palet: beyaz zemin, lacivert (#1B2A4A) butonlar, altın (#D4B86A) kenarlıklar — sabitler `lib/core/constants/app_colors.dart`. Detaylı token/karar geçmişi: `design/design-tokens.md`.
 
 ### State Yönetimi — Riverpod Generator
 
-TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` annotation ile üretilir. Her dosyada `part '...g.dart'` direktifi zorunludur.
+TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` ile üretilir; her dosyada `part '...g.dart'` zorunlu. Dashboard provider'ları (`todaySummary`, `dailySales(days)`, `currentYearMonthly`, `historicalYearly` vb.) **autoDispose** — Android'de soğuk açılışta ilk sorgu boş dönerse `keepAlive` bunu kalıcı dondururdu (yaşanmış bug), bu yüzden hepsi autoDispose. `salesCartProvider`/`paymentInputProvider`/`productColumnsProvider`/`labelSheetProvider` gibi UI-durumu tutan provider'lar `keepAlive`.
 
-| Provider | Tür | Açıklama |
-|---|---|---|
-| `appThemeProvider` | `keepAlive` | MaterialApp teması |
-| `salesCartProvider` | `keepAlive Notifier` | 5 müşteri sekmesi, sepet, iskonto |
-| `paymentInputProvider` | `keepAlive Notifier` | Ödeme modu seçimi |
-| `productColumnsProvider` | `keepAlive Notifier` | Ürün tablosu görünür kolonlar |
-| `reportRepositoryProvider` | `keepAlive` | Rapor repository |
-| `dailyReportProvider` | `autoDispose family` | Günlük rapor |
-| `dashboardRepositoryProvider` | `autoDispose` | Dashboard repository |
-| `todaySummaryProvider` / `yesterdaySummaryProvider` / `monthSummaryProvider` / `lastMonthRevenueProvider` | `autoDispose` | Dashboard stat kartları |
-| `yearToDateRevenueProvider` / `last365DaysRevenueProvider` | `autoDispose` | "Yıllık Ciro" (YTD) / "Son 365 Günlük Ciro" kartları — `sales_revenue_between` RPC (bkz. Veritabanı notu) |
-| `dailySalesProvider(days)` | `autoDispose family` | Dashboard günlük satış grafiği (8/15/30 gün). `monthlySalesProvider` hâlâ tanımlı ama dashboard'da artık kullanılmıyor |
-| `currentYearMonthlyProvider` / `historicalYearlyProvider` | `autoDispose` | Yıllık aylık toplamlar (cari yıl / geçmiş yıllar) — hem "Yıllık Ciro Karşılaştırma" hem "Yıllık Ortalama Ciro" grafiği bu ikisini paylaşır. **ÖNCEDEN `keepAlive` idi** — mobilde soğuk açılışta kalıcı-sıfır bug'ına yol açtığı için `dailySalesProvider` ile birlikte autoDispose'a çevrildi (bkz. Dashboard notu) |
-| `customerSalesProvider(query)` / `customerPaymentsProvider(id)` | `autoDispose family` | Müşteri geçmiş işlemleri |
+## Satış Akışı
 
-### Satış Akışı
+`SalesCart` (Riverpod notifier, `sales_cart_notifier.dart`) 5 müşteri sekmesini yönetir (`SalesState.activeTab` + `List<CustomerTabState>`).
 
-`SalesCart` (Riverpod notifier) 5 müşteri sekmesini yönetir.
-
-**Canlı ürün arama (`_LiveProductSearchField`, `sales_screen.dart`):** Üstteki uzun arama
-çubuğu hem web hem mobilde. Tam barkod okutulup Enter'a basılınca ürün doğrudan sepete eklenir
-(`onSubmitted` → `_onBarcodeSubmitted`). Kullanıcı harf/rakam yazdıkça (250 ms debounce) girilen
-metni **içeren** ürünler çubuğun altında açılan canlı listede gösterilir (`OverlayPortal` +
-`CompositedTransformFollower`; `productRepository.fetchAll(query)` substring + Türkçe-duyarlı).
-Listeye dokunmak `TextFieldTapRegion` ile odağı düşürmeden seçimi işler → sepete ekler, alanı
-temizler, odağı geri verir.
-
-**Hızlı ürünler grup sekmeleri (`quick_products_panel.dart`):** Grup (kategori) sekmeleri yatay
-kaydırma yerine **`Wrap`** ile dizilir — sığmayan sekmeler alt satıra geçer (`_GroupChip`).
-
-**Mobil satış ekranı:**
-- Barkod alanı sağında kamera butonu (`mobile_scanner` paketi)
-- Kamera açıldığında `BarcodeScannerModal` (tam ekran, torch + kamera çevirme)
-- Sepet: kart listesi — adet kutusuna tıkla → dialog; sola kaydır → sil
-- `Ödeme Al` butonu → `DraggableScrollableSheet` içinde `PaymentPanel`
-- Müşteri sekmeleri: `SingleChildScrollView(horizontal)` ile kaydırılabilir
-
-**Sepet miktar kontrolü (`cart_table.dart`):** Miktar kutusunun solunda kırmızı `−`, sağında lacivert `+` butonu (−1/+1, min 1). Kutuya yazılan değer her tuş vuruşunda satır tutarını **anında** günceller (ondalık destekli, ör. 2.50). Masaüstü: satır içi; mobil: adet kutusuna dokun → dialog (içinde canlı toplam + −/+).
-
-İskonto: `DiscountType.percent` veya `DiscountType.tl` (enum `cart_item.dart`), hem satır hem sepet bazında.
-
-Ödeme tamamlama: `SalesRepository.completeSale()` → RPC → sales + sale_items insert → stok düşür → borç hareketi. `sales` kaydına `discount_percent`, `discount_amount` (kesin TL) ve `discount_type` yazılır.
+- **Canlı ürün arama:** barkod okutup Enter → doğrudan sepete ekler. Yazı yazınca (250ms debounce) `OverlayPortal` ile canlı öneri listesi açılır (Türkçe-duyarlı substring arama).
+- **Sepet (`cart_table.dart`):** satır bazlı %/₺ iskonto (`_CompactDiscountCell`) + sepet geneli iskonto. **Çoklu seçim + toplu %iskonto:** her satırın solunda yuvarlak seçim ikonu (`_RowSelectToggle`); seçim varken üstte "Seçilenlere % İndirim Uygula" barı belirir, yalnız YÜZDE tipinde iskonto uygular ve yalnız seçili satırları etkiler (mevcut tekil %/₺ iskontodan ayrı bir akış). Seçim `Set<int>` index bazlı, sekme değişince veya satır sayısı değişince otomatik temizlenir.
+- **Birim fiyat:** elle düzenlenebilir + yanında "Fiyat1 yap" radyosu (`products.price1`'i kalıcı günceller).
+- **Mobil:** kamera barkod okuma, sepet kart listesi (sola kaydır → sil), ödeme `DraggableScrollableSheet`.
+- **Ödeme paneli (`payment_panel.dart`) — hero TOPLAM:** ekranın tek imza öğesi (iri tutar + altın ray). Yanında (yalnız web, `kIsWeb`) 🇬🇧 ikonlu buton — toplamı İngilizce sesli okur (`flutter_tts`, `tts_service.dart` + `english_number_words.dart`). Erkek ses platform bazlı best-effort (kesin garanti yok); `speak()` çağrısı öncesindeki her hazırlık adımı (`setPitch/setVoice/getVoices`) ayrı try/catch korumalı — biri hata verse bile `speak()`'e her zaman ulaşılır.
+- **Ödeme tamamlama:** `SalesRepository.completeSale()` → RPC → sales + sale_items insert → stok düşür → borç hareketi.
 
 ### Satış Düzenleme & Silme (`SaleEditScreen`)
 
-Rapor ekranlarından (günlük/tarihsel/ürün) **ve müşteri detayından** bir satışa tıklayınca açılır; kalemleri + iskontoyu + **ödeme türünü** düzenler.
-- **İskonto:** TL (₺) / yüzde (%) `SegmentedButton` ile düzenlenir; **Ara Toplam + İskonto + İndirimli Toplam** birlikte gösterilir. İskonto **birebir** saklanır (bkz. Veritabanı notu).
-- **Ödeme türü:** Nakit / Pos / Açık Hesap / Parçalı `_PaymentTypeButton` ile seçilir (satış ekranı `payment_panel.dart` buton dili birebir tekrar; design-tokens §5 — nötr beyaz zemin + sol renk şeridi, seçiliyken türün renginde dolgu). Parçalı seçiliyken "Nakit Tutarı" + "Kart/POS Tutarı" ayrı girilir. Net toplam (`_netTotal`) seçili türe göre yeniden dağıtılır: nakit→cash=net · pos→card=net · açık hesap→debt=net · parçalı→cash/card girilen, debt=(net−paid).clamp(0,∞). "Kalan Borç" önizlemesi borç varsa `AppColors.danger` ile gösterilir. Hem web (sağ kolon) hem mobil (alt çubuk). `updateSale`'e `paymentType` (+ `customerId`, `saleCode`) geçer.
-- **Borç mutabakatı (`updateSale`):** `sales.payment_type` güncellenir. Önce bu satışa ait otomatik borç hareketi silinir (`customer_payments.delete().eq('sale_id', saleId)`) — ödeme türü değişince (ör. açık hesap → nakit) hayalet borç kalmaz. Sonra `customerId != null && remainingDebt > 0` ise yeni `borc` hareketi eklenir (`completeSale`/`deleteSale` ile tutarlı; müşteri yoksa borç sadece `sales.remaining_debt`'te kalır).
-- **Barkod gösterimi:** Satılan ürünlerin barkodu görünür (web: tabloda **Barkod** kolonu; mobil: ürün adı altında). `SaleItem.barcode` alanı `sale_items` tablosunda saklanmaz — `fetchItems` sorgusunda `products(barcode)` join'i ile gelir (muhtelif kalemlerde null).
-- **Yazdır (yalnızca web):** Masaüstü dialog'da `kIsWeb` korumalı **Yazdır** butonu → A4 dikey sepet detayını yeni pencerede açıp otomatik yazdırır. `sale_print.dart` conditional export: `sale_print_web.dart` (`package:web` Blob URL + `<body onload>` print) / `sale_print_stub.dart` (mobil no-op). Excel export ile aynı desen.
-- **Satışı Sil:** `SalesRepository.deleteSale()` → stok iadesi (`increment_product_stock` RPC) + satışa bağlı `customer_payments` (borç) silme + sale_items/sales silme. Çağıran ekran `updated == true` ile listeyi yeniler.
+Rapor ekranlarından ve müşteri detayından açılır; kalem/iskonto/ödeme türünü düzenler. İskonto TL/%-birebir saklanır (yuvarlama farkı olmaz). Ödeme türü değişince (`updateSale`) önce otomatik borç hareketi silinir, sonra kalan borca göre yeniden eklenir — hayalet borç kalmaz. Web'de **Yazdır** (`sale_print.dart` conditional export) A4 sepet detayını yeni pencerede açıp otomatik yazdırır. **Satışı Sil** stok iadesi + bağlı borç hareketi + kayıtları siler.
 
-### Dashboard (Anasayfa)
+## Dashboard (Anasayfa)
 
-`lib/features/home/.../widgets/dashboard_section.dart` — kısayol kartlarının altında:
-- **Hero bandı (KARAR v1.15/v1.16 — design-tokens §4 sonu):** bugünkü ciro artık düz beyaz kart
-  değil, 3 duraklı lacivert gradyan (`primary → primaryDark → primaryDeep`) + sağ-üst köşede
-  asimetrik altın parıltı + ince ışık kaması üzerinde beyaz tabular rakam + dünden % değişim rozeti
-  (`_DegisimBadgeOnDark`, camsı/koyu-zemin varyantı — beyaz zemindeki `_DegisimBadge`'den AYRI).
-  Altın ray artık rakamın **TAM genişliği** kadar (`CrossAxisAlignment.stretch`), sona doğru
-  beyaza dönüp saydamlaşır. Masaüstünde sağda "SATIŞ ADEDİ" mini-istatistiği (mobilde gizli).
-  - **Işıltı/animasyon (`_HeroBandState`, `ConsumerStatefulWidget` + `SingleTickerProviderStateMixin`):**
-    TEK `AnimationController` (10sn döngü, `..repeat()`) kart geneli yavaş ışık taraması + ray
-    üstü dolaşan ışık huzmesi + ray parıltı nabzı + 7 minik parıltı noktasının HEPSİNİ besler —
-    her efekt kendi ticker'ını AÇMAZ, `_ctrl.value`'dan faz hesabıyla (`_pulseWave` helper'ı,
-    farklı periyotlar için `(controller.value * (10/periyot)) % 1.0`) türetilir. Performans +
-    tutarlılık için bu desen korunmalı; yeni bir "nabız/tarama" efekti eklenirse AYRI bir
-    `AnimationController` AÇILMAMALI, mevcut `_ctrl`'den faz türetilmeli.
-  - **Erişilebilirlik:** `MediaQuery.of(context).disableAnimations` (azaltılmış hareket) açıksa
-    TÜM animasyonlar durur, sabit-ama-güçlü bir ışıltı görünümüne düşer (`_AnimatedRail`'in
-    `reduceMotion` dalı).
-  - ⚠️ **Flutter `Positioned` dersi:** `Positioned` DAİMA `Stack`'in DOĞRUDAN çocuğu olmalı —
-    `IgnorePointer(child: AnimatedBuilder(... return Positioned.fill(...) ...))` gibi bir ara
-    widget'ın İÇİNE gömülürse "Incorrect use of ParentDataWidget" hatasıyla TÜM dashboard çöker
-    (bu widget testiyle yakalandı, `flutter analyze` görmez). Doğrusu: `Positioned` EN DIŞTA,
-    `IgnorePointer`/`AnimatedBuilder` onun İÇİNDE.
-  - Geri kalan ekranlardaki hero'lar (Kasa, Müşteri, Raporlar) BU tasarımı almadı — yalnız
-    Anasayfa. Detaylar: `design-tokens.md` §4 sonu (KARAR v1.15/v1.16).
-- **Stat kartları satırı (`_StatCardsRow`):** Satış Adedi / Aylık Ciro / Aylık Adet. Masaüstünde
-  `IntrinsicHeight(Row(crossAxisAlignment: stretch, [Expanded...]))`.
-  ⚠️ **Önemli:** Bu Row kaydırılabilir sayfada (sınırsız yükseklik) `IntrinsicHeight` olmadan
-  "BoxConstraints forces an infinite height" hatası verir ve **tüm dashboard'u çökertir** (grafik
-  dahil hiçbir şey render olmaz). Stretch'li/Expanded'lı her Row için aynı kural geçerli.
-- **Tek çizgi grafik (`_DailySalesChartCard`, `fl_chart`):** son N günün günlük cirosu —
-  `dailySalesProvider(days)`. Web: 8/15/30 gün seçilebilir (varsayılan 30), grafik ekran
-  genişliğinin %90'ı (`LayoutBuilder + Center + SizedBox(width: maxWidth*0.9)` — `FractionallySizedBox`
-  dikey Column'da sonsuz yükseklik verdiği için kullanılmaz). Mobil (`compact: true`): sabit son
-  8 gün, seçici yok. X ekseninde her gün için **GG/AA/YY** tarihi + altında Türkçe gün kısaltması
-  (Pzt..Pzr, `DateTime.weekday`). Eski Aylık Satış grafiği kaldırıldı.
-- **Regresyon testi:** `test/dashboard_render_test.dart` — masaüstü genişliğinde dashboard'u sahte
-  provider'larla render edip "infinite height" hatası atmadığını + grafiğin göründüğünü doğrular.
-- **⚠️ Mobil "3 grafik sıfır görünüyor" bug'ı + düzeltmesi (`keepAlive` → `autoDispose`):**
-  `dailySalesProvider`/`currentYearMonthlyProvider`/`historicalYearlyProvider` ÖNCEDEN
-  `keepAlive` idi (diğer tüm dashboard provider'ları — stat kartları — `autoDispose`). Android'de
-  soğuk açılışta (Supabase oturumu/token tam oturmadan) bu üçünün İLK sorgusu boş/sıfır dönerse,
-  `keepAlive` bu kötü sonucu **süreç ömrü boyunca kalıcı** dondurur — anasayfaya tekrar dönülse
-  bile düzelmez (autoDispose stat kartları her ziyarette kendiliğinden düzelirdi, bu yüzden onlarda
-  sorun yoktu). Web'de gözlenmemesi muhtemelen daha hızlı/istikrarlı bağlantıyla örtüşüyor. Düzeltme:
-  üçü de `autoDispose`'a çevrildi + `DashboardRepository._pastYearsCache` (geçmiş yıl aylık toplam
-  cache'i) `static` (process ömürlü, TÜM instance'lar arası paylaşılan) yerine INSTANCE alanı yapıldı
-  — aksi halde provider autoDispose olsa bile static cache kötü ilk sonucu kalıcı tutmaya devam
-  ederdi. Trade-off: geçmiş yıllar artık her dashboard ziyaretinde bir kez daha sorgulanır (küçük
-  maliyet) — finansal rakamlarda kalıcı-yanlış-veri riskinden daha ucuz.
-- **Yıllık Ciro / Son 365 Günlük Ciro kartları — sunucu tarafı SUM:** `DashboardRepository.fetchYearToDateRevenue()`,
-  `fetchLast365DaysRevenue()`, `fetchLastMonthRevenue()` eskiden o tarih aralığındaki TÜM `sales`
-  satırlarını sayfalayarak çekip Dart'ta topluyordu (~5sn). Artık `sales_revenue_between(start_ts,
-  end_ts)` RPC'sini (bkz. Veritabanı notu, `0015_sales_revenue_rpc.sql`) çağırıyor — Postgres
-  `sale_date` index'i ile tek `SUM()` sorgusu, istemci tek sayı alır (~1sn).
-- **Yıllık Ortalama Ciro grafiği (`_YillikOrtalamaCiroCard`):** Kümülatif günlük ortalama —
-  her yıl KENDİ İÇİNDE değerlendirilir (Ocak'ta sıfırlanır). Ay sonu noktası = o yılın Ocak'ından o
-  aya kadarki TOPLAM ciro ÷ o tarihe kadarki TOPLAM gün sayısı (o ayın kendi ortalaması DEĞİL).
-  Cari yılın bitmemiş ayı (ör. bugün 17 Temmuzsa Temmuz noktası yalnız ilk 17 günü kapsar) —
-  `sales_monthly_totals` view'ı zaten yalnızca gerçekleşmiş satışları içerdiği için ekstra sorguya
-  gerek yok; "Yıllık Ciro Karşılaştırma" kartıyla AYNI iki provider (`currentYearMonthlyProvider` /
-  `historicalYearlyProvider`) yeniden kullanılır (`_kumulatifOrtalamaSpots` helper'ı,
-  `dashboard_section.dart`). Yıl seçimi sabit 3 yılla sınırlı: bu yıl + önceki 2 yıl, chip'lerle
-  aç/kapa (varsayılan hepsi açık).
+`dashboard_section.dart`:
+- **Hero bandı:** bugünkü ciro — lacivert gradyan + altın ray + ışıltı animasyonu (TEK `AnimationController`, faz türetmeli — yeni bir nabız efekti eklenirse AYRI controller AÇMA). Yalnız Anasayfa'da; diğer ekranların hero'ları düz kalır.
+- **Stat kartları (`_StatCardsRow`):** Satış Adedi / Aylık Ciro / Aylık Adet / Yıllık Ciro / Son 365 Günlük Ciro. Her kart: sol ince kategorik renk şeridi + ikon + değerin altında mini sparkline (`fl_chart`, eksensiz/dolgusuz). Kartlar `AppSizes.cardDecoration()` (altın kenarlık) ile tutarlı — altın ray/dolgu YOK, bu hero'ya özel kalır.
+- **Günlük satış grafiği + Yıllık Ciro Karşılaştırma + Yıllık Ortalama Ciro:** `fl_chart` çizgi grafikler, hiçbiri hero değil.
+- **⚠️ Bilinen Flutter tuzakları (regresyon testiyle yakalandı, `flutter analyze` GÖRMEZ):**
+  - `Positioned` DAİMA `Stack`'in DOĞRUDAN çocuğu olmalı — `IgnorePointer`/`AnimatedBuilder` gibi bir ara widget'ın içine gömülürse "Incorrect use of ParentDataWidget" ile TÜM dashboard çöker.
+  - Kaydırılabilir sayfada `IntrinsicHeight` olmadan stretch'li/Expanded'lı bir `Row` "infinite height" hatasıyla dashboard'u çökertir.
+  - `test/dashboard_render_test.dart` bu ikisini regresyon olarak test eder.
+- **Yıllık Ciro / Son 365 Gün kartları** sunucu tarafı tek `SUM()` RPC'si (`sales_revenue_between`) kullanır — istemci tarafı sayfalı toplama değil.
 
-### Müşteri Detayı — Geçmiş İşlem Yönetimi
+## Müşteri Detayı
 
-`customer_detail_screen.dart`:
-- **Alışverişler** ve **Ödeme/Borç Hareketleri** listelerinde her satırda kırmızı **tekil silme** + bölüm başlığında **"Tümünü Sil"** (toplu)
-- Geçmiş satışa tıkla → `SaleEditScreen` (düzenle)
-- `CustomerRepository.deletePayment(id)`; silme/düzenleme sonrası `_invalidateHistory()` ile satış/ödeme/bakiye provider'ları yenilenir
+`customer_detail_screen.dart` — Alışverişler ve Ödeme/Borç Hareketleri listelerinde tekil + toplu silme. **Toplu yazdırma:** her satışın solunda seçim kutucuğu; seçiliyken (yalnız web) "Seçilenleri Yazdır" butonu, seçilen tüm satışları TEK bir A4 dokümanında (her satış kendi bölümü + genel toplam) yazdırır (`sale_print_web.dart` → `printMultipleSalesA4`).
 
-### Ürünler Sayfası
+## Ürünler Sayfası
 
-**Desktop:** `DataTable` + kolon seçici (`productColumnsProvider`) + checkbox seçim + toplu silme.
-Sabit kolonlar sırası: Checkbox · **Durum** · # · Ürün Adı · (dinamik kolonlar) · İşlem.
+**Desktop:** `DataTable`, kolon seçici, satır içi tıkla-düzenle (yalnız dokunulan satır `TextField`'a döner — `DataTable` sanallaştırma yapmaz, performans için önemli), `TapRegion` ile otomatik kaydet-kapat. Durum sütunu (Çok Satan/Tükendi/Pasif) sunucuda `product_status` view'ından hesaplanır. Sütun filtreleri + server-side sıralama.
+**Mobil:** kart listesi, kamera ile barkod okuma.
 
-- **Satır içi düzenleme (tıkla-düzenle, `_ProductsTable`/`products_list_screen.dart`):** Ürün Adı,
-  Stok, Alış, Fiyat 1 hücreleri varsayılan olarak sade `Text` (ucuz); birine **dokununca** o SATIR
-  düzenleme moduna geçer ve o 4 hane canlı `TextField`'a döner (`_editingIds` seti,
-  `_RowControllers` yalnız düzenlenen satır için lazy kurulur). ⚠️ Performans notu: `DataTable`
-  sanallaştırma YAPMAZ — sayfadaki TÜM satırları her zaman `TextField` yapmak (50 satır × 4 hane)
-  ilk açılışı gözle görülür yavaşlatır; bu yüzden yalnız dokunulan satır düzenlenebilir.
-  İşlem sütununda düzenleme sırasında yeşil **Güncelle** (kaydet) + gri **Vazgeç** (X, iptal) çıkar;
-  kaydedince satır otomatik display moduna döner. Başarılı güncellemede sağ üstte **2 saniyelik**
-  toast bildirimi (`_showTopRightToast` — `SnackBar` değil, `OverlayEntry`; alt köşede değil sağ
-  üstte çıkması için).
-- **Otomatik kaydet-kapat (`TapRegion`):** Düzenlenen satırın TÜM haneleri (+ Güncelle/Vazgeç
-  butonları) AYNI `groupId: p.id` ile `TapRegion`'a sarılır. **Enter** (`TextField.onSubmitted`)
-  VEYA bu grubun DIŞINDA bir yere (başka bir ürünün hanesi, boş alan) tıklamak (`onTapOutside`)
-  satırı otomatik kaydedip kapatır — aksi halde birden fazla satır aynı anda açık kalabiliyordu.
-  Aynı satırın kendi haneleri arası geçiş (ör. Stok→Fiyat 1) VE Güncelle/Vazgeç butonları AYNI
-  gruba dahil olduğu için yanlışlıkla "dışarı tıklama" sayılmaz. `_onGuncelle` yinelenen çağrılara
-  karşı korumalı (`if (!_editingIds.contains(p.id) || _savingIds.contains(p.id)) return;`) —
-  Enter + dışarı-tıklama aynı anda tetiklenirse sorun çıkarmaz.
-- **Durum sütunu (`_StatusBadge`):** Çok Satan (yeşil) / Tükendi (kırmızı) / Pasif (gri) / boş.
-  Sunucuda `product_status` view'ından (`0016_product_status.sql`) tek sorguyla çekilir
-  (`ProductRepository.fetchStatuses(ids)`, sayfadaki ürün id'leriyle filtreli — ana ürün sorgusundan
-  AYRI, ikinci bir istek). Öncelik: Çok Satan > Tükendi > Pasif > boş — tanımlar migration
-  dosyasında. Stok/fiyat güncellendiğinde (`_updateProduct`) durum yeniden çekilir.
-- **Yoğunlaştırılmış tablo:** `columnSpacing: 28` (varsayılan 56'nın yarısı), hücre fontu 1 kademe
-  küçük (`dataTextStyle` fontSize 12, başlık 11), Ürün Adı hücresi 516px (eski 220'nin ~2 katı + 2cm).
-- **Arama debounce:** 250ms (`_onSearchChanged`, `Timer`) — Durum sorgusu eklendiğinden beri her
-  yükleme 2 ardışık istek attığı için debounce olmadan her tuş vuruşu bu maliyeti tekrarlardı.
+**Liste Gir** (4. sekme, yalnız desktop): tedarikçi PDF/JPEG listesi → sütun işaretleme (pdf.js + Tesseract.js OCR yedek) → önizleme/düzenleme ızgarası → kaydet. Alış/satış fiyatı çarpanları (iskonto/KDV farkını telafi eder). **Tekil gönder:** her satırın sağında, toplu "Kaydet"ten bağımsız, o satırı tek başına sisteme yükleyen bir gönder ikonu (barkod tazeliği aynen korunur — göndermeden hemen önce tekrar sorgulanır). Barkod eşleşirse stok additive + fiyat replace, eşleşmezse yeni ürün. Test: `test/liste_gir_extractor_test.dart`.
 
-**Mobil:** Kart listesi — her kart:
-- Sol üst: ürün adı
-- Sol alt: barkod
-- Sağ: Stok · Alış · Fiyat 1
-- Karta tıkla → `/products/:id` düzenleme ekranı
-- Arama barının sağında **kamera ile barkod okutma** butonu (`mobile_scanner`, `kIsWeb` guard)
+**Eşlenik Barkod:** aynı fiziksel ürünün farklı barkodlu satırlarını gruplar (`products.equivalent_group_id`); ham veriler değişmez, stok/fiyat toplamı yalnız okuma anında `product_equivalent_aggregate` view'ıyla hesaplanır. Esas fiyat = grubun en son güncellenen satırından. **⚠️ KRİTİK:** `Product.equivalentGroupId` `toInsertMap()`'e KESİNLİKLE dahil edilmez — aksi halde her `update()` grup bağlantısını sessizce kırar; grup yalnız `linkEquivalentBarcode`/`unlinkEquivalentBarcode` ile değişir.
 
-Varsayılan kolonlar (desktop): Barkod, Stok, Alış Fiyatı, Fiyat 1
+## Raporlar
 
-**Arama (`ProductRepository`):** `fetchAll(query)` Türkçe-duyarlı (İ/i, I/ı katlaması) — `name`/`barcode`/`stock_code` üzerinde `ilike` OR varyantları (`_buildSearchOr`).
+`/reports` — Günlük / Tarihsel / Ürün raporları. İskonto sütunu `% 82.25` formatında (2 ondalık).
 
-**Ürün adı büyük harf zorlaması:** `Product.toInsertMap()` ürün adını `trUpperCase()` (bkz. `core/utils/formatters.dart` — Türkçe-duyarlı i→İ, ı→I) ile kaydeder. `create()`/`update()` HER ikisi `toInsertMap()` üzerinden yazdığı için kaynak farketmeksizin (elle ürün formu, Excel İçe Aktar, Liste Gir, tablo satır içi düzenleme) tek noktadan uygulanır — ayrıca dokunmaya gerek yok. Mevcut küçük/karışık harfle kayıtlı ürünler geriye dönük otomatik güncellenmez, bir sonraki kayıtta düzelir.
+## Etiket — Raf Etiketi A4 Yazdırma
 
-**Sütun Filtreleri ve Sıralama (masaüstü, `products_list_screen.dart`):**
-- Her sütun başlığında küçük bir filtre ikonu (`_headerWithFilter`) — tıklayınca sütuna özel dialog açılır: metin sütunları (Stok Kodu, Birim, Üst Grup, Grup Adı) "içerir" (ilike), **Barkod BİREBİR eşleşme** (`eq` — "002" yazınca yalnız barkodu tam "002" olan ürün gelir, `.ilike` DEĞİL), sayısal sütunlar (Stok, Kritik Stok, KDV, Alış, Fiyat 1/2) Min/Maks aralık, **Durum** sabit seçenek listesi (Tümü/Çok Satan/Tükendi/Pasif/Boş — `_StatusChoice` sarmalayıcı "Tümü" seçimini dialog'un doğal `null` iptal dönüşünden ayırt eder). Aktif filtreli ikon lacivert dolu görünür. Durum: `ProductFilters` (mutable, `data/models/product_filters.dart` — Liste Gir'deki `ExtractedRow` ile aynı mutable-model deseni), `_ProductsListScreenState._filters`.
-- **Sıralama:** sütun başlığına dokun → server-side sıralama (Flutter `DataTable`'ın yerleşik `sortColumnIndex`/`sortAscending`/`DataColumn.onSort` desteği kullanılır, özel ok ikonu gerekmez). Ürün Adı A-Z/Z-A + sayısal sütunlar (Barkod dahil, metin olarak) büyükten küçüğe/küçükten büyüğe. Beyaz liste: `ProductRepository.sortableColumns`; UI tarafı sütun→db-kolonu eşlemesi `_ProductsTableState._dbColumnFor`.
-- Filtreler/sıralama **server-side** — `fetchPaged`/`fetchAll`'a `filters`/`sortColumn`/`sortAscending` parametreleriyle geçer, sayfalamayla doğru çalışır (yalnız o an yüklü sayfayı süzmek YANLIŞ olurdu). Excel Aktar ve Ürün Özet de aktif filtre+sıralamayı hesaba katar.
-- **`search_products` RPC (`0017`-`0020` migration'ları) — YALNIZ Durum filtresi aktifken kullanılır:** "Durum" `products` tablosunda gerçek bir sütun değil, `product_status` view'ından hesaplanır (view'ın FK'si yok → PostgREST embed filtresi desteklemez). İLK yaklaşım (eşleşen id'leri çekip `id=in.(...)` ile ana sorguya eklemek) "Pasif" gibi çok sayıda ürünü kapsayan durumlarda URL'yi aşırı uzatıp **400 Bad Request** veriyordu; RPC'ye taşındıktan sonra da `product_status`'u TÜM `products`'a JOIN etmek planlayıcının haftalık-satış agregasyonunu **satır başına yeniden hesaplamasına** yol açıp **statement timeout (57014)** verdi — çözüm: `weekly_sales`/`cok_satan` CTE'lerini `MATERIALIZED` işaretlemek (tek seferlik hesaplama zorlanır, bkz. `0018`). Durum filtresi YOKSA repository eski basit PostgREST sorgu zincirini kullanmaya devam eder.
-  - ⚠️ **Migration dersi (tekrar düşmemek için):** `p_limit`/`p_offset`'ten ÖNCEYE yeni parametre eklemek (`0019`) fonksiyonun parametre TİP LİSTESİni değiştirdi — Postgres `CREATE OR REPLACE FUNCTION`'ı yalnız isim+tip listesi BİREBİR aynıysa "değiştirir", farklıysa aynı isimde YENİ bir overload yaratır. Sonuç: iki `search_products` birikti, imza belirtmeyen `GRANT`/çağrılar **"function name is not unique"** hatası verdi. Düzeltme (`0020`): `pg_proc` üzerinden o isimdeki TÜM overload'ları `DROP` edip fonksiyonu tek tanım olarak yeniden oluşturmak. **Bir RPC fonksiyonunun parametre listesini değiştiren her migration'da bu deseni (DO bloğuyla eski overload'ları temizle → yeniden oluştur) baştan kullan.**
-  - `language sql` fonksiyonda sütun adı parametre olarak `ORDER BY`'a dinamik konulamaz (injection riski) — her sıralanabilir sütun için bir ASC+DESC `CASE` çifti yazılır, yalnız aktif olan çift her satırda non-null kalır.
+`/etiket` — üç sekme: **Yeni Etiket** (24 hane, 3×8 ızgara, logo+fiyat+Code128+barkod no+tarih), **Geniş Logo** (10 hane, 2×5 ızgara, sabit marka figürü — turuncu tente + NiCE, 88mm×55mm hücre), **Kayıtlı Dosyalar** (Supabase Storage `etiket_pdfleri` bucket'ı, imzalı URL). Barkod → ürün çözme satış ekranıyla aynı desen. Yazdır/PDF Üret yalnız web. Etiket çıktısı kendi hero'suna (FİYAT, altın ray YOK) sahiptir — app krom'undan ayrı bir görsel dil.
 
-**Ürün formu (`product_form_screen.dart`):** Kâr alanı düzenlenebilir; kâr ↔ satış fiyatı çift yönlü hesaplanır. Sayısal girişlerde virgül **ve** nokta ondalık ayıracı kabul edilir.
-- **Mobilde ürün resmi ekleme alanı YOK** ("Ürün resmi ekle" bölümü yalnız masaüstü `Row`
-  dalında kalır; `_buildProductInfoTab`'te `isMobile ? formFields : Row(...imageSection...)`).
-  Görsel yükleme/gösterme mantığı (`_pickImage`, `_imageUrl`, `_save()` içindeki upload) DOKUNULMADI
-  — sadece mobil UI'dan çıkarıldı, masaüstünden yüklenen görsel mobilde hâlâ korunur/gösterilir.
-- **Mobilde Ürün Sil butonu:** yalnız mevcut (yeni değil, `_currentId` dolu) ürün düzenlenirken,
-  alt çubukta sol tarafta kırmızı `ElevatedButton.icon` (sağda kaydet butonuyla birlikte `Row`).
-  Onay dialogu: başlık "Ürünü Sil", metin `"$ad" ürününü silmek istediğinize emin misiniz?`,
-  butonlar **Hayır** / **Sil** (kırmızı). `ProductRepository.delete()` çağırır, foreign-key
-  hatasında ("bu ürüne ait satış kaydı var") anlaşılır mesaj gösterir.
+## Kasa
 
-### Eşlenik Barkod
+Gelir-gider defteri: Gelir (Nakit/POS banka kırılımı + mutabakat) · Gider (kategori + firma) · Firma Giderleri (yıl bazlı rapor) sekmeleri. Hero = birikimli yıl kasası.
 
-Bazı ürünler tedarikçilerden farklı barkodlarla stoğa giriyor (aynı fiziksel ürün — ör. bir kepçe —
-hem barkod A hem barkod B ile ayrı ayrı satır olarak girilmiş). Bu özellik, kullanıcının bu satırları
-"eşlenik" işaretleyebilmesini sağlar; sonuçta hangi barkod okutulursa okutulsun stok/fiyat **grup
-toplamı** olarak davranır, ama ham veriler asla değiştirilmez.
+## Veritabanı (Supabase)
 
-- **Depolama modeli (KARAR):** `products.equivalent_group_id` (uuid, nullable) yalnızca "hangi
-  satırlar aynı grupta" bilgisini tutar. Ham sütunlar (`stock_quantity`, `price1` vb.) HİÇ
-  değiştirilmez/senkronize edilmez — her satır DB'de olduğu gibi kalır (tedarikçi/parti takibi
-  bozulmaz). Toplamlar SADECE okuma anında `product_equivalent_aggregate` view'ı ile hesaplanır.
-- **Fiyat kuralı (birkaç kez değişti, GÜNCEL/kesin hâl önemli):** grup için "esas" fiyat
-  (`price1`/`price2`/`purchase_price`/`vat_rate`) grubun **EN SON GÜNCELLENEN** satırından alınır
-  (`0021` orijinal karar). `0022` bunu geçici olarak "en yüksek price1" yapmıştı, kullanıcı bu
-  kararı geri aldı → `0024` orijinal "en son güncellenen" kuralına döndü. **Yeni migration
-  yazarken bu geçmişi tekrar etme** — kesin kural: en son güncellenen kazanır.
-- **Stok gösterimi:** Ürünler listesinde gruplu bir satırın Stok hücresi `"kendi_stok(grup_toplamı)"`
-  formatında (ör. `5(12)`) — kendi stoğu 0 olsa bile grup toplamı pozitifse **Tükendi YAZMAZ**.
-  Fiyat 1 hücresi grubun esas fiyatını gösterir. Her iki hücrenin **düzenleme modu** (tıkla-düzenle)
-  hâlâ HAM `p.stockQuantity`/`p.price1` üzerinden çalışır — yalnız salt-okunur GÖRÜNTÜLEME değişir.
-- **Durum grup-farkında (`product_status` view, `0022`→`0023`):** Tükendi artık
-  `product_equivalent_aggregate.total_stock`'a bakar (satırın kendi stoğuna değil). Çok Satan
-  artık grubun TOPLAM satışına bakar (hangi barkod satılırsa satılsın, grup geneli son 4 haftanın
-  her birinde ≥1 ise TÜM üyeler Çok Satan). Pasif artık grubun EN YENİ `updated_at`'ine bakar (bir
-  üye aktifse hiçbiri Pasif sayılmaz). Gruplanmamış ürünlerde davranış DEĞİŞMEDİ.
-- **Migration sırası (sırayla uygulanmalı, `supabase/migrations/`):**
-  `0021_equivalent_barcodes.sql` (sütun + index + `product_equivalent_aggregate` view) →
-  `0022_equivalent_barcode_max_price_and_status.sql` (fiyat kuralı geçici "en yüksek" + Tükendi
-  grup-bazlı) → `0023_equivalent_barcode_status_full.sql` (Çok Satan + Pasif grup-bazlı) →
-  `0024_equivalent_barcode_price_latest_updated.sql` (fiyat kuralı "en son güncellenen"e geri
-  alındı). Hepsi `product_equivalent_aggregate`/`product_status`'u `create or replace` ile
-  yeniden tanımlar — DDL anon key ile çalıştırılamaz, Supabase SQL Editor'da elle uygulanır.
-- **`ProductRepository` yeni metodlar:** `fetchEquivalentAggregates(ids)` (`fetchStatuses` ile
-  birebir aynı "ikincil, id'ye göre" desen), `fetchGroupMembers(groupId)` (fiyata göre azalan
-  sıralı — "esas" üye ilk sırada), `linkEquivalentBarcode(idA, idB)` (grup birleştirme mantığı
-  dahil), `unlinkEquivalentBarcode(id)` (tek kişilik kalan grup otomatik temizlenir).
-  `fetchByBarcode` sonucu gruplu bir satırsa DÖNEN nesnede stok/fiyatı agregatla override eder
-  (DB'ye yazılmaz) — satış ekranı + `BarcodeCache._load()` (tek toplu sorgu, N+1 yok) bu sayede
-  hangi barkod okutulursa okutulsun doğru grup toplamını gösterir. **`fetchByBarcodes` (Liste Gir
-  için) BİLEREK ham bırakıldı** — agregat döndürseydi yanlış satıra yanlış miktar eklenirdi.
-- **⚠️ KRİTİK gotcha — `toInsertMap()`:** `Product.equivalentGroupId` alanı `toInsertMap()`'e
-  KESİNLİKLE DAHİL EDİLMEZ (`id`/`group_name` gibi hariç tutulanlara eklendi). Aksi halde normal
-  bir `update()` çağrısı (satır içi düzenleme, ürün formu kaydetme) her seferinde
-  `equivalent_group_id: null` gönderip mevcut grup bağlantısını SESSİZCE kırar. Grup bağlantısı
-  SADECE `linkEquivalentBarcode`/`unlinkEquivalentBarcode` ile değişir.
-- **UI:** Ürünler listesinde gruplu satırların adı yanında kırmızı **"!"** ikonu
-  (`_EquivalentBarcodeDialog` açar — grup üyelerini listeler, "Esas" rozeti + tekil "Bağlantıyı
-  Kaldır"). Ürün formu "Diğer Detaylar" sekmesinin EN BAŞINDA `EquivalentBarcodeSection` —
-  mevcut grubu gösterir + barkod/isim arayarak yeni üye ekler; yeni (kaydedilmemiş) üründe devre
-  dışı ("önce ürünü kaydedin"). "Ürün Özet" diyaloğu (`_ProductSummaryDialogState._load()`) bir
-  grubu **TEK ürün** sayar (agregat stok/fiyatla, ziyaret edilen ikinci+ üyeler atlanır) — çift
-  sayım (60+60) önlenir.
-- **Bilinen bug + düzeltme:** Satır içi Fiyat 1 düzenlemesinden sonra `_updateProduct` yalnız
-  `_loadStatuses()`'ı tazeliyordu, `_equivalents` cache'ini DEĞİL — bu yüzden gruplu bir ürünün
-  fiyatı güncellenince ekran (agregat fiyatı gösteren hücre) DB'deki yeni değeri yansıtmıyordu, yeniden
-  aratana kadar eski görünüyordu. Düzeltme: `_updateProduct` artık güncellenen satır gruplu ise
-  `_loadEquivalents()`'ı da çağırır.
+Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, Supabase SQL Editor'da elle uygulanır.
+- `sales`: iskonto birebir saklanır (`discount_percent` + `discount_amount` + `discount_type`).
+- `customer_balances` view'ı borcu `customer_payments`'tan hesaplar.
+- `sales_revenue_between(start_ts,end_ts)` RPC — dashboard ciro kartları için tek `SUM()`.
+- `product_status` view — Çok Satan/Tükendi/Pasif; Eşlenik Barkod gruplarında grup-bazlı davranır.
+- `search_products(...)` RPC — Ürünler sayfası Durum filtresi aktifken arama+filtre+sıralama+sayfalamayı tek sorguda birleştirir.
+- **⚠️ RPC migration dersi:** Bir RPC'nin parametre listesini değiştiren migration'da ÖNCE `DO $$ ... DROP FUNCTION ... $$` ile eski overload'ları temizle — aksi halde `CREATE OR REPLACE` parametre tipi farklıysa yeni bir overload yaratır, "function name is not unique" hatası çıkar.
+- **⚠️ Sorgu planlayıcı dersi:** Bir view'ı büyük bir tabloya JOIN edip window/agregasyon fonksiyonu kullanıyorsan CTE'yi `MATERIALIZED` işaretle — aksi halde planlayıcı satır başına yeniden hesaplayıp statement timeout (57014) verebilir.
+- Eşlenik Barkod: `products.equivalent_group_id` + `product_equivalent_aggregate` view (detay: Ürünler Sayfası notu).
 
-### Liste Gir — Tedarikçi Listesi İçe Aktarma
+## Deploy — GitHub Pages
 
-Ürünler sayfasının 4. sekmesi (`ProductsTabsScreen`, yalnız `context.isDesktop` — dikdörtgen çizimi
-mouse ile yapılır, pdf.js/Tesseract.js interop'u yalnız web'de çalışır). Tedarikçi PDF/JPEG
-listesini yükleyip renkli dikdörtgenlerle sütun işaretleyerek toplu ürün içe aktarma.
+Site: `https://ercinnn.github.io/nicepos` · Repo: `https://github.com/ercinnn/nicepos` · Branch: `master`, klasör: `/docs`. Yerel checkout (`C:\Projects\Flutter\nicepos`) doğrudan bu repo — `origin` zaten doğru remote'a bağlı, ayrı bir deploy klasörü YOK.
 
-- **Akış (`liste_gir_screen.dart`, adım-makinesi):** yükle → sütun seç → önizle/düzenle → kaydet.
-- **PDF render + metin çıkarma:** `web/vendor/pdfjs/` altında vendor edilmiş pdf.js (Apache-2.0,
-  pinned `5.4.624` — `pdf.min.mjs`/`pdf.worker.min.mjs`) + birinci parti `pdfjs_bridge.js` köprü
-  script'i (`window.nicePdfLoad`/`nicePdfRenderAndExtract`/`niceOcrRecognize`, JSON string dönüşleri
-  — JS nesne grafiği interop'undan kaçınmak için). `document_page_source_web.dart`/`_stub.dart`
-  (conditional export, `sale_print.dart` ile aynı `dart.library.js_interop` deseni) script'leri
-  **tembel** (yalnız ekran açılınca) enjekte eder.
-- **OCR yedek yolu:** metin katmanı yok/az tespit edilirse (`RenderedPage.hasUsableTextLayer`,
-  toplam karakter < eşik) veya doğrudan JPEG/PNG yüklenirse Tesseract.js (ücretsiz, tarayıcıda WASM,
-  jsdelivr CDN'den tembel yüklenir — Google Cloud Vision KULLANILMAZ, hesap/kart gerektirmez).
-- **Sütun seçimi (`liste_gir_column_select_step.dart`):** 4 sabit renkli çip — kırmızı=Barkod,
-  sarı=Ürün Adı, mavi=Adet, yeşil=Alış Fiyatı. Sütun başına TEK bant (yalnız X-aralığı, yükseklik
-  tam sayfa); kenar tutamaçlarıyla ince ayar. Çok sayfalı PDF'lerde AYNI X-aralığı tüm sayfalara
-  uygulanır (sayfa başına yeniden çizim istenmez).
-- **Çıkarma algoritması (`column_row_extractor.dart`, saf Dart, pdf.js VE Tesseract çıktısına karşı
-  aynı `PositionedText` şekliyle çalışır):** bant→tip sınıflandırma → y-konumuna göre satır kümeleme
-  (medyan yükseklik × 0.6 tolerans) → `_joinNameItems` yalnız GERÇEK görsel boşluk varsa araya boşluk
-  ekler (bazı PDF üreticileri Türkçe "İ"yi ayrı font alt-kümesiyle, bitişik ama ayrı bir metin öğesi
-  olarak yazar — kör `.join(' ')` yanlış boşluk sokuyordu). `_looksLikeNonProduct` fatura üst/alt
-  bilgisindeki alıcı/firma adını (`_knownNonProductPhrases` sabit liste) ve `@` içeren satırları
-  (e-posta) ürün olarak saymaz. `consolidateDuplicateBarcodes` aynı barkodlu satırları toplar (adet
-  additive, fiyat "son sıfır-olmayan değer kazanır").
-- **Türkçe sayı ayrıştırma (`tr_number_parser.dart`):** `parseTrNumber` binlik/ondalık ayraç
-  belirsizliğini çözer (`"1.234,56"` → `1234.56`) — `products_list_screen.dart`'taki basit
-  `_parseNum`'dan FARKLI, o bu belirsizliği çözmez.
-- **Önizleme ızgarası (`liste_gir_review_grid.dart`):** tüm satırlar her zaman düzenlenebilir (liste
-  küçük, `products_list_screen.dart`'taki "yalnız dokunulan satır" optimizasyonuna gerek yok). Font
-  boyutu küçültülmüş (`_cellFontSize`), Ürün Adı hanesi 1.5× geniş (390px).
-  - **Alış Fiyatı Çarpanı:** liste fiyatı iskonto/+KDV nedeniyle gerçek alış fiyatından farklıysa
-    (ör. 0,66 / 1,2) tüm satırlara uygulanır — `ExtractedRow.rawPurchasePrice` ham değeri saklar,
-    çarpan istenildiği kadar değiştirilebilir; satır elle düzenlenirse mevcut çarpana göre ham
-    değere geri çevrilip saklanır (tutarlılık korunur).
-  - **Satış Fiyatı Çarpanı (yalnız YENİ ürünler):** barkodu sistemde zaten kayıtlı ürünlerde satış
-    fiyatı ürünün mevcut `price1`'i (dokunulmaz, otomatik/siyah renk); barkodu YENİ olan ürünlerde
-    satış fiyatı kırmızı fontla vurgulanır (dikkat çeksin diye) ve bu çarpan `alış fiyatı × çarpan`
-    olarak öneri hesaplar.
-- **Kaydetme:** barkod sistemde eşleşirse **stok additive** (üzerine eklenir), **alış+satış fiyatı
-  replace** (yeni değerlerle değiştirilir); eşleşmezse/boşsa yeni ürün oluşturulur. Kaydetmeden hemen
-  önce güncel barkod listesiyle `fetchByBarcodes` tekrar sorgulanır (önizleme adımından beri elle
-  değişmiş olabilir).
-- **Testler:** `test/liste_gir_extractor_test.dart` — saf Dart, tarayıcı gerektirmez
-  (`extractRows`/`consolidateDuplicateBarcodes`/`parseTrNumber` senaryoları).
+**Akış:** `flutter build web --release --base-href /nicepos/ --dart-define=...` → `Remove-Item -Recurse -Force docs; Copy-Item -Recurse build\web docs` → `git add docs build; git commit`. Push öncesi `git fetch` + `git log origin/master..master` ile fast-forward teyit et.
 
-### Excel Export
+**Kullanıcı tercihi:** deploy'da build+commit'i Claude hazırlar, `git push origin master`'ı kullanıcı kendisi çalıştırır (komut kendisine verilir, sonra `git fetch && git log origin/master -1` ile doğrulanır).
 
-`lib/features/products/presentation/widgets/excel_export.dart` — conditional export:
-- **Web** (`dart.library.js_interop`): `excel_export_web.dart` → `package:web` blob download
-- **Mobil** (`dart.library.io`): `excel_export_mobile.dart` → `path_provider` temp dizinine yazar, yolu SnackBar'da gösterir
+**⚠️ `MissingPluginException` (release'de, localde değil) — yaşanmış kök neden:** Yeni bir paket (`pubspec.yaml`) eklendikten sonra `.dart_tool` derleme önbelleği bayat kalıp web plugin registrant'ını (ör. `flutter_tts`'in web implementasyonu) atlayabiliyor — `flutter run -d web-server` her seferinde taze başladığı için sorun çıkmaz ama `flutter build web --release` önbelleği yeniden kullanabilir. Belirti: konsolda `MissingPluginException(No implementation found for method X on channel Y)`, paket kodu doğru olsa bile. **Çözüm:** yeni bağımlılık eklendikten sonraki İLK release build'den önce `flutter clean && flutter pub get` çalıştır.
 
-### Raporlar
+**⚠️ Ortam izolasyonu — agent yazma engeli:** Arka planda spawn edilen agent'lar paylaşılan checkout'a doğrudan yazamaz ("hasn't isolated its changes yet" hatası) — bu yüzden kod değişikliği gerektiren her görev `isolation: "worktree"` ile verilir (agent kendi dalına commit eder, build/push YAPMAZ), ardından ana oturum (bu kısıtlamaya tabi değil) `git merge worktree-agent-<id>` ile ana checkout'a alır, `git worktree remove` ile temizler, `flutter analyze` ile doğrular. Yalnızca markdown/doküman değişikliğinde web rebuild gerekmez.
 
-`/reports` rotası 3 sekme:
-1. **Günlük Rapor** — tarih seçimi, nakit/POS/açık hesap özeti
-2. **Tarihsel Rapor** — iki tarih arası ciro
-3. **Ürün Raporları** — ürün arama, zamana göre fiyat ve satış geçmişi
-
-Günlük ve Tarihsel rapor tablolarında iskonto sütunu **`% 82.25`** formatında gösterilir
-(`'% ${s.discountPercent.toStringAsFixed(2)}'`, noktadan sonra 2 hane).
-
-### Etiket — Raf Etiketi A4 Yazdırma
-
-`/etiket` rotası (`lib/features/labels/`). Ürün etiketlerini A4 kağıda basmak için **araç/çalışma
-ekranı** (tasarım: design-tokens **KARAR v1.10** — **ekran hero'su YOK**, stok listesi token dili).
-- **State:** `labelSheetProvider` (`@Riverpod(keepAlive:true)` `LabelSheet` notifier) — 24 hanelik
-  `List<LabelSlot?>` + logo data URL; `setSlot/clearSlot/clearAll/setLogo`. Sabitler
-  `kLabelColumns=3, kLabelRows=8, kLabelCount=24` (`labels_screen.dart`).
-- **Ekran (`labels_screen.dart`):** masaüstü iki bölge — **sol** 24-hane barkod girişi, **sağ** canlı
-  A4 önizleme; mobil tek kolon (giriş üstte, önizleme altta `LayoutBuilder+SizedBox` ile ölçekli).
-- **Barkod akışı:** hane input'una barkod okut → **Enter** (`onSubmitted`) → satış ekranı
-  `_onBarcodeSubmitted` deseninin uyarlaması: önce paylaşılan `barcodeCacheProvider` (sales feature),
-  sonra `productRepository.fetchByBarcode`, sonra `fetchAll` (tam eşleşme tercihli) → `price1` çözülür,
-  hane dolar, imleç **otomatik bir alt haneye** geçer. Aktif hane = 3px altın sol şerit + ink kenarlık;
-  çözülemeyen = `danger` uyarı; ✕ haneyi temizler.
-- **A4 önizleme:** sabit 794×1123px (96dpi) tuval → `FittedBox` ile panele ölçeklenir; 3×8 ızgara,
-  ~5mm kenar, nötr hairline kesim kılavuzu (altın YOK).
-- **Etiket-içi (referans `raf_etiketi.jpg`):** üst bant sol **logo yuvası** (14mm×10mm; yoksa
-  `Icons.storefront` / SVG `#1B2A4A` mağaza ikonu fallback) + baskın **FİYAT** (iri bold, `price1`+" TL",
-  **altın ray YOK** — etiketin kendi hero'su, app hero'su değil) → ürün adı → **Code128** çizgileri
-  (`barcode`/`barcode_widget`) → en alt: barkod no (sol) + oluşturma tarihi (sağ-alt). Baskı siyah/beyaz.
-- **Logo yükleme:** `FilePicker.pickFiles(withData:true)` → base64 data URL, önizleme + baskıda kullanılır
-  (`keepAlive` ile oturum içi kalıcı).
-- **Yazdır / PDF Üret (yalnız `kIsWeb`):** `etiket_print.dart` conditional export
-  (`etiket_print_web.dart` / `_stub.dart`) — `sale_print.dart` deseninin birebir kopyası: HTML blob →
-  yeni pencere → `window.print()`, Code128 SVG gömülü, `@page{size:A4 portrait;margin:5mm}`. PDF Üret
-  aynı pencereyi açar (tarayıcı "PDF olarak kaydet"). Native'de no-op.
-- **Paketler:** `barcode`, `barcode_widget`, `file_picker`.
-
-### Veritabanı (Supabase)
-
-Şema migration'ları: `supabase/migrations/` (DDL anon key ile çalıştırılamaz → Supabase SQL Editor'da uygulanır).
-- `sales` tablosu iskontoyu **birebir** saklar: `discount_percent` (geriye dönük uyumluluk) + `discount_amount` (kesin TL) + `discount_type` (`'percent'` | `'tl'`). Bkz. `0008_discount_amount.sql`. `SaleEditScreen` kaydedilen tür/değerle açılır → yuvarlama farkı olmaz.
-- `customer_balances` görünümü borcu `customer_payments` hareketlerinden hesaplar; bu yüzden bir hareketi/satışı silmek borcu doğrudan günceller.
-- RPC'ler: `generate_sale_code`, `increment_product_stock` (stok iadesi), stok düşürme.
-- `sales_revenue_between(start_ts, end_ts)` RPC (`0015_sales_revenue_rpc.sql`): `sale_date` index'i ile tek `SUM(total_amount)` sorgusu — dashboard YTD/365-gün/geçen-ay ciro kartları bunu kullanır (bkz. Dashboard notu). `security invoker` (varsayılan), RLS `sales` tablosuyla aynı.
-- `product_status` view (`0016_product_status.sql`): Ürünler tablosundaki **Durum** sütununun kaynağı. Öncelik Çok Satan > Tükendi > Pasif > boş. Çok Satan = son 4 haftanın (bugüne göre kayan 7'şer günlük 4 pencere, takvim haftası DEĞİL) HER birinde ≥1 adet satış — `sale_items`/`sales` üzerinden hesaplanır. Tükendi = `stock_quantity <= 0`. Pasif = `products.updated_at` 1 yıldan eski — stok satışla (`decrement_product_stock`/`increment_product_stock` RPC'leri) VEYA elle düzenlemeyle (`Product.toInsertMap()`) değiştiğinde HER ikisi de `updated_at`'i günceller, yani bu tek alan "stok + satış + fiyat" aktivitesinin hepsini kapsar. `ProductRepository.fetchStatuses(ids)` ile `product_id` filtreli okunur (ana ürün sorgusundan ayrı, ikinci istek).
-- `search_products(...)` RPC (`0017`→`0018`→`0019`→`0020`, tek fonksiyon — her migration `create or replace` ile üzerine yazar): Ürünler tablosu Durum filtresi aktifken arama+grup+sütun filtreleri+durum+sıralama+sayfalamayı TEK sorguda sunucuda birleştirir (bkz. Ürünler Sayfası notu — id-listesi URL taşması ve statement-timeout derslerinin detayı orada). `products` + `product_groups` (grup/üst grup adı) + inline `weekly_sales`/`cok_satan` (`MATERIALIZED` CTE) döndürür; `Product.fromMap()`'in düz-sütun fallback'i (`group_name`/`parent_group_name`) bu RPC'nin `product_groups` embed'i OLMAYAN düz satır şekli için gerekli. **Parametre listesini değiştiren migration yazarken önce `DO $$ ... DROP FUNCTION ... $$` ile eski overload'ları temizle** (bkz. `0020`) — aksi halde `CREATE OR REPLACE` yeni bir overload yaratır, isim çakışması hatası verir.
-- **Eşlenik Barkod (`0021`→`0022`→`0023`→`0024`, detaylar Ürünler Sayfası → "Eşlenik Barkod" notunda):**
-  `products.equivalent_group_id` (uuid) + `product_equivalent_aggregate` view (grup toplam stok +
-  "esas" fiyat, `0021`/`0024`) + `product_status`'un Tükendi/Çok Satan/Pasif dallarının grup-bazlı
-  hâli (`0022`/`0023`). Hepsi `create or replace view` — yeni tablo/sütun eklemez, yalnız iki
-  view'ı yeniden tanımlar. Ham `products` satırları asla değişmez (view'lar salt-okunur agregasyon).
-
-### Deploy — GitHub Pages
-
-Site: `https://ercinnn.github.io/nicepos`
-Repo: `https://github.com/ercinnn/nicepos`
-- Branch: `master`, Folder: `/docs`
-- **Yerel klasör (`C:\Projects\nice-pos`) artık remote'un birebir aynası olan gerçek bir git deposu**
-  (`origin` → nicepos, `core.autocrlf false`). Deploy **doğrudan** bu klasörden yapılır — eski
-  clone+copy+push fallback'ine artık gerek yok. Akış: `flutter build web ...` → `Remove-Item -Recurse
-  -Force docs; Copy-Item -Recurse build\web docs` → `git add -A; git commit; git push origin master`.
-- Push öncesi `git fetch` + `git log origin/master..master` ile fast-forward olduğunu teyit et.
-- `docs/main.dart.js` build'den sonra mutlaka güncellenmelidir (kod değişikliği sonrası rebuild zorunlu).
-- `.gitignore` `/build/*` yoksayar ama `!/build/web` izler → repo HEM `build/web` HEM `docs` tutar; deploy'da ikisi de güncellenir.
-- **PowerShell commit mesajı uyarısı:** Çok satırlı / çift tırnak içeren mesajlarda `git commit -m @'...'@`
-  here-string'i bozulabilir (kapanış `'@` sütun 0'da olmalı; çift tırnak parse'ı bozar). Güvenlisi:
-  tek satırlık `git commit -m '...'` (çift tırnaksız).
-- Service worker önbelleği: kullanıcı yeni deploy'u göremezse genelde tarayıcı/SW cache'idir → hard
-  refresh / SW unregister / gizli pencere. (Ama "göremiyorum" şikâyetinde önce **render hatası**
-  ihtimalini ele: kaydırılabilir sayfada stretch'li Row'lar için yukarıdaki IntrinsicHeight notuna bak.)
-- **Bağımlılık uyarısı:** `supabase_flutter` 2.15.x web'de açılış hatası veriyordu (`passkeys_web`/`ua_client_hints` → `dart:html`). Çalışan sürüm **2.14.2**; `pubspec.lock` bu sürümde tutulmalı.
-- **⚠️ Ortam izolasyonu — agent yazma engeli (GÜNCEL, deploy bunu izler):** Bu oturumlarda paylaşılan
-  checkout'a **doğrudan yazma engellidir** (parent oturum ve arka plan alt-agent'lar dahil; hata:
-  "hasn't isolated its changes yet"). Bu yüzden her değişiklik + deploy **iki aşamalı** yürütülür:
-  1. **Kod/doküman değişikliği:** `isolation: "worktree"` ile bir alt-agent yapar ve değişikliği kendi
-     worktree dalına **commit** eder (build/push YAPMAZ). Dal: `worktree-agent-<id>`, yol:
-     `.claude/worktrees/agent-<id>`.
-  2. **Deploy (ayrı alt-agent, ana checkout'ta master):** `git checkout master` →
-     `git merge worktree-agent-<id>` (fast-forward beklenir, çakışmada DUR) →
-     `git worktree remove .claude/worktrees/agent-<id>` → `flutter analyze` →
-     `flutter build web --release --base-href /nicepos/ --dart-define=SUPABASE_URL=... "--dart-define=SUPABASE_ANON_KEY=..."`
-     → `Remove-Item -Recurse -Force docs; Copy-Item -Recurse build\web docs` →
-     `git add -A; git commit -m '...'` (tek satır, çift tırnaksız) → `git fetch; git log origin/master..master`
-     (fast-forward teyidi) → `git push origin master`.
-  - Yalnızca **markdown/doküman** değişikliğinde (kod yok) web rebuild gerekmez: merge + `git push origin master`
-    yeterlidir (docs değişmez).
-  - Alternatif: `.claude/settings.json` → `"worktree": {"bgIsolation": "none"}` engeli kapatır; ancak
-    build+push gerçek repo/remote'u değiştirdiğinden **worktree akışı tercih edilir**.
+**Diğer notlar:**
+- `docs/main.dart.js` her kod değişikliğinden sonra rebuild edilmeden ESKİ kalır — "değişikliği göremiyorum" şikâyetinde önce bunu kontrol et, sonra service worker/tarayıcı önbelleğini (hard refresh/gizli pencere) düşün.
+- `.gitignore` `/build/*`'ı yoksayar ama `!/build/web` izler → repo hem `build/web` hem `docs` tutar, deploy'da ikisi de commit edilir.
+- `supabase_flutter` **2.14.2**'de sabit tutulmalı — 2.15.x web'de açılış hatası veriyordu (`passkeys_web`/`ua_client_hints` → `dart:html`).
+- PowerShell'de çok satırlı/çift tırnaklı commit mesajları için here-string yerine tek satırlık `git commit -m '...'` tercih et.
 
 ## Önemli Konvansiyonlar
 
-- **Model sınıfları:** `fromMap()` + `toInsertMap()`, ORM yoktur
-- **Repository'ler:** `Supabase.instance.client` doğrudan — tekil örüntü
-- **Dil:** UI metinleri ve yorumlar Türkçedir
-- **Tarih:** `initializeDateFormatting('tr_TR')`, formatlama `lib/core/utils/formatters.dart`
-- **Dialog context:** `showDialog(builder: (dialogContext) => ...)` — `Navigator.pop` için her zaman `dialogContext` kullan, parent `context` değil. State güncellemesi pop'tan SONRA yapılmalı.
-- **Kamera:** `mobile_scanner` — `kIsWeb` guard ile sadece native'de gösterilir
-- **CartItem:** `barcode` alanı var — `addProduct` çağrısında `product.barcode` iletilir
-- **Layout (kaydırılabilir sayfa = sınırsız yükseklik):** `SingleChildScrollView > Column` içinde
-  `crossAxisAlignment: stretch` + `Expanded` çocuklu `Row` → "infinite height" hatası; `IntrinsicHeight`
-  ile sar. `FractionallySizedBox` (heightFactor null) dikey Column'da aynı sonsuz yükseklik hatasını
-  verir → genişlik için `LayoutBuilder + SizedBox(width: ...)` kullan. Bu tür render hataları
-  `flutter analyze`'da görünmez; widget testiyle yakalanır.
+- **Model sınıfları:** `fromMap()` + `toInsertMap()`, ORM yoktur.
+- **Repository'ler:** `Supabase.instance.client` doğrudan.
+- **Dil:** UI metinleri ve yorumlar Türkçedir.
+- **Tarih:** `initializeDateFormatting('tr_TR')`, formatlama `lib/core/utils/formatters.dart`.
+- **Dialog context:** `showDialog(builder: (dialogContext) => ...)` — `Navigator.pop` için her zaman `dialogContext`, parent `context` değil. State güncellemesi pop'tan SONRA.
+- **Kamera:** `mobile_scanner` — `kIsWeb` guard ile yalnız native'de.
+- **Web-only özellikler** (Yazdır, Excel export, TTS, Etiket PDF): hepsi `kIsWeb` guard'ı veya conditional export (`*_web.dart`/`*_stub.dart`) deseniyle native'de no-op/gizli.
+- **Layout (kaydırılabilir sayfa = sınırsız yükseklik):** stretch'li/Expanded'lı `Row` → `IntrinsicHeight` ile sar; dikey `Column`'da `FractionallySizedBox` (heightFactor null) aynı sonsuz-yükseklik hatasını verir → genişlik için `LayoutBuilder + SizedBox(width:...)` kullan. Bu tür render hataları `flutter analyze`'da GÖRÜNMEZ — widget testiyle veya gözle yakalanır.
