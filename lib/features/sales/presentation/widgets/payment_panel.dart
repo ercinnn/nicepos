@@ -462,17 +462,25 @@ class _SpeakTotalButtonState extends State<_SpeakTotalButton> {
     warmupTts();
   }
 
-  Future<void> _speak() async {
+  // BİLEREK senkron (async DEĞİL) — `speakAmountInEnglish` da senkron tasarlandı
+  // (bkz. tts_service.dart üstündeki kritik not): tıklama ile `_tts.speak()`
+  // çağrısı arasına HİÇBİR `await` girmemeli, aksi halde deploy origin'lerinde
+  // (localhost'un aksine) çağrı sessizce yok sayılabiliyor.
+  void _speak() {
     if (_speaking) return;
     setState(() => _speaking = true);
     try {
-      await speakAmountInEnglish(widget.amount);
+      speakAmountInEnglish(widget.amount);
     } catch (_) {
       // Platform TTS çağrısı başarısız oldu — konsolu "uncaught" hatayla
       // kirletmeden sessizce yut, kullanıcıya yalnızca buton eski haline döner.
-    } finally {
-      if (mounted) setState(() => _speaking = false);
     }
+    // speak() Future'ı web'de genelde konuşmanın BİTİŞİNİ değil, kuyruğa
+    // alınmasını bekler (neredeyse anlık) — bu yüzden görsel spinner gerçek
+    // bitişi izlemez, kısa sabit bir süre sonra kapatılır.
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) setState(() => _speaking = false);
+    });
   }
 
   @override

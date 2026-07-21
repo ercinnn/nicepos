@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_tts/flutter_tts.dart';
 
 import 'english_number_words.dart';
@@ -145,23 +147,26 @@ void warmupTts() {
 }
 
 /// Verilen TL tutarını İngilizce olarak sesli okur (ör. 20 → "twenty turkish lira").
-/// Ses seçimi henüz bitmediyse BEKLEMEZ (kullanıcı jesti bağlamını korumak için,
-/// bkz. `warmupTts` notu) — `warmupTts()` önceden çağrılmışsa bu noktada genelde
-/// zaten tamamlanmıştır; değilse motor o an elindeki varsayılan sesle okur.
-/// Ardışık çağrılarda önceki seslendirme kesilip yenisi başlar (üst üste binmez).
 ///
-/// ⚠️ Asıl "hiç ses çıkmıyor" bug'ının kök nedeni: önceki sürümde ses
-/// seçimindeki (`setVoice`/`getVoices`) bir hata YAKALANMADIĞI için
-/// `_tts.speak()`'e HİÇ ulaşılamıyordu — hata konsola "Uncaught Error" olarak
-/// sessizce (kullanıcıya görünmeden) sızıyordu. Şimdi `speak()` çağrısı
-/// yukarıdaki tüm hazırlık adımlarından BAĞIMSIZ olarak her zaman denenir.
-Future<void> speakAmountInEnglish(num amount) async {
+/// ⚠️ KRİTİK — deploy'da (GitHub Pages) sessiz kalma, localde çalışma bug'ının
+/// kök nedeni: Chrome'un otomatik-oynatma/kullanıcı-jesti politikası `localhost`'u
+/// AYRICALIKLI tutar (gevşek); gerçek bir deploy origin'inde ise
+/// `speechSynthesis.speak()` çağrısı yalnızca kullanıcı jestiyle (tıklama)
+/// SENKRONA ÇOK YAKIN bir akışta yapılırsa kabul edilir — araya TEK bir `await`
+/// bile girse (ör. önce `stop()`'u beklemek) çağrı sessizce hiçbir etki
+/// yaratmadan yok sayılabilir. Bu yüzden bu fonksiyon BİLEREK SENKRONDUR:
+/// `_tts.speak()` hiçbir `await` ZİNCİRİ olmadan, tıklama işleyicisinin
+/// (`_SpeakTotalButtonState._speak`) İÇİNDE DOĞRUDAN çağrılır. Dil/perde/hız/ses
+/// seçimi ayrı ayrı arka planda (ateşle-unut) sürer; henüz oturmamışsa motor
+/// o an elindeki varsayılanla okur — mükemmel ses yerine SES ÇIKMASI önceliklidir.
+void speakAmountInEnglish(num amount) {
   warmupTts(); // henüz başlamadıysa ateşle-unut (idempotent, BEKLENMEZ)
+  unawaited(_applyBasics()); // hızlı/yerel ayarlar — arka planda, BEKLENMEZ
+  // stop() BİLEREK çağrılmaz/beklenmez — kullanıcı jesti bağlamını bozan asıl
+  // adım buydu. speak() önceki bir konuşmayı zaten değiştirir/kuyruğa alır.
   try {
-    await _applyBasics(); // hızlı/yerel — gecikme yok, kullanıcı jestini bozmaz
-  } catch (_) {}
-  try {
-    await _tts.stop();
-  } catch (_) {}
-  await _tts.speak(amountToEnglishWords(amount));
+    _tts.speak(amountToEnglishWords(amount));
+  } catch (_) {
+    // Platform çağrısı senkron olarak hata verdi — sessizce yut.
+  }
 }
