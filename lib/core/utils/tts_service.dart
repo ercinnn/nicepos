@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 import 'english_number_words.dart';
@@ -72,13 +73,19 @@ Future<void> _applyBasics() async {
   _basicsApplied = true;
   try {
     await _tts.setPitch(0.85);
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[TTS] setPitch HATA: $e');
+  }
   try {
     await _tts.setSpeechRate(0.9);
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[TTS] setSpeechRate HATA: $e');
+  }
   try {
     await _tts.setLanguage('en-GB');
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[TTS] setLanguage HATA: $e');
+  }
 }
 
 /// En iyi İngilizce (tercihen İngiliz + erkek) sesi arar ve BULURSA `setVoice`
@@ -88,21 +95,24 @@ Future<void> _resolveVoice() async {
   if (_voiceReady) return;
   try {
     final voices = await _loadVoicesWithRetry();
+    debugPrint('[TTS] bulunan toplam ses sayisi: ${voices.length}');
     if (voices.isEmpty) return;
 
     final chosen = _firstMatch(voices, (v) => _isBritish(v) && _isMale(v)) ??
         _firstMatch(voices, _isBritish) ??
         _firstMatch(voices, (v) => _isEnglish(v) && _isMale(v)) ??
         _firstMatch(voices, _isEnglish);
+    debugPrint('[TTS] secilen ses: ${chosen?['name']} / locale=${chosen?['locale']}');
 
     if (chosen != null) {
       await _tts.setVoice({
         'name': chosen['name'].toString(),
         'locale': chosen['locale'].toString(),
       });
+      debugPrint('[TTS] setVoice tamam');
     }
-  } catch (_) {
-    // Ses seçimi başarısız oldu — motorun varsayılan sesiyle devam edilecek.
+  } catch (e) {
+    debugPrint('[TTS] resolveVoice HATA: $e');
   } finally {
     _voiceReady = true;
   }
@@ -122,16 +132,28 @@ Future<void> warmupTts() async {
 /// çağrısına ulaşılmasını ENGELLEYEMEZ (önceki bug'ların kök nedeni: bir hazırlık
 /// adımındaki yakalanmamış hata `speak()`'e hiç ulaşılamamasına yol açıyordu).
 Future<void> speakAmountInEnglish(num amount) async {
+  final text = amountToEnglishWords(amount);
+  debugPrint('[TTS] speak baslatiliyor: "$text"');
   try {
     await _applyBasics();
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[TTS] applyBasics disaridan HATA: $e');
+  }
   try {
     await _resolveVoice();
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[TTS] resolveVoice disaridan HATA: $e');
+  }
   try {
     await _tts.stop();
-  } catch (_) {}
+    debugPrint('[TTS] stop tamam');
+  } catch (e) {
+    debugPrint('[TTS] stop HATA: $e');
+  }
   try {
-    await _tts.speak(amountToEnglishWords(amount));
-  } catch (_) {}
+    final result = await _tts.speak(text);
+    debugPrint('[TTS] speak() tamamlandi, donen deger: $result');
+  } catch (e) {
+    debugPrint('[TTS] speak HATA: $e');
+  }
 }
