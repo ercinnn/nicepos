@@ -28,6 +28,14 @@ const String _storeIconSvg =
     '<path fill="#1B2A4A" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
     '</svg>';
 
+// Büyük Etiket kırmızı başlık bandı fallback ikonu (KARAR v1.20) — bu bantta
+// istisnai olarak BEYAZ (kırmızı zemin üstünde okunurluk için), diğer
+// sekmelerin ink-lacivert fallback'inden farklı.
+const String _storeIconSvgWhite =
+    '<svg viewBox="0 0 24 24" width="100%" height="100%">'
+    '<path fill="#FFFFFF" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
+    '</svg>';
+
 const PdfColor _hairline = PdfColor.fromInt(0xFFB8B8B8);
 const PdfColor _hairlineEmpty = PdfColor.fromInt(0xFFE0E0E0);
 const PdfColor _dateGrey = PdfColor.fromInt(0xFF555555);
@@ -500,8 +508,12 @@ Future<Uint8List> buildQuadLabelsPdf({
   return doc.save();
 }
 
-// Tek Büyük Etiket hücresi (dar-logo _cell'in A5'e oranlanmış eşi). Boş hane →
-// yalnız ince kesim kılavuzu.
+// Kırmızı başlık bandı zemini (KARAR v1.20) — `AppColors.danger` #C0392B,
+// bu bir baskı-çıktısı rengi (§4 iki-kavram ayrımı), app "hata" semantiği YOK.
+const PdfColor _quadRed = PdfColor.fromInt(0xFFC0392B);
+
+// Tek Büyük Etiket hücresi (KARAR v1.20 — kırmızı başlık bandı + renkli fiyat
+// kutusu, rozetler kaldırıldı). Boş hane → yalnız ince kesim kılavuzu.
 pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
   if (slot == null) {
     return pw.Container(
@@ -513,7 +525,7 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
 
   final logo = logoImage != null
       ? pw.Image(logoImage, fit: pw.BoxFit.contain)
-      : pw.SvgImage(svg: _storeIconSvg);
+      : pw.SvgImage(svg: _storeIconSvgWhite);
 
   return pw.Container(
     decoration: pw.BoxDecoration(
@@ -521,50 +533,123 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
     ),
     padding: pw.EdgeInsets.all(6 * PdfPageFormat.mm),
     child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       mainAxisAlignment: pw.MainAxisAlignment.start,
       children: [
-        // Üst bant: logo (sol) + FİYAT hero (baskın, ortalı)
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.center,
-          children: [
-            pw.SizedBox(width: 94, height: 63, child: logo),
-            pw.SizedBox(width: 8),
-            pw.Expanded(
-              child: pw.FittedBox(
+        // 1. Üst bant: KIRMIZI zemin, tam genişlik, köşe radius YOK. SOL logo
+        //    (renkli; yoksa BEYAZ storefront fallback) + "ÖZEL FİYAT" + ürün
+        //    adı (UPPERCASE, beyaz ~%90 alfa).
+        pw.Container(
+          width: double.infinity,
+          color: _quadRed,
+          padding: const pw.EdgeInsets.symmetric(
+            horizontal: 3 * PdfPageFormat.mm,
+            vertical: 2.4 * PdfPageFormat.mm,
+          ),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(width: 45, height: 39, child: logo),
+              pw.SizedBox(width: 6),
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  mainAxisSize: pw.MainAxisSize.min,
+                  children: [
+                    pw.Text(
+                      'ÖZEL FİYAT',
+                      maxLines: 1,
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold,
+                        letterSpacing: 0.5,
+                        color: PdfColors.white,
+                      ),
+                    ),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      slot.productName.toUpperCase(),
+                      maxLines: 2,
+                      overflow: pw.TextOverflow.clip,
+                      style: pw.TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: pw.FontWeight.bold,
+                        lineSpacing: 1,
+                        color: PdfColors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 3 * PdfPageFormat.mm),
+        // 3. Fiyat kutusu: beyaz zemin + kırmızı ince kenarlık.
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.symmetric(
+            horizontal: 4 * PdfPageFormat.mm,
+            vertical: 3 * PdfPageFormat.mm,
+          ),
+          decoration: pw.BoxDecoration(
+            color: PdfColors.white,
+            border: pw.Border.all(color: _quadRed, width: 1.4),
+            borderRadius: pw.BorderRadius.circular(3 * PdfPageFormat.mm),
+          ),
+          child: pw.Column(
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              pw.Text(
+                'SATIŞ FİYATI',
+                style: pw.TextStyle(
+                  fontSize: 9,
+                  fontWeight: pw.FontWeight.bold,
+                  letterSpacing: 1,
+                  color: _quadRed,
+                ),
+              ),
+              pw.SizedBox(height: 2),
+              pw.FittedBox(
                 fit: pw.BoxFit.scaleDown,
                 alignment: pw.Alignment.center,
                 child: pw.Text(
                   '${formatNumber(slot.price)} TL',
                   style: pw.TextStyle(
-                    fontSize: 51,
+                    fontSize: 58,
                     fontWeight: pw.FontWeight.bold,
                     letterSpacing: -0.5,
-                    color: PdfColors.black,
+                    color: _quadRed,
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 4 * PdfPageFormat.mm),
-        // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
-        pw.SizedBox(
-          width: double.infinity,
-          child: pw.Text(
-            slot.productName.toUpperCase(),
-            textAlign: pw.TextAlign.center,
-            maxLines: 2,
-            overflow: pw.TextOverflow.clip,
-            style: pw.TextStyle(
-              fontSize: 16,
-              fontWeight: pw.FontWeight.bold,
-              lineSpacing: 1,
-              color: PdfColors.black,
-            ),
+              pw.SizedBox(height: 2),
+              pw.Text(
+                'KDV DAHİLDİR',
+                style: pw.TextStyle(
+                  fontSize: 7.5,
+                  color: PdfColor.fromInt(0xFFCB6156), // muted kırmızı
+                ),
+              ),
+            ],
           ),
         ),
-        // Barkod çizgileri (Code128) — esnek öğe; %80'e ortalı (1:8:1 flex).
+        pw.SizedBox(height: 2 * PdfPageFormat.mm),
+        // 4. Kesikli ayraç — nötr `#B8B8B8` (mevcut kesim-kılavuzu grisi);
+        //    pdf paketinde native dashed-border yok, eşit segment döngüsüyle
+        //    aynı görsel dil (HTML tarafı native `border-top:dashed` kullanır).
+        pw.Row(
+          children: List.generate(24, (i) {
+            return pw.Expanded(
+              child: pw.Container(
+                height: 0.5 * PdfPageFormat.mm,
+                color: i.isEven ? _hairline : PdfColors.white,
+              ),
+            );
+          }),
+        ),
+        pw.SizedBox(height: 2 * PdfPageFormat.mm),
+        // 5. Barkod çizgileri (Code128) — esnek öğe; %80'e ortalı (1:8:1 flex).
         pw.Expanded(
           child: pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -585,7 +670,7 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
             ],
           ),
         ),
-        // En alt: barkod no (sol) + oluşturma tarihi (sağ)
+        // 6. En alt: barkod no (sol) + oluşturma tarihi (sağ) — DEĞİŞMEDİ.
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
           children: [

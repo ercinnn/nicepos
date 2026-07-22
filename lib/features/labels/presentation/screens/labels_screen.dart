@@ -1829,9 +1829,11 @@ class _QuadA4Canvas extends StatelessWidget {
 Widget buildQuadCanvasForGolden(List<LabelSlot?> slots, {String? logoDataUrl}) =>
     _QuadA4Canvas(slots: slots, logoDataUrl: logoDataUrl);
 
-// Tek Büyük Etiket hücresi (dar-logo _LabelCell'in A5'e oranlanmış eşi): üst bant
-// logo (sol) + baskın FİYAT hero (ortalı) → ortalı ürün adı → esnek Code128 %80
-// → alt satır [barkod no sol · tarih sağ]. Baskı siyah/beyaz + RENKLİ logo.
+// Tek Büyük Etiket hücresi (KARAR v1.20 — kırmızı başlık bandı + renkli fiyat
+// kutusu, rozetler kaldırıldı): üst bant SOL logo + "ÖZEL FİYAT"/ürün adı
+// (kırmızı zemin, `AppColors.danger`) → beyaz+kırmızı-kenarlıklı FİYAT kutusu
+// ("SATIŞ FİYATI" / fiyat hero / "KDV DAHİLDİR") → kesikli nötr ayraç → esnek
+// Code128 %80 → alt satır [barkod no sol · tarih sağ] (DEĞİŞMEDİ, v1.13 deseni).
 class _QuadLabelCell extends StatelessWidget {
   final LabelSlot? slot;
   final Uint8List? logoBytes;
@@ -1853,24 +1855,87 @@ class _QuadLabelCell extends StatelessWidget {
       child: s == null
           ? const SizedBox.expand()
           : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                // Üst bant: logo (sol) + FİYAT hero (baskın, ortalı)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 124,
-                      height: 88,
-                      child: logoBytes != null
-                          ? Image.memory(logoBytes!, fit: BoxFit.contain)
-                          : const Icon(Icons.storefront,
-                              color: AppColors.primary, size: 72),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FittedBox(
+                // 1. Üst bant: KIRMIZI zemin, tam genişlik, köşe radius YOK.
+                //    SOL logo (renkli; yoksa BEYAZ storefront fallback — bu
+                //    banda özel istisna) + "ÖZEL FİYAT" + ürün adı (UPPERCASE).
+                Container(
+                  width: double.infinity,
+                  color: AppColors.danger,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 60,
+                        height: 52,
+                        child: logoBytes != null
+                            ? Image.memory(logoBytes!, fit: BoxFit.contain)
+                            : const Icon(Icons.storefront,
+                                color: Colors.white, size: 44),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'ÖZEL FİYAT',
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              s.productName.toUpperCase(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                height: 1.15,
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // 3. Fiyat kutusu: beyaz zemin + kırmızı ince kenarlık.
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: AppColors.danger, width: 2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'SATIŞ FİYATI',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.5,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.center,
                         child: Text(
@@ -1879,37 +1944,33 @@ class _QuadLabelCell extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.visible,
                           style: const TextStyle(
-                            fontSize: 80,
+                            fontSize: 92,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.5,
                             height: 1,
-                            color: Colors.black,
+                            color: AppColors.danger,
                             fontFeatures: [FontFeature.tabularFigures()],
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 15), // ~4mm
-                // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
-                SizedBox(
-                  width: double.infinity,
-                  child: Text(
-                    s.productName.toUpperCase(),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      height: 1.15,
-                      color: Colors.black,
-                    ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'KDV DAHİLDİR',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.danger.withValues(alpha: 0.75),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                // Barkod çizgileri (Code128) — esnek: sabit öğeler yerini korur;
-                // taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı.
+                const SizedBox(height: 8),
+                // 4. Kesikli ayraç — nötr `#B8B8B8` (mevcut kesim-kılavuzu grisi).
+                const _QuadDashedDivider(color: Color(0xFFB8B8B8)),
+                const SizedBox(height: 8),
+                // 5. Barkod çizgileri (Code128) — esnek: sabit öğeler yerini
+                // korur; taşarsa yalnız barkod çizgisi kısalır. %80'e ortalı.
                 Expanded(
                   child: Center(
                     child: FractionallySizedBox(
@@ -1925,7 +1986,7 @@ class _QuadLabelCell extends StatelessWidget {
                     ),
                   ),
                 ),
-                // En alt: barkod no (sol) + oluşturma tarihi (sağ)
+                // 6. En alt: barkod no (sol) + oluşturma tarihi (sağ) — DEĞİŞMEDİ.
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -1954,6 +2015,31 @@ class _QuadLabelCell extends StatelessWidget {
                 ),
               ],
             ),
+    );
+  }
+}
+
+// Kesikli ayraç (KARAR v1.20) — pdf paketinde native dashed-border yok, bu
+// yüzden PDF tarafında da aynı "eşit alternatif segment" deseni kullanılır
+// (önizleme = HTML = PDF birebir aynı görsel dil; HTML tarafı native
+// `border-top: dashed` ile aynı sonucu verir).
+class _QuadDashedDivider extends StatelessWidget {
+  final Color color;
+  static const int _segments = 24;
+
+  const _QuadDashedDivider({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 1.4,
+      child: Row(
+        children: List.generate(_segments, (i) {
+          return Expanded(
+            child: Container(color: i.isEven ? color : Colors.transparent),
+          );
+        }),
+      ),
     );
   }
 }
