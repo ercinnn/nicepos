@@ -560,3 +560,46 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   - **Ekran krom'u:** **ekran hero'su YOK** (araç/çalışma ekranı, §4 v1.10); stok listesi token dili (Manrope
     başlık, Inter tabular, `cardDecoration`, `goldBg` başlık). Masaüstü iki bölge (sol 4-hane girişi · sağ A4
     önizleme), mobil tek kolon. Yeni renk/altın YOK.
+- **Büyük Etiket — kırmızı başlık bandı + renkli fiyat kutusu, rozetler kaldırıldı (KARAR v1.20 — kullanıcı
+  isteği, referans `E1.jpg`):** "Büyük Etiket" (2×2 A5, KARAR v1.19) sekmesinin etiket-içi görsel dili yeniden
+  tasarlanır; bu **yalnızca Büyük Etiket sekmesini** etkiler — **Yeni Etiket ve Geniş Logo sekmeleri DEĞİŞMEDİ**
+  (aynı §4 "iki kavram ayrı: uygulama krom'u palete uyar, baskı çıktısı kendi estetiğine sahiptir" ilkesi;
+  KARAR v1.12/v1.14'teki "logo renkli" istisnasının bu sekmede metin/zemine **genişletilmiş** hâli — bilinçli
+  bir sapma, "baskı siyah/beyaz" kuralının GENEL istisnası DEĞİL, yalnız bu sekmeye özel).
+  - **Kaldırılan öğe (referans madde 3):** Üç pill-rozet ("Güçlü Hava Akışı" vb.) **tamamen kaldırılır** —
+    `LabelSlot` modelinde (`barcode`/`productName`/`price`/`createdAt` dışında) böyle bir veri alanı yok;
+    uydurma/statik metin eklenmez.
+  - **Kaldırılan/birleştirilen öğe (referans madde 2):** Ayrı "marka adı + ürün adı" beyaz kartı **eklenmez**
+    — ürün adı zaten başlık bandında (aşağıda) gösteriliyor, tekrar olurdu. Bu kartın yerini mevcut **mağaza
+    logosu** (KARAR v1.19.1 paylaşılan `logoDataUrl`) alır, başlık bandının SOL tarafına taşınır. "STOKTA VAR"
+    gibi stok-durumu metni de **EKLENMEZ** (veri kaynağı yok, referans madde 1'in alt satırı bu yüzden yalnız
+    ürün adını taşır).
+  - **1. Üst bant → KIRMIZI zemin (referanstaki mavi DEĞİL):** Tam genişlik dolgu **`AppColors.danger
+    #C0392B`** (yeni hex YOK, mevcut paletten — burada "borç/hata" semantiği taşımaz, bu bir **baskı-çıktısı**
+    rengidir, §4 iki-kavram ayrımı). Köşe radius YOK (dikdörtgen; mevcut quad hücre diliyle ve baskı
+    güvenliğiyle tutarlı). İçerik: **SOL**da logo (renkli, v1.12 istisnası; logo yoksa **beyaz**
+    `Icons.storefront` fallback — kırmızı zemin üstünde okunurluk için istisnai olarak beyaz, diğer
+    sekmelerin `color.ink` fallback'inden farklı, yalnız bu bantta), yanında dikey iki satır: **"ÖZEL
+    FİYAT"** (beyaz, w800, iri — ama fiyat hero'sundan **küçük**, hiyerarşi bozulmaz) + altında **ürün adı
+    UPPERCASE** (beyaz ~%90 alfa, daha küçük, en çok 2 satır + ellipsis). Bant sabit yükseklikte değil,
+    içerik kadar esner (2 satır ada izin verir); barkod alanı (mevcut `Expanded`) taşmayı yutar — v1.13
+    "kırpılma önleme" deseni AYNEN korunur, hiçbir öğe alt satırı (barkod no + tarih) dışarı itemez.
+  - **2. Rozetler:** YOK (yukarıda kaldırıldı).
+  - **3. Fiyat kutusu ("SATIŞ FİYATI"):** Beyaz zemin + **kırmızı (`#C0392B`) ince kenarlık** (~2px, radius
+    ~10 — dekoratif kutu çizgisi, fiziksel kesim değil, baskıda sorunsuz) içinde üç satır: küçük üstte
+    **"SATIŞ FİYATI"** (kırmızı, `type.utility` benzeri, geniş harf aralığı), ortada **FİYAT hero** — mevcut
+    `${formatNumber(price)} TL` formatı AYNEN korunur, yalnız renk siyah→**kırmızı** değişir ve boyut büyür
+    (etiketin en baskın öğesi kalır; §4 "fiyat = baskı hero'su, altın ray YOK" değişmez), altta küçük **"KDV
+    DAHİLDİR"** (kırmızı/muted kırmızı). Taşarsa `FittedBox scaleDown`, asla kırpılmaz (mevcut kural).
+  - **4. Kesikli ayraç:** Fiyat kutusu ile barkod arası ince **kesikli** çizgi, nötr **`#B8B8B8`** (mevcut
+    quad-tab kesim-kılavuzu grisi, KARAR v1.19.1 ile zaten tanımlı — yeni renk DEĞİL). Altın DEĞİL.
+  - **5-6. Barkod + alt satır (barkod no sol · tarih sağ):** **DEĞİŞMEDİ** — mevcut v1.19 Code128 %80-genişlik
+    + `Expanded` esnek barkod alanı + alt satır deseni birebir korunur. Referans görselin "ortalı barkod no +
+    ayrı marka/tarih footer satırı" biçimi **benimsenmedi** — kapsam dışı, gereksiz yeni bileşen; mevcut
+    sekmeler arası tutarlılık (Yeni Etiket/Geniş Logo ile aynı alt-satır dili) korunur.
+  - **Senkron zorunluluğu:** Üç çıktı (canlı önizleme `_QuadLabelCell`, PDF `buildQuadLabelsPdf`, HTML
+    `printQuadLabelsA4`) **BİREBİR AYNI** görünmeli (proje ilkesi) — ölçüler her çıktının kendi biriminde
+    (px/pt/mm) orantılı çevrilir.
+  - **Altın ekonomisi:** Bu kararda altın KULLANILMAZ — yeni kırmızı zemin/kenarlık `danger` paletinden,
+    kesikli çizgi nötr griden gelir; §5 "altın aynı ekranda dekor olarak yığılmaz" kuralı ihlal edilmiyor
+    (zaten hiç altın kullanılmıyor bu hücrede).
