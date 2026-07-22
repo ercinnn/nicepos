@@ -510,3 +510,53 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     - **Ölçü:** her çıktının kendi biriminde tam 2.5mm — önizleme `2.5*3.7795 ≈ 9.45px` · HTML
       `margin-top: 2.5mm` · PDF `2.5*PdfPageFormat.mm`. Üç çıktı BİREBİR; kayma 1 ve 2 satırda AYNI
       (üste-hizalı blok + sabit offset). Barkod + alt satır YERİNDE (v1.14.4/v1.14.2 kısıtları korunur).
+- **Dört-etiket (2×2 A5) sekmesi — "Büyük Etiket" (KARAR v1.19 — kullanıcı isteği):** Etiket ekranına
+  **dördüncü sekme**; A4 dikey sayfa **tam ortadan bir dikey + bir yatay çizgiyle 4 eşit çeyreğe** bölünür
+  (2 üst + 2 alt) → **2 sütun × 2 satır = 4 etiket / A4**. Her çeyrek ≈ **105mm × 148.5mm** (A5). İçerik
+  **"Yeni Etiket" (dar logo) etiketiyle BİREBİR AYNI öğe seti** (kullanıcı seçimi: (a)) — yalnız hücre A5'e
+  büyüdüğü için oranlar yeniden ölçeklenir. Mevcut etiketleri değiştirmez; yan yana yaşar.
+  - **Sekme yapısı:** üst `SegmentedButton` **dört segment** olur: **Yeni Etiket · Geniş Logo · Büyük Etiket ·
+    Kayıtlı Dosyalar** (sıra: dar → geniş → büyük → dosyalar). Aktif sekme token dili (§1 altın ekonomisi),
+    yeni renk yok. **Responsive (kasa v1.9.5 / v1.14 emsali):** mobilde (<650px) segment ikonları gizli + kısa
+    etiketler ("Yeni" · "Geniş" · "Büyük" · "Dosyalar"); masaüstünde tam etiket, tek satır (`maxLines:1,
+    softWrap:false`). ⚠️ **İzleme (QA):** dört segment 360px'e sığmayabilir — görsel QA taşma gösterirse
+    segment kontrolü **yatay-kaydırılabilir/sarmalı** bir sekme çubuğuna dönüştürülür (fonksiyon/sıra
+    değişmez, yalnız barındırma).
+  - **A4 geometrisi:** A4 dikey 210×297mm. **Merkez haç kesim çizgileri:** dikey çizgi x=**105mm**, yatay çizgi
+    y=**148.5mm** — **nötr ince hairline**, **altın YOK** (§5 altın ekonomisi), hem **önizlemede hem baskıda**
+    görünür (kesim kılavuzu; kullanıcı isteği). **Kesim çizgisi rengi (KARAR v1.19.1):** WYSIWYG — önizleme = baskı
+    aynı nötr **baskı-grisi**: dolu hücre kenarı/haç `#B8B8B8`, boş hücre `#E0E0E0` (mevcut dar/geniş sekmelerle
+    tutarlı). `#EAECF0` (app divider) KULLANILMAZ — beyaz üstünde basılınca görünmez, kesim kılavuzu işlevini
+    göremezdi. Bu gri app paletine değil etiket **baskı kavramına** aittir (§4 v1.10 iki-kavram ayrımı); altın
+    DEĞİL, imza etkilenmez. Çeyrekler tam yarım
+    sayfadır (haç tam ortada). Etiket içeriği her çeyreğin içinde **~6mm güvenli iç boşlukla** yerleşir (yazıcı
+    basılamaz kenar payı → hiçbir öğe kırpılmaz). Dış kenarda ek margin yok — kesim yalnız merkez haçtır. HTML
+    `@page{size:A4 portrait; margin:0}` + 2×2 ızgara + merkez hairline; PDF `PdfPageFormat.a4`, hücre
+    105×148.5mm eşit dağılım + merkez çizgiler; önizleme aynı oranı korur (1mm≈3.78px @96dpi).
+  - **Etiket-içi düzen (dar-logo v1.10/v1.12/v1.13 sırası, A5'e yeniden oranlanmış; üç çıktı BİREBİR: önizleme =
+    HTML = PDF), üstten alta:**
+    1. **Üst bant:** SOL'da logo yuvası (renkli logo v1.12; yoksa `Icons.store` `color.ink` fallback) · kalan
+       alanda **ORTALI FİYAT hero** (v1.12) — etiketin en iri/en baskın öğesi, `${formatNumber} TL` kalın
+       tabular, **altın ray YOK** (§4 baskı hero'su). A5 hücrede fiyat belirgin büyür; taşarsa `FittedBox
+       scaleDown`, asla kırpılmaz.
+    2. **Ürün adı** — ortalı (v1.12), en çok 2 satır + ellipsis, siyah.
+    3. **Code128 barkod** — ortalı, **%80 genişlik** (v1.13 deseni), çizgi yüksekliği A5 hücreye oranlı.
+    4. **Alt satır:** SOL'da barkod no (tabular) · SAĞ-alt köşe oluşturma tarihi (`formatShortDate`, minik).
+    - Öğe boyutları dar-logonun mutlak pt değerlerinin **kopyası DEĞİL**, A5 çeyreğe **oranlanır** (blown-up
+      seyreklik tuzağından kaçınmak için); esnek barkod alanı + sabit üst/alt öğe deseni (v1.13 kırpılma
+      düzeltmesi) korunur. Baskı siyah/beyaz (logo hariç, renkli).
+  - **Barkod → ürün çözme = mevcut mantık BİREBİR:** hane input → **Enter** → `_resolveBarcode` (cache →
+    fetchByBarcode → fetchAll) → `price1` çözülür, hane dolar, imleç **bir alt haneye** geçer; kamera sürekli
+    tarama desteklenir; scan bip sesi (v1.14.1). Aktif hane = ince sol altın şerit + ink kenarlık (§5);
+    çözülemeyen = `danger` ince uyarı. **4 hane, tek sütun** (satış/dar-logo deseni).
+  - **State:** ayrı `labelQuadSheetProvider` (4 hane, `keepAlive` — mevcut `labelSheetProvider` /
+    `labelWideSheetProvider`'a karışmaz, aynı desen).
+  - **Mağaza logosu (KARAR v1.19.1):** Büyük Etiket AYRI logo state'i açmaz — dar-logo (Yeni Etiket) sekmesinin
+    Supabase Storage'da kalıcı **tek mağaza logosunu** (`labelSheetProvider.logoDataUrl`) paylaşır; quad
+    başlığından da Yükle/Değiştir/Kaldır edilebilir. "TEK mağaza logosu" ilkesi korunur, yeni Storage akışı yok.
+  - **Aksiyonlar (kullanıcı: evet):** **Yazdır** (web `window.print`) + **PDF Kaydet** (`pdf` paketi, A4 2×2 = 4
+    etiket, aynı etiket-içi düzen; Supabase Storage `etiket_pdfleri` bucket'ı) + ortak **Kayıtlı Dosyalar**
+    sekmesi (dar + geniş + büyük PDF'ler aynı listede). Mevcut aksiyon dili.
+  - **Ekran krom'u:** **ekran hero'su YOK** (araç/çalışma ekranı, §4 v1.10); stok listesi token dili (Manrope
+    başlık, Inter tabular, `cardDecoration`, `goldBg` başlık). Masaüstü iki bölge (sol 4-hane girişi · sağ A4
+    önizleme), mobil tek kolon. Yeni renk/altın YOK.
