@@ -62,3 +62,6 @@ app.*.map.json
 # Geniş Logo etiketi golden testinin ürettiği görsel artefakt (test/wide_label_golden_test.dart).
 # Her test koşusunda yeniden üretilir; tasarım hizasını yerelde gözle kontrol etmek içindir.
 wide_label_golden.png
+
+# Büyük Etiket golden testinin ürettiği görsel artefakt (test/quad_label_golden_test.dart).
+quad_label_golden.png

@@ -456,6 +456,19 @@ pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? figurImage) {
 const int _kQuadCols = 2;
 const int _kQuadRows = 2;
 
+// KARAR v1.20.1 — üst bant (kırmızı) SABİT yükseklik (Flutter
+// `_kQuadTopBandHeightMm` ile birebir aynı mm değeri; üç çıktı BİREBİR): v1.20
+// bandı "içerik kadar esniyordu", 2 satırlık ürün adında büyüyen bant + fiyat
+// kutusunun sabit bütçesi birleşince barkod alanı sıfır/negatif yüksekliğe
+// düşüp `barcode` paketinin `assert(height > 0)` çökmesine yol açıyordu. Bant
+// artık 2 satırlık ürün adı DAHİL en kötü durum baştan hesaplanıp SABİTLENİR.
+const double _kQuadTopBandHeightMm = 23.3;
+
+// Savunma katmanı (madde 3): barkod alanına ayrılan gerçek yükseklik bu
+// eşiğin altına düşerse `pw.BarcodeWidget` HİÇ render edilmez — `assert`
+// asla fırlatılmaz. Normal koşulda (madde 1 ile) bu dala girilmesi beklenmez.
+const double _kQuadBarcodeMinHeightMm = 2;
+
 /// Dolu/boş 4 haneyi A4 dikey 2×2 Büyük Etiket PDF'ine dönüştürür.
 Future<Uint8List> buildQuadLabelsPdf({
   required List<LabelSlot?> slots,
@@ -541,6 +554,7 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
         //    adı (UPPERCASE, beyaz ~%90 alfa).
         pw.Container(
           width: double.infinity,
+          height: _kQuadTopBandHeightMm * PdfPageFormat.mm,
           color: _quadRed,
           padding: const pw.EdgeInsets.symmetric(
             horizontal: 3 * PdfPageFormat.mm,
@@ -588,9 +602,11 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
         // 3. Fiyat kutusu: beyaz zemin + kırmızı ince kenarlık.
         pw.Container(
           width: double.infinity,
+          // KARAR v1.20.1 madde 2: dikey iç boşluk ~25% daraltıldı (3mm →
+          // 2.25mm) — ek güvenlik payı için; renk/sıra/hiyerarşi DEĞİŞMEDİ.
           padding: const pw.EdgeInsets.symmetric(
             horizontal: 4 * PdfPageFormat.mm,
-            vertical: 3 * PdfPageFormat.mm,
+            vertical: 2.25 * PdfPageFormat.mm,
           ),
           decoration: pw.BoxDecoration(
             color: PdfColors.white,
@@ -650,24 +666,35 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
         ),
         pw.SizedBox(height: 2 * PdfPageFormat.mm),
         // 5. Barkod çizgileri (Code128) — esnek öğe; %80'e ortalı (1:8:1 flex).
+        // Savunma katmanı (KARAR v1.20.1 madde 3): gerçek yükseklik eşiğin
+        // altındaysa barkodu HİÇ render etme — `assert(height > 0)` çökmesi
+        // asla tetiklenmez.
         pw.Expanded(
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.Spacer(flex: 1),
-              pw.Expanded(
-                flex: 8,
-                child: bc.Barcode.code128().isValid(slot.barcode)
-                    ? pw.BarcodeWidget(
-                        barcode: bc.Barcode.code128(),
-                        data: slot.barcode,
-                        drawText: false,
-                        color: PdfColors.black,
-                      )
-                    : pw.SizedBox(),
-              ),
-              pw.Spacer(flex: 1),
-            ],
+          child: pw.LayoutBuilder(
+            builder: (context, constraints) {
+              final maxHeight = constraints?.maxHeight ?? double.infinity;
+              if (maxHeight < _kQuadBarcodeMinHeightMm * PdfPageFormat.mm) {
+                return pw.SizedBox();
+              }
+              return pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.Spacer(flex: 1),
+                  pw.Expanded(
+                    flex: 8,
+                    child: bc.Barcode.code128().isValid(slot.barcode)
+                        ? pw.BarcodeWidget(
+                            barcode: bc.Barcode.code128(),
+                            data: slot.barcode,
+                            drawText: false,
+                            color: PdfColors.black,
+                          )
+                        : pw.SizedBox(),
+                  ),
+                  pw.Spacer(flex: 1),
+                ],
+              );
+            },
           ),
         ),
         // 6. En alt: barkod no (sol) + oluşturma tarihi (sağ) — DEĞİŞMEDİ.

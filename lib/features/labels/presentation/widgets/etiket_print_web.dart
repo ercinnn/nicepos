@@ -487,15 +487,21 @@ String _buildQuadHtml({
     justify-content: flex-start;
   }
   .qcell.empty { border-color: #e0e0e0; }
-  /* 1. Üst bant — KIRMIZI zemin, tam genişlik, köşe radius YOK (KARAR v1.20). */
+  /* 1. Üst bant — KIRMIZI zemin, tam genişlik, köşe radius YOK (KARAR v1.20).
+     SABİT yükseklik (KARAR v1.20.1) — Flutter/PDF ile birebir aynı 23.3mm;
+     2 satırlık ürün adı dahil en kötü durum baştan hesaba katılır, bant
+     ürün adı uzunluğuna göre ASLA büyümez (barkod alanının payı deterministik
+     kalır). box-sizing:border-box sayesinde padding bu yüksekliğe dahildir. */
   .qtop {
     background: #C0392B;
     width: 100%;
+    height: 23.3mm;
     display: flex;
     align-items: center;
     gap: 4mm;
-    flex: 0 0 auto;
+    flex: 0 0 23.3mm;
     padding: 3mm 4mm;
+    overflow: hidden;
   }
   .qlogo {
     width: 20mm;
@@ -532,13 +538,15 @@ String _buildQuadHtml({
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  /* 3. Fiyat kutusu — beyaz zemin + kırmızı ince kenarlık (KARAR v1.20). */
+  /* 3. Fiyat kutusu — beyaz zemin + kırmızı ince kenarlık (KARAR v1.20).
+     Dikey iç boşluk ~25% daraltıldı (KARAR v1.20.1 madde 2: 3mm → 2.25mm,
+     ek güvenlik payı için) — renk/sıra/hiyerarşi DEĞİŞMEDİ. */
   .qpricebox {
     background: #fff;
     border: 0.6mm solid #C0392B;
     border-radius: 3mm;
     margin: 3mm 0;
-    padding: 3mm 4mm;
+    padding: 2.25mm 4mm;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -569,9 +577,13 @@ String _buildQuadHtml({
   }
   .qbc {
     /* Esnek: sabit öğeler (üst bant, fiyat kutusu, alt satır) yerini korur;
-       taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı. */
+       taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı.
+       min-height (KARAR v1.20.1 madde 3, orantılı minimum — Flutter/PDF'teki
+       savunma eşiğinin HTML eşdeğeri): barkod SVG'si sabit 260×60 viewBox ile
+       üretilir (bkz. `_barcodeSvg`), bu yüzden HTML'de gerçek bir `assert`
+       çökmesi riski YOK; bu yalnız görsel bir güvenlik payıdır. */
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 2mm;
     width: 80%;
     margin: 0 auto;
   }

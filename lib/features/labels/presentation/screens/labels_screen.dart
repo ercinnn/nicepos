@@ -1752,6 +1752,25 @@ class _LabelCell extends StatelessWidget {
 // İç güvenli boşluk 6mm @96dpi ≈ 22.7px (kırpılma önleme; dış margin YOK).
 const double _kQuadPad = 6 * 3.7795;
 
+// KARAR v1.20.1 — üst bant (kırmızı) SABİT yükseklik: v1.20'de bant "içerik
+// kadar esniyordu" (1 satırlık ürün adıyla 2 satırlık arasında toplam bant
+// yüksekliği değişiyordu); bu + fiyat kutusunun sabit bütçesi birleşince barkod
+// `Expanded` alanı sıfır/negatif yüksekliğe düşüp `barcode` paketinin
+// `assert(height > 0)` kontrolüyle GERÇEK bir çökmeye yol açıyordu. Bant artık
+// 2 satırlık ürün adı DAHİL en kötü durum baştan hesaplanıp SABİTLENİR — 1
+// satırlık kısa adlarda bandın altında boşluk kalması sorun değil, önemli olan
+// TOPLAM yüksekliğin ürün adı uzunluğuna göre ASLA değişmemesi (barkod alanının
+// payı böylece deterministik kalır). mm cinsinden (PDF/HTML aynı değeri
+// paylaşır, üç çıktı BİREBİR); @96dpi px karşılığı türetilir.
+const double _kQuadTopBandHeightMm = 23.3;
+const double _kQuadTopBandHeight = _kQuadTopBandHeightMm * 3.7795; // ≈88px
+
+// Savunma katmanı (KARAR v1.20.1 madde 3): barkod alanına ayrılan gerçek
+// yükseklik bu eşiğin altına düşerse `BarcodeWidget` HİÇ render edilmez (boş
+// bırakılır) — `assert`/exception asla fırlatılmaz. Normal koşulda (madde 1
+// ile) bu dala hiç girilmemesi beklenir, saf bir güvenlik ağıdır.
+const double _kQuadBarcodeMinHeight = 8;
+
 class _QuadPreviewPane extends ConsumerWidget {
   const _QuadPreviewPane();
 
@@ -1862,7 +1881,9 @@ class _QuadLabelCell extends StatelessWidget {
                 //    SOL logo (renkli; yoksa BEYAZ storefront fallback — bu
                 //    banda özel istisna) + "ÖZEL FİYAT" + ürün adı (UPPERCASE).
                 Container(
+                  key: const Key('quadTopBand'),
                   width: double.infinity,
+                  height: _kQuadTopBandHeight,
                   color: AppColors.danger,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1914,9 +1935,13 @@ class _QuadLabelCell extends StatelessWidget {
                 const SizedBox(height: 10),
                 // 3. Fiyat kutusu: beyaz zemin + kırmızı ince kenarlık.
                 Container(
+                  key: const Key('quadPriceBox'),
                   width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  // KARAR v1.20.1 madde 2: dikey iç boşluk ~25% daraltıldı
+                  // (10 → 7.5) — ek güvenlik payı için; renk/sıra/hiyerarşi
+                  // DEĞİŞMEDİ.
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 7.5),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     border: Border.all(color: AppColors.danger, width: 2),
@@ -1972,18 +1997,31 @@ class _QuadLabelCell extends StatelessWidget {
                 // 5. Barkod çizgileri (Code128) — esnek: sabit öğeler yerini
                 // korur; taşarsa yalnız barkod çizgisi kısalır. %80'e ortalı.
                 Expanded(
-                  child: Center(
-                    child: FractionallySizedBox(
-                      widthFactor: 0.8,
-                      child: BarcodeWidget(
-                        barcode: bc.Barcode.code128(),
-                        data: s.barcode,
-                        drawText: false,
-                        color: Colors.black,
-                        errorBuilder: (context, error) =>
-                            const SizedBox.shrink(),
-                      ),
-                    ),
+                  key: const Key('quadBarcodeArea'),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Savunma katmanı (KARAR v1.20.1 madde 3): gerçek
+                      // yükseklik eşiğin altındaysa barkodu HİÇ render etme
+                      // — `barcode` paketinin `assert(height > 0)` çökmesi
+                      // asla tetiklenmez. Normal koşulda (madde 1 ile) bu
+                      // dala hiç girilmemesi beklenir.
+                      if (constraints.maxHeight < _kQuadBarcodeMinHeight) {
+                        return const SizedBox.shrink();
+                      }
+                      return Center(
+                        child: FractionallySizedBox(
+                          widthFactor: 0.8,
+                          child: BarcodeWidget(
+                            barcode: bc.Barcode.code128(),
+                            data: s.barcode,
+                            drawText: false,
+                            color: Colors.black,
+                            errorBuilder: (context, error) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
                 // 6. En alt: barkod no (sol) + oluşturma tarihi (sağ) — DEĞİŞMEDİ.
