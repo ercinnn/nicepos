@@ -88,5 +88,25 @@ final labelWideSheetProvider =
     );
 
 typedef _$LabelWideSheet = Notifier<LabelWideSheetState>;
+String _$labelQuadSheetHash() => r'992a542ccf94036c37b5069d647d18730c1a0088';
+
+/// Büyük Etiket sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4 hane
+/// korunur (dar-logo `LabelSheet` deseninin logosuz 4-haneli kopyası; dar
+/// 24-hane / geniş 10-hane provider'larıyla KARIŞMAZ).
+///
+/// Copied from [LabelQuadSheet].
+@ProviderFor(LabelQuadSheet)
+final labelQuadSheetProvider =
+    NotifierProvider<LabelQuadSheet, LabelQuadSheetState>.internal(
+      LabelQuadSheet.new,
+      name: r'labelQuadSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelQuadSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelQuadSheet = Notifier<LabelQuadSheetState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -43,6 +43,25 @@ void printWideLabelsA4({
   web.window.open(url, '_blank');
 }
 
+/// Dolu Büyük Etiketleri A4 dikey (2 sütun × 2 satır = 4 A5 etiket) olarak yeni
+/// bir tarayıcı penceresinde açar ve otomatik yazdırır (KARAR v1.19). Merkez haç
+/// (dikey x=105mm / yatay y=148.5mm) hücre ayraçlarından oluşur; dış margin YOK.
+/// Etiket-içi düzen dar-logo (Yeni Etiket) ile aynı öğe seti, A5'e oranlanmış.
+/// Çıktı SİYAH/BEYAZ + mağaza logosu (RENKLİ); barkod = Code128 SVG.
+void printQuadLabelsA4({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  final html = _buildQuadHtml(slots: slots, logoDataUrl: logoDataUrl);
+
+  final blob = web.Blob(
+    [html.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/html'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.window.open(url, '_blank');
+}
+
 String _esc(String? value) {
   if (value == null || value.isEmpty) return '';
   return value
@@ -362,6 +381,151 @@ String _buildWideHtml({
   }
   .wbcno { font-size: 10pt; letter-spacing: 0.3px; color: #000; }
   .wdate { font-size: 5.5pt; color: #444; }
+</style>
+</head>
+<body onload="window.focus(); window.print();">
+  <div class="sheet">
+    $cells
+  </div>
+</body>
+</html>''';
+}
+
+// ─── Büyük Etiket (KARAR v1.19) — 2 sütun × 2 satır = 4 A5 etiket ─────────────
+// Merkez haç (dikey x=105mm / yatay y=148.5mm) hücre ayraçlarından oluşur; dış
+// margin YOK. Hücre 105×148.5mm, iç güvenli boşluk 6mm. Etiket-içi düzen
+// dar-logo (Yeni Etiket) ile BİREBİR aynı öğe seti, A5'e oranlanmış (fontlar
+// ~1.8× büyütüldü). Çıktı SİYAH/BEYAZ + RENKLİ mağaza logosu.
+
+String _quadCellHtml(LabelSlot? slot, String? logoDataUrl) {
+  if (slot == null) {
+    return '<div class="qcell empty"></div>';
+  }
+
+  final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
+      ? '<img class="qlogo-img" src="${_esc(logoDataUrl)}" alt="logo">'
+      : _storeIconSvg;
+
+  final bc = _barcodeSvg(slot.barcode);
+  final bcHtml = bc.isEmpty ? '' : '<div class="qbc">$bc</div>';
+
+  return '''
+    <div class="qcell">
+      <div class="qtop">
+        <div class="qlogo">$logoHtml</div>
+        <div class="qprice">${_esc(formatNumber(slot.price))} TL</div>
+      </div>
+      <div class="qpname">${_esc(slot.productName)}</div>
+      $bcHtml
+      <div class="qbottom">
+        <span class="qbcno">${_esc(slot.barcode)}</span>
+        <span class="qdate">${_esc(formatShortDate(slot.createdAt))}</span>
+      </div>
+    </div>''';
+}
+
+String _buildQuadHtml({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  final cells = StringBuffer();
+  for (final slot in slots) {
+    cells.writeln(_quadCellHtml(slot, logoDataUrl));
+  }
+
+  // A4 portrait 210×297mm, dış margin 0. 2 sütun → 105mm, 2 satır → 148.5mm.
+  // Merkez haç = hücrelerin bitişik hairline kenarlıkları (nötr, altın YOK).
+  return '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Büyük Etiketler</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    width: 210mm;
+    display: grid;
+    grid-template-columns: repeat(2, 105mm);
+    grid-auto-rows: 148.5mm;
+    gap: 0;
+  }
+  .qcell {
+    /* İnce nötr hairline (merkez haç + kesim kılavuzu; altın YOK). */
+    border: 0.2mm solid #b8b8b8;
+    padding: 6mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .qcell.empty { border-color: #e0e0e0; }
+  .qtop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4mm;
+    flex: 0 0 auto;
+  }
+  .qlogo {
+    width: 32mm;
+    height: 23mm;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .qlogo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .qprice {
+    font-weight: 800;
+    font-size: 70pt;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    text-align: center;
+    flex: 1 1 auto;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .qpname {
+    font-size: 18pt;
+    font-weight: 600;
+    line-height: 1.15;
+    text-transform: uppercase;
+    text-align: center;
+    flex: 0 0 auto;
+    margin-top: 4mm;
+    /* En fazla 2 satır, taşarsa kısalt. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .qbc {
+    /* Esnek: sabit öğeler (üst bant, ürün adı, alt satır) yerini korur;
+       taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı. */
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 80%;
+    margin: 0 auto;
+  }
+  .qbc svg { width: 100%; height: 100%; display: block; }
+  .qbottom {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .qbcno { font-size: 25pt; letter-spacing: 0.5px; }
+  .qdate { font-size: 10pt; color: #444; }
 </style>
 </head>
 <body onload="window.focus(); window.print();">

@@ -435,3 +435,179 @@ pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? figurImage) {
     ),
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Büyük Etiket PDF üretimi (KARAR v1.19) — A4 dikey, merkez haç ile 2 sütun ×
+// 2 satır = 4 A5 etiket. Kesin baskı geometrisi (önizleme = HTML = PDF, üçü
+// BİREBİR): hücre 105×148.5mm, dış margin YOK (merkez haç = bitişik hücre
+// kenarlıkları), iç güvenli boşluk 6mm. Etiket-içi düzen dar-logo (Yeni Etiket)
+// ile aynı öğe seti, A5'e oranlanmış (~1.8× büyük). Çıktı SİYAH/BEYAZ + RENKLİ
+// mağaza logosu (yoksa mağaza ikonu fallback).
+// ═══════════════════════════════════════════════════════════════════════════
+
+const int _kQuadCols = 2;
+const int _kQuadRows = 2;
+
+/// Dolu/boş 4 haneyi A4 dikey 2×2 Büyük Etiket PDF'ine dönüştürür.
+Future<Uint8List> buildQuadLabelsPdf({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) async {
+  pw.ThemeData theme;
+  try {
+    final base = await PdfGoogleFonts.robotoRegular();
+    final bold = await PdfGoogleFonts.robotoBold();
+    theme = pw.ThemeData.withFont(base: base, bold: bold);
+  } catch (_) {
+    theme = pw.ThemeData.base();
+  }
+
+  pw.MemoryImage? logoImage;
+  if (logoDataUrl != null && logoDataUrl.isNotEmpty) {
+    final i = logoDataUrl.indexOf(',');
+    if (i >= 0) {
+      try {
+        logoImage = pw.MemoryImage(base64Decode(logoDataUrl.substring(i + 1)));
+      } catch (_) {
+        logoImage = null;
+      }
+    }
+  }
+
+  final doc = pw.Document(theme: theme);
+  doc.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: pw.EdgeInsets.zero, // dış margin YOK; merkez haç = hücre ayraçları
+      build: (context) {
+        return pw.Column(
+          children: List.generate(_kQuadRows, (r) {
+            return pw.Expanded(
+              child: pw.Row(
+                children: List.generate(_kQuadCols, (c) {
+                  final idx = r * _kQuadCols + c;
+                  final slot = idx < slots.length ? slots[idx] : null;
+                  return pw.Expanded(child: _quadCell(slot, logoImage));
+                }),
+              ),
+            );
+          }),
+        );
+      },
+    ),
+  );
+
+  return doc.save();
+}
+
+// Tek Büyük Etiket hücresi (dar-logo _cell'in A5'e oranlanmış eşi). Boş hane →
+// yalnız ince kesim kılavuzu.
+pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
+  if (slot == null) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: _hairlineEmpty, width: 0.5),
+      ),
+    );
+  }
+
+  final logo = logoImage != null
+      ? pw.Image(logoImage, fit: pw.BoxFit.contain)
+      : pw.SvgImage(svg: _storeIconSvg);
+
+  return pw.Container(
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: _hairline, width: 0.5),
+    ),
+    padding: pw.EdgeInsets.all(6 * PdfPageFormat.mm),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      mainAxisAlignment: pw.MainAxisAlignment.start,
+      children: [
+        // Üst bant: logo (sol) + FİYAT hero (baskın, ortalı)
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            pw.SizedBox(width: 94, height: 63, child: logo),
+            pw.SizedBox(width: 8),
+            pw.Expanded(
+              child: pw.FittedBox(
+                fit: pw.BoxFit.scaleDown,
+                alignment: pw.Alignment.center,
+                child: pw.Text(
+                  '${formatNumber(slot.price)} TL',
+                  style: pw.TextStyle(
+                    fontSize: 51,
+                    fontWeight: pw.FontWeight.bold,
+                    letterSpacing: -0.5,
+                    color: PdfColors.black,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 4 * PdfPageFormat.mm),
+        // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
+        pw.SizedBox(
+          width: double.infinity,
+          child: pw.Text(
+            slot.productName.toUpperCase(),
+            textAlign: pw.TextAlign.center,
+            maxLines: 2,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(
+              fontSize: 16,
+              fontWeight: pw.FontWeight.bold,
+              lineSpacing: 1,
+              color: PdfColors.black,
+            ),
+          ),
+        ),
+        // Barkod çizgileri (Code128) — esnek öğe; %80'e ortalı (1:8:1 flex).
+        pw.Expanded(
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Spacer(flex: 1),
+              pw.Expanded(
+                flex: 8,
+                child: bc.Barcode.code128().isValid(slot.barcode)
+                    ? pw.BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: slot.barcode,
+                        drawText: false,
+                        color: PdfColors.black,
+                      )
+                    : pw.SizedBox(),
+              ),
+              pw.Spacer(flex: 1),
+            ],
+          ),
+        ),
+        // En alt: barkod no (sol) + oluşturma tarihi (sağ)
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            pw.Expanded(
+              child: pw.Text(
+                slot.barcode,
+                maxLines: 1,
+                overflow: pw.TextOverflow.clip,
+                style: pw.TextStyle(
+                  fontSize: 22,
+                  letterSpacing: 0.5,
+                  color: PdfColors.black,
+                ),
+              ),
+            ),
+            pw.Text(
+              formatShortDate(slot.createdAt),
+              style: const pw.TextStyle(fontSize: 9, color: _dateGrey),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}

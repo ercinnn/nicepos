@@ -15,6 +15,13 @@ const int kWideCols = 2;
 const int kWideRows = 5;
 const int kWideCount = kWideCols * kWideRows; // 10
 
+/// Büyük Etiket sabitleri (KARAR v1.19): A4 dikey, merkez haç ile 2 sütun × 2
+/// satır = 4 A5 etiket/A4. Her çeyrek tam yarım sayfa (105×148.5mm), dış margin
+/// YOK; merkez haç (dikey x=105mm / yatay y=148.5mm) = hücre ayraçları.
+const int kQuadCols = 2;
+const int kQuadRows = 2;
+const int kQuadCount = kQuadCols * kQuadRows; // 4
+
 /// Etiket sayfasının durumu: 24 hanelik liste (`null` = boş hane) + mağaza logosu
 /// (data URL / base64; hem önizleme hem baskıda kullanılır).
 class LabelSheetState {
@@ -126,6 +133,55 @@ class LabelWideSheet extends _$LabelWideSheet {
 
   void clearAll() {
     state = state.copyWith(slots: List<LabelSlot?>.filled(kWideCount, null));
+  }
+}
+
+// ─── Büyük Etiket sayfası (KARAR v1.19) ──────────────────────────────────────
+
+/// Büyük Etiket sayfasının durumu: 4 hanelik liste (`null` = boş hane). Mağaza
+/// logosu ayrı tutulmaz — dar-logo `LabelSheet`'in kalıcı store logosu
+/// (`logoDataUrl`) paylaşılır. dar 24-hane / geniş 10-hane provider'larıyla
+/// KARIŞMAZ (bağımsız `keepAlive` state).
+class LabelQuadSheetState {
+  final List<LabelSlot?> slots;
+
+  const LabelQuadSheetState({required this.slots});
+
+  factory LabelQuadSheetState.initial() => LabelQuadSheetState(
+        slots: List<LabelSlot?>.filled(kQuadCount, null),
+      );
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  LabelQuadSheetState copyWith({List<LabelSlot?>? slots}) {
+    return LabelQuadSheetState(slots: slots ?? this.slots);
+  }
+}
+
+/// Büyük Etiket sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4 hane
+/// korunur (dar-logo `LabelSheet` deseninin logosuz 4-haneli kopyası; dar
+/// 24-hane / geniş 10-hane provider'larıyla KARIŞMAZ).
+@Riverpod(keepAlive: true)
+class LabelQuadSheet extends _$LabelQuadSheet {
+  @override
+  LabelQuadSheetState build() => LabelQuadSheetState.initial();
+
+  void setSlot(int index, LabelSlot slot) {
+    if (index < 0 || index >= kQuadCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = slot;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearSlot(int index) {
+    if (index < 0 || index >= kQuadCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = null;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(slots: List<LabelSlot?>.filled(kQuadCount, null));
   }
 }
 
