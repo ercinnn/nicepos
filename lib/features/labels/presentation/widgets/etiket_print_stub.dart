@@ -17,3 +17,11 @@ void printWideLabelsA4({
 }) {
   // No-op
 }
+
+/// Büyük Etiket (2×2 A5) yazdırma — web dışı platformlarda no-op (KARAR v1.19).
+void printQuadLabelsA4({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  // No-op
+}

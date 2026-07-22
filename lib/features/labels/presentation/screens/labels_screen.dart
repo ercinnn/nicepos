@@ -26,9 +26,9 @@ import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
 import '../widgets/label_scan_sheet.dart';
 
-// Etiket ekranı üst sekmeleri (KARAR v1.14): dar 24-hane akışı + Geniş Logo
-// 10-hane akışı + kayıtlı PDF'ler.
-enum _LabelTab { yeni, genis, kayitli }
+// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.19): dar 24-hane akışı + Geniş
+// Logo 10-hane akışı + Büyük Etiket 4-hane akışı + kayıtlı PDF'ler.
+enum _LabelTab { yeni, genis, buyuk, kayitli }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Etiket (raf etiketi A4 yazdırma) ekranı — KARAR v1.10
@@ -66,6 +66,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   int _wideActiveIndex = 0;
   Uint8List? _figurBytes; // marka figürü (yazdırma için bir kez okunur)
 
+  // Büyük Etiket sekmesi (KARAR v1.19) — 4 haneli ayrı giriş durumu.
+  late final List<TextEditingController> _quadControllers;
+  late final List<FocusNode> _quadFocusNodes;
+  final Set<int> _quadErrors = {};
+  int _quadActiveIndex = 0;
+
   _LabelTab _tab = _LabelTab.yeni; // aktif sekme
 
   @override
@@ -86,6 +92,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       final node = FocusNode();
       node.addListener(() {
         if (node.hasFocus && mounted) setState(() => _wideActiveIndex = i);
+      });
+      return node;
+    });
+    _quadControllers =
+        List.generate(kQuadCount, (_) => TextEditingController());
+    _quadFocusNodes = List.generate(kQuadCount, (i) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus && mounted) setState(() => _quadActiveIndex = i);
       });
       return node;
     });
@@ -118,6 +133,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       c.dispose();
     }
     for (final n in _wideFocusNodes) {
+      n.dispose();
+    }
+    for (final c in _quadControllers) {
+      c.dispose();
+    }
+    for (final n in _quadFocusNodes) {
       n.dispose();
     }
     super.dispose();
@@ -597,6 +618,184 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     }
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // Büyük Etiket sekmesi (KARAR v1.19) — 4 haneli akış (dar-logo 24-hane
+  // akışının A5 2×2 uyarlaması). Barkod çözme mantığı ortak (_resolveBarcode);
+  // hedef state (labelQuadSheetProvider) + mağaza logosu (dar-logo'nun kalıcı
+  // store logosu paylaşılır) farklı.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  int _nextQuadEmptyIndex() {
+    final slots = ref.read(labelQuadSheetProvider).slots;
+    for (var i = 0; i < kQuadCount; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  Future<void> _onQuadSubmitted(int index, String raw) async {
+    final query = raw.trim();
+    final notifier = ref.read(labelQuadSheetProvider.notifier);
+    if (query.isEmpty) {
+      notifier.clearSlot(index);
+      setState(() => _quadErrors.remove(index));
+      return;
+    }
+
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      notifier.clearSlot(index);
+      setState(() => _quadErrors.add(index));
+      playScanBeep(success: false); // danger uyarı sesi (KARAR v1.14.1)
+      return;
+    }
+
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    notifier.setSlot(
+      index,
+      LabelSlot(
+        barcode: code,
+        productName: product.name,
+        price: product.price1,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _quadControllers[index].text = code;
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
+    setState(() => _quadErrors.remove(index));
+
+    if (index + 1 < kQuadCount) {
+      _quadFocusNodes[index + 1].requestFocus();
+      _quadControllers[index + 1].selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _quadControllers[index + 1].text.length,
+      );
+    }
+  }
+
+  Future<LabelScanFeedback> _handleQuadCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelQuadSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextQuadEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    ref.read(labelQuadSheetProvider.notifier).setSlot(
+          index,
+          LabelSlot(
+            barcode: code,
+            productName: product.name,
+            price: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+    _quadControllers[index].text = code;
+    setState(() => _quadErrors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  Future<void> _startQuadCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleQuadCameraScan,
+      totalCount: kQuadCount,
+      initialFilled: ref.read(labelQuadSheetProvider).filledCount,
+    );
+  }
+
+  void _clearQuadSlot(int index) {
+    _quadControllers[index].clear();
+    ref.read(labelQuadSheetProvider.notifier).clearSlot(index);
+    setState(() => _quadErrors.remove(index));
+    _quadFocusNodes[index].requestFocus();
+  }
+
+  void _clearQuadAll() {
+    for (final c in _quadControllers) {
+      c.clear();
+    }
+    ref.read(labelQuadSheetProvider.notifier).clearAll();
+    setState(() => _quadErrors.clear());
+  }
+
+  void _printQuad() {
+    final state = ref.read(labelQuadSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    // Mağaza logosu dar-logo sekmesinin kalıcı store logosundan paylaşılır.
+    printQuadLabelsA4(
+      slots: state.slots,
+      logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+    );
+  }
+
+  Future<void> _saveQuadPdf() async {
+    final state = ref.read(labelQuadSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'buyuk-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final bytes = await buildQuadLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+      );
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mobile = context.isMobile;
@@ -634,6 +833,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     // ── Sekme 2: Geniş Logo (KARAR v1.14) ──────────────────────────────────
     if (_tab == _LabelTab.genis) {
       return mobile ? _buildWideMobile(selector) : _buildWideDesktop(selector);
+    }
+
+    // ── Sekme 3: Büyük Etiket (KARAR v1.19) ────────────────────────────────
+    if (_tab == _LabelTab.buyuk) {
+      return mobile ? _buildQuadMobile(selector) : _buildQuadDesktop(selector);
     }
 
     // ── Sekme 1: Yeni Etiket (mevcut akış) ─────────────────────────────────
@@ -836,6 +1040,112 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       ),
     );
   }
+
+  // ─── Büyük Etiket — masaüstü (sol 4-hane giriş · sağ A4 önizleme) ──────────
+  Widget _buildQuadDesktop(Widget selector) {
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: ref.watch(labelQuadSheetProvider).filledCount,
+          totalCount: kQuadCount,
+          hasLogo: logoDataUrl != null,
+          onPickLogo: _pickLogo,
+          onRemoveLogo: _removeLogo,
+          onClearAll: _clearQuadAll,
+          onPrint: _printQuad,
+          onSavePdf: _saveQuadPdf,
+          onCameraScan: kIsWeb ? null : _startQuadCameraScan,
+          subtitle:
+              'Barkod okutun; her hane A4 sayfayı çeyreğe bölen büyük (A5) '
+              'etikete dönüşür — logo + fiyat + ürün adı + barkod.',
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: _InputColumn(
+                  controllers: _quadControllers,
+                  focusNodes: _quadFocusNodes,
+                  errors: _quadErrors,
+                  activeIndex: _quadActiveIndex,
+                  itemCount: kQuadCount,
+                  quad: true,
+                  onSubmitted: _onQuadSubmitted,
+                  onClear: _clearQuadSlot,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              Expanded(
+                flex: 6,
+                child: _QuadPreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Büyük Etiket — mobil (tek kolon) ──────────────────────────────────────
+  Widget _buildQuadMobile(Widget selector) {
+    final state = ref.watch(labelQuadSheetProvider);
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.filledCount,
+            totalCount: kQuadCount,
+            hasLogo: logoDataUrl != null,
+            onPickLogo: _pickLogo,
+            onRemoveLogo: _removeLogo,
+            onClearAll: _clearQuadAll,
+            onPrint: _printQuad,
+            onSavePdf: _saveQuadPdf,
+            onCameraScan: kIsWeb ? null : _startQuadCameraScan,
+            subtitle:
+                'Barkod okutun; her hane A4 sayfayı çeyreğe bölen büyük (A5) '
+                'etikete dönüşür — logo + fiyat + ürün adı + barkod.',
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          ...List.generate(kQuadCount, (i) {
+            return _SlotInputRow(
+              index: i,
+              controller: _quadControllers[i],
+              focusNode: _quadFocusNodes[i],
+              isActive: _quadActiveIndex == i,
+              isError: _quadErrors.contains(i),
+              quad: true,
+              onSubmitted: (v) => _onQuadSubmitted(i, v),
+              onClear: () => _clearQuadSlot(i),
+            );
+          }),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          LayoutBuilder(
+            builder: (ctx, c) => SizedBox(
+              width: c.maxWidth,
+              height: c.maxWidth * (_kA4Height / _kA4Width),
+              child: _QuadPreviewPane(),
+            ),
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1007,6 +1317,7 @@ class _InputColumn extends StatelessWidget {
   final int activeIndex;
   final int itemCount;
   final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
+  final bool quad; // true → Büyük Etiket state'i (labelQuadSheetProvider)
   final Future<void> Function(int, String) onSubmitted;
   final void Function(int) onClear;
 
@@ -1019,6 +1330,7 @@ class _InputColumn extends StatelessWidget {
     required this.onClear,
     this.itemCount = kLabelCount,
     this.wide = false,
+    this.quad = false,
   });
 
   @override
@@ -1045,6 +1357,7 @@ class _InputColumn extends StatelessWidget {
                   isActive: activeIndex == i,
                   isError: errors.contains(i),
                   wide: wide,
+                  quad: quad,
                   onSubmitted: (v) => onSubmitted(i, v),
                   onClear: () => onClear(i),
                 );
@@ -1084,6 +1397,7 @@ class _SlotInputRow extends ConsumerWidget {
   final bool isActive;
   final bool isError;
   final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
+  final bool quad; // true → Büyük Etiket state'i (labelQuadSheetProvider)
   final Future<void> Function(String) onSubmitted;
   final VoidCallback onClear;
 
@@ -1096,13 +1410,16 @@ class _SlotInputRow extends ConsumerWidget {
     required this.onSubmitted,
     required this.onClear,
     this.wide = false,
+    this.quad = false,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final slot = wide
-        ? ref.watch(labelWideSheetProvider.select((s) => s.slots[index]))
-        : ref.watch(labelSheetProvider.select((s) => s.slots[index]));
+    final slot = quad
+        ? ref.watch(labelQuadSheetProvider.select((s) => s.slots[index]))
+        : wide
+            ? ref.watch(labelWideSheetProvider.select((s) => s.slots[index]))
+            : ref.watch(labelSheetProvider.select((s) => s.slots[index]));
 
     // Aktif hane = aktif durum altını (izinli: ince sol altın şerit + ink
     // kenarlık, §5). Hata → danger kenarlık.
@@ -1425,6 +1742,223 @@ class _LabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Büyük Etiket — canlı A4 önizleme (KARAR v1.19): merkez haç ile 2 sütun × 2
+// satır = 4 A5 etiket. Hücre 105×148.5mm, dış margin YOK (merkez haç = bitişik
+// hücre kenarlıkları), iç güvenli boşluk 6mm. Etiket-içi düzen dar-logo (Yeni
+// Etiket) _LabelCell ile aynı öğe seti, A5'e oranlanmış (~1.8× büyük). Önizleme
+// = HTML = PDF BİREBİR. Mağaza logosu dar-logo'nun kalıcı store logosundan gelir.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// İç güvenli boşluk 6mm @96dpi ≈ 22.7px (kırpılma önleme; dış margin YOK).
+const double _kQuadPad = 6 * 3.7795;
+
+class _QuadPreviewPane extends ConsumerWidget {
+  const _QuadPreviewPane();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final slots = ref.watch(labelQuadSheetProvider).slots;
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: _QuadA4Canvas(slots: slots, logoDataUrl: logoDataUrl),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuadA4Canvas extends StatelessWidget {
+  final List<LabelSlot?> slots;
+  final String? logoDataUrl;
+
+  const _QuadA4Canvas({required this.slots, required this.logoDataUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    // Logo bytes'ı tuval başına bir kez çöz (her hücrede tekrar decode etme).
+    Uint8List? logoBytes;
+    if (logoDataUrl != null) {
+      final i = logoDataUrl!.indexOf(',');
+      if (i >= 0) {
+        try {
+          logoBytes = base64Decode(logoDataUrl!.substring(i + 1));
+        } catch (_) {
+          logoBytes = null;
+        }
+      }
+    }
+
+    return Container(
+      width: _kA4Width,
+      height: _kA4Height,
+      color: Colors.white,
+      // Dış margin YOK — çeyrekler tam yarım sayfa; merkez haç hücre
+      // kenarlıklarından oluşur.
+      child: Column(
+        children: List.generate(kQuadRows, (r) {
+          return Expanded(
+            child: Row(
+              children: List.generate(kQuadCols, (c) {
+                final idx = r * kQuadCols + c;
+                return Expanded(
+                  child: _QuadLabelCell(
+                    slot: slots[idx],
+                    logoBytes: logoBytes,
+                  ),
+                );
+              }),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Büyük Etiket A4 önizleme tuvalini (2×2) golden/görsel doğrulama için üretir.
+@visibleForTesting
+Widget buildQuadCanvasForGolden(List<LabelSlot?> slots, {String? logoDataUrl}) =>
+    _QuadA4Canvas(slots: slots, logoDataUrl: logoDataUrl);
+
+// Tek Büyük Etiket hücresi (dar-logo _LabelCell'in A5'e oranlanmış eşi): üst bant
+// logo (sol) + baskın FİYAT hero (ortalı) → ortalı ürün adı → esnek Code128 %80
+// → alt satır [barkod no sol · tarih sağ]. Baskı siyah/beyaz + RENKLİ logo.
+class _QuadLabelCell extends StatelessWidget {
+  final LabelSlot? slot;
+  final Uint8List? logoBytes;
+
+  const _QuadLabelCell({required this.slot, required this.logoBytes});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = slot;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          // İnce nötr hairline (merkez haç + kesim kılavuzu; altın YOK).
+          color: s == null ? const Color(0xFFE0E0E0) : const Color(0xFFB8B8B8),
+          width: 0.6,
+        ),
+      ),
+      padding: const EdgeInsets.all(_kQuadPad),
+      child: s == null
+          ? const SizedBox.expand()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                // Üst bant: logo (sol) + FİYAT hero (baskın, ortalı)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 124,
+                      height: 88,
+                      child: logoBytes != null
+                          ? Image.memory(logoBytes!, fit: BoxFit.contain)
+                          : const Icon(Icons.storefront,
+                              color: AppColors.primary, size: 72),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${formatNumber(s.price)} TL',
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.visible,
+                          style: const TextStyle(
+                            fontSize: 80,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            height: 1,
+                            color: Colors.black,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 15), // ~4mm
+                // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    s.productName.toUpperCase(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      height: 1.15,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+                // Barkod çizgileri (Code128) — esnek: sabit öğeler yerini korur;
+                // taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı.
+                Expanded(
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.8,
+                      child: BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: s.barcode,
+                        drawText: false,
+                        color: Colors.black,
+                        errorBuilder: (context, error) =>
+                            const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+                // En alt: barkod no (sol) + oluşturma tarihi (sağ)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        s.barcode,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 28,
+                          letterSpacing: 0.5,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    Text(
+                      formatShortDate(s.createdAt),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF555555),
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket, KARAR v1.14 /
 // v1.14.2 / v1.14.4). Hücre 88×55mm; üst/alt kenar 11mm, sol/sağ kenar 17mm.
 // Marka figürü (RENKLİ) hücreyi doldurur; fiyat/ad/barkod figür üzerine oranlı
@@ -1712,6 +2246,17 @@ class _TabSelector extends StatelessWidget {
             icon: mobile
                 ? null
                 : const Icon(Icons.aspect_ratio_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.buyuk,
+            label: Text(
+              mobile ? 'Büyük' : 'Büyük Etiket',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile
+                ? null
+                : const Icon(Icons.crop_square_outlined, size: 18),
           ),
           ButtonSegment(
             value: _LabelTab.kayitli,
