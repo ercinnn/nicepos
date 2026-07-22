@@ -95,6 +95,14 @@ const String _storeIconSvg =
     '<path fill="#1B2A4A" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
     '</svg>';
 
+// Büyük Etiket kırmızı başlık bandı fallback ikonu (KARAR v1.20) — bu bantta
+// istisnai olarak BEYAZ (kırmızı zemin üstünde okunurluk için), diğer
+// sekmelerin ink-lacivert fallback'inden farklı.
+const String _storeIconSvgWhite =
+    '<svg viewBox="0 0 24 24" width="100%" height="100%">'
+    '<path fill="#FFFFFF" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
+    '</svg>';
+
 String _cellHtml(LabelSlot? slot, String? logoDataUrl) {
   if (slot == null) {
     // Boş hane → boş hücre (kesim kılavuzu korunur).
@@ -404,18 +412,29 @@ String _quadCellHtml(LabelSlot? slot, String? logoDataUrl) {
 
   final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
       ? '<img class="qlogo-img" src="${_esc(logoDataUrl)}" alt="logo">'
-      : _storeIconSvg;
+      : _storeIconSvgWhite;
 
   final bc = _barcodeSvg(slot.barcode);
   final bcHtml = bc.isEmpty ? '' : '<div class="qbc">$bc</div>';
 
+  // KARAR v1.20: üst bant KIRMIZI zemin (logo + "ÖZEL FİYAT" + ürün adı) →
+  // beyaz+kırmızı-kenarlıklı fiyat kutusu ("SATIŞ FİYATI"/fiyat hero/"KDV
+  // DAHİLDİR") → kesikli nötr ayraç → barkod + alt satır (DEĞİŞMEDİ).
   return '''
     <div class="qcell">
       <div class="qtop">
         <div class="qlogo">$logoHtml</div>
-        <div class="qprice">${_esc(formatNumber(slot.price))} TL</div>
+        <div class="qtoptext">
+          <div class="qlabel">ÖZEL FİYAT</div>
+          <div class="qpname">${_esc(slot.productName)}</div>
+        </div>
       </div>
-      <div class="qpname">${_esc(slot.productName)}</div>
+      <div class="qpricebox">
+        <div class="qsflabel">SATIŞ FİYATI</div>
+        <div class="qprice">${_esc(formatNumber(slot.price))} TL</div>
+        <div class="qkdv">KDV DAHİLDİR</div>
+      </div>
+      <div class="qdash"></div>
       $bcHtml
       <div class="qbottom">
         <span class="qbcno">${_esc(slot.barcode)}</span>
@@ -468,48 +487,88 @@ String _buildQuadHtml({
     justify-content: flex-start;
   }
   .qcell.empty { border-color: #e0e0e0; }
+  /* 1. Üst bant — KIRMIZI zemin, tam genişlik, köşe radius YOK (KARAR v1.20). */
   .qtop {
+    background: #C0392B;
+    width: 100%;
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 4mm;
     flex: 0 0 auto;
+    padding: 3mm 4mm;
   }
   .qlogo {
-    width: 32mm;
-    height: 23mm;
+    width: 20mm;
+    height: 16mm;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .qlogo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .qprice {
-    font-weight: 800;
-    font-size: 70pt;
-    line-height: 1;
-    letter-spacing: -0.5px;
-    text-align: center;
+  .qtoptext {
     flex: 1 1 auto;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .qlabel {
+    font-size: 20pt;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: #fff;
   }
   .qpname {
-    font-size: 18pt;
+    font-size: 11pt;
     font-weight: 600;
     line-height: 1.15;
     text-transform: uppercase;
-    text-align: center;
-    flex: 0 0 auto;
-    margin-top: 4mm;
+    text-align: left;
+    color: rgba(255, 255, 255, 0.9);
+    margin-top: 1mm;
     /* En fazla 2 satır, taşarsa kısalt. */
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  /* 3. Fiyat kutusu — beyaz zemin + kırmızı ince kenarlık (KARAR v1.20). */
+  .qpricebox {
+    background: #fff;
+    border: 0.6mm solid #C0392B;
+    border-radius: 3mm;
+    margin: 3mm 0;
+    padding: 3mm 4mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+  .qsflabel {
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #C0392B;
+  }
+  .qprice {
+    font-weight: 800;
+    font-size: 70pt;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    text-align: center;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: #C0392B;
+  }
+  .qkdv { font-size: 7.5pt; color: #cb6156; }
+  /* 4. Kesikli ayraç — nötr `#b8b8b8` (mevcut kesim-kılavuzu grisi), altın YOK. */
+  .qdash {
+    border-top: 0.35mm dashed #b8b8b8;
+    margin: 2mm 0;
+    flex: 0 0 auto;
+  }
   .qbc {
-    /* Esnek: sabit öğeler (üst bant, ürün adı, alt satır) yerini korur;
+    /* Esnek: sabit öğeler (üst bant, fiyat kutusu, alt satır) yerini korur;
        taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı. */
     flex: 1 1 auto;
     min-height: 0;
