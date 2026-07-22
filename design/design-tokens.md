@@ -581,9 +581,9 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     `Icons.storefront` fallback — kırmızı zemin üstünde okunurluk için istisnai olarak beyaz, diğer
     sekmelerin `color.ink` fallback'inden farklı, yalnız bu bantta), yanında dikey iki satır: **"ÖZEL
     FİYAT"** (beyaz, w800, iri — ama fiyat hero'sundan **küçük**, hiyerarşi bozulmaz) + altında **ürün adı
-    UPPERCASE** (beyaz ~%90 alfa, daha küçük, en çok 2 satır + ellipsis). Bant sabit yükseklikte değil,
-    içerik kadar esner (2 satır ada izin verir); barkod alanı (mevcut `Expanded`) taşmayı yutar — v1.13
-    "kırpılma önleme" deseni AYNEN korunur, hiçbir öğe alt satırı (barkod no + tarih) dışarı itemez.
+    UPPERCASE** (beyaz ~%90 alfa, daha küçük, en çok 2 satır + ellipsis). ~~Bant sabit yükseklikte değil,
+    içerik kadar esner~~ **(v1.20.1 ile DÜZELTİLDİ — bkz. aşağı: bant artık SABİT yükseklikte, 2-satır
+    ürün adı dahil en kötü durum baştan hesaba katılır).**
   - **2. Rozetler:** YOK (yukarıda kaldırıldı).
   - **3. Fiyat kutusu ("SATIŞ FİYATI"):** Beyaz zemin + **kırmızı (`#C0392B`) ince kenarlık** (~2px, radius
     ~10 — dekoratif kutu çizgisi, fiziksel kesim değil, baskıda sorunsuz) içinde üç satır: küçük üstte
@@ -603,3 +603,26 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   - **Altın ekonomisi:** Bu kararda altın KULLANILMAZ — yeni kırmızı zemin/kenarlık `danger` paletinden,
     kesikli çizgi nötr griden gelir; §5 "altın aynı ekranda dekor olarak yığılmaz" kuralı ihlal edilmiyor
     (zaten hiç altın kullanılmıyor bu hücrede).
+- **Büyük Etiket — üst bant sabit yükseklik + barkod alanı çökme düzeltmesi (KARAR v1.20.1 — QA #7 FAIL
+  düzeltmesi):** `gorsel-elestirmen` QA'sı gerçek bir çökme (crash) tespit etti: v1.20'nin özgün metni üst
+  bandın "içerik kadar esnediğini" (2 satırlık ürün adında büyüdüğünü) söylüyordu; ürün adı 2 satıra taştığında
+  büyüyen üst bant + yeni fiyat kutusunun sabit yükseklik bütçesi birleşince, barkod `Expanded` alanına
+  **sıfır/negatif yükseklik** düşüyor ve `barcode` paketinin `assert(height > 0)` kontrolü **gerçek bir
+  Flutter çökmesine** yol açıyor (v1.13'teki "yalnız kırpılır" varsayımı burada geçersiz kalmıştı — kırpılma
+  değil çökme). Düzeltme, üç çıktıda da (`_QuadLabelCell`, `_quadCell`, `_quadCellHtml`) uygulanır:
+  1. **Üst bant artık SABİT yükseklikte** — 2 satırlık ürün adı **dahil en kötü durum** baştan ölçülüp
+     bandın yüksekliği bu değere sabitlenir (1 satırlık adlarda da bant AYNI yükseklikte kalır, içerik
+     kısaysa altında boşluk kalabilir). Böylece toplam sabit-yükseklik bütçesi ürün adının uzunluğuna göre
+     ASLA değişmez — barkod alanının payı deterministik olur.
+  2. **Fiyat kutusunun dikey iç boşluğu hafifçe daraltılır** (ek güvenlik payı için) — görsel hiyerarşi/renk/
+     sıralama DEĞİŞMEZ, yalnız padding küçülür.
+  3. **Savunma katmanı (defensive):** Barkod `Expanded`/flex alanının gerçekte aldığı yükseklik çok küçük bir
+     eşiğin (~8px benzeri) altına düşerse `BarcodeWidget`/eşdeğeri **render edilmez** (boş alan gösterilir) —
+     asla `assert`/exception fırlatmaz. Bu, tasarım dilini değiştirmeyen saf bir güvenlik ağıdır; normal
+     koşulda (madde 1 ile) bu dala hiç girilmemesi beklenir.
+  4. **Regresyon testi zorunlu:** Büyük Etiket için 2-satırlık (uzun) ürün adıyla hücrenin crash/overflow
+     vermeden render edildiğini doğrulayan bir widget/golden testi eklenir (`dashboard_render_test.dart`/
+     `wide_label_golden_test.dart` emsali) — bu QA turunda böyle bir test bulunmadığı için regresyon
+     otomatik yakalanamamıştı.
+  - **Kapsam:** Yalnız Büyük Etiket hücresinin iç yerleşimi (yükseklik bütçesi + savunma kodu); renk/tipografi/
+    kesikli-ayraç kararları (v1.20) DEĞİŞMEZ. Yeni renk/altın YOK.
