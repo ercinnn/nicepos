@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Ürün Etiketi — Tasarım Taslağı v2</title>
+<style>
+  :root { --ink:#1B2A4A; --muted:#8898AA; --cut:#C9CDD6; --warn:#C0392B; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#EEF0F3; color:var(--ink);
+         font-family:'Inter','Segoe UI',system-ui,sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:28px 0 10px; }
+  p.note { color:var(--muted); font-size:13px; line-height:1.5; margin:4px 0; }
+  .panel { background:#fff; border:1px solid #E4E7EC; border-radius:12px; padding:20px; }
+  .warn { background:#FDECEA; border:1px solid #F1B0A8; color:#7B241C;
+          border-radius:10px; padding:12px 14px; font-size:13px; line-height:1.55; margin:12px 0; }
+  .warn b { color:var(--warn); }
+  .demo-row { display:flex; gap:40px; align-items:flex-start; flex-wrap:wrap; }
+
+  /* TEK ETİKET — KİLİTLİ ölçü (35×23mm, 3mm pay → iç 29×17mm), ×10 büyütme */
+  .big-label { width:350px; height:230px; background:#fff;
+               border:1px dashed var(--cut);      /* yalnız önizleme kılavuzu */
+               padding:30px; display:flex; flex-direction:column; }
+  .bl-name { text-align:center; font-weight:700; font-size:20px; line-height:1.1;
+             height:44px; overflow:hidden; color:#000;
+             display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .bl-bars { height:70px;                          /* 7mm ×10 (KARAR v1.21.1) */
+             margin:6px 0; display:flex; }
+  .bl-bars canvas { width:100%; height:100%; display:block; }
+  .bl-num { text-align:center; font-variant-numeric:tabular-nums; letter-spacing:2px;
+            font-size:18px; color:#000; font-weight:600; }
+  .callout { font-size:13px; color:var(--muted); line-height:1.7; max-width:360px; }
+  .callout b { color:var(--ink); }
+
+  /* A4 SAYFA — A4'e SIĞAN sürüm (23.08mm satır) — pitch onayı bekliyor */
+  .sheet-scale { transform-origin:top left; transform:scale(0.62); }
+  .sheet-box { width:210mm; height:297mm; background:#fff;
+               box-shadow:0 2px 16px rgba(16,24,40,.15); padding:10mm 0; }
+  .grid { display:grid; grid-template-columns:repeat(6,35mm);
+          grid-template-rows:repeat(12,23mm); height:276mm; }
+  .cell { width:35mm; height:23mm; padding:3mm; display:flex; flex-direction:column;
+          overflow:hidden; outline:0.2mm dashed var(--cut); }
+  .c-name { text-align:center; font-weight:700; font-size:2mm; line-height:1.05;
+            height:4.4mm; overflow:hidden; color:#000;
+            display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .c-bars { height:7mm; margin:.6mm 0; }          /* barkod 7mm sabit (KARAR v1.21.1) */
+  .c-bars canvas { width:100%; height:100%; display:block; }
+  .c-num { text-align:center; font-variant-numeric:tabular-nums; letter-spacing:.3mm;
+           font-size:2mm; font-weight:600; color:#000; }
+
+  @media print {
+    body { background:#fff; }
+    .wrap > *:not(.printsheet) { display:none; }
+    .cell { outline:none; }              /* SORU 4: baskıda kesim çizgisi GİZLİ */
+    .sheet-scale { transform:none; } .sheet-box { box-shadow:none; }
+    @page { size:A4 portrait; margin:0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ürün Etiketi — Tasarım Taslağı (KİLİTLİ geometri)</h1>
+  <p class="note">A4 210×297 · sayfa boşluğu üst/alt 10 mm, yatay 0 · 6 sütun × 35 mm · 12 satır × 23 mm = 72 etiket.<br>
+  Onaylı: fiyat YOK · ad ortalı 2 satır · her kenardan 3 mm pay · Code128 barkod 7 mm · baskıda çerçeve gizli.</p>
+
+  <h2>1) Tek etiket — 35 × 23 mm, iç alan 29 × 17 mm</h2>
+  <div class="panel demo-row">
+    <div class="big-label">
+      <div class="bl-name">Örnek Ürün Adı Buraya İki Satıra Kadar</div>
+      <div class="bl-bars"><canvas data-code="8690000000017"></canvas></div>
+      <div class="bl-num">8690000000017</div>
+    </div>
+    <div class="callout">
+      <b>İç yükseklik bütçesi (17 mm):</b><br>
+      • Ürün adı: 2 satır sabit (~4.4 mm), ortalı, uzun ad … ile kısalır<br>
+      • Barkod (Code128): <b>7 mm</b> sabit yükseklik (KARAR v1.21.1)<br>
+      • Barkod no: alt satır, Inter tabular (~2 mm)<br>
+      • Kalan ~3.6 mm nefes payı → ferah<br><br>
+      <b>Fiyat / logo YOK.</b> Siyah/beyaz baskı. Kenardaki + ortadaki tüm etiketlerde 3 mm iç pay eşit.
+    </div>
+  </div>
+
+  <h2>2) Tam A4 sayfa — 72 etiket (6×12), gerçek mm · Ctrl+P ile bas ve fiziksel kağıda hizala</h2>
+  <p class="note">Ctrl+P → baskıda çerçeveler (kesim kılavuzu) gizlenir; die-cut etikete temiz basar.</p>
+  <div class="panel">
+    <div class="sheet-scale">
+      <div class="sheet-box printsheet"><div class="grid" id="grid"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function drawBars(canvas, seedStr){
+  const dpr=3, w=canvas.clientWidth, h=canvas.clientHeight;
+  canvas.width=w*dpr; canvas.height=h*dpr;
+  const ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr); ctx.clearRect(0,0,w,h);
+  let seed=0; for(const c of seedStr) seed=(seed*31+c.charCodeAt(0))>>>0;
+  const rnd=()=> (seed=(seed*1103515245+12345)&0x7fffffff)/0x7fffffff;
+  const quiet=w*0.06; let x=quiet; ctx.fillStyle='#000';
+  while(x<w-quiet){ const bw=1+Math.round(rnd()*2), gap=1+Math.round(rnd()*2);
+    ctx.fillRect(x,0,bw,h); x+=bw+gap; }
+}
+function renderAll(){ document.querySelectorAll('canvas[data-code]').forEach(c=>drawBars(c,c.dataset.code)); }
+const samples=[['Kırmızı Biber Salçası 700g','8690000000017'],['Zeytinyağı Sızma 1L','8690000000024'],
+ ['Toz Şeker 1 kg','8690000000031'],['Çay Poşet 500g','8690000000048'],
+ ['Makarna Burgu 500g','8690000000055'],['Ayçiçek Yağı 5L','8690000000062']];
+const grid=document.getElementById('grid');
+for(let i=0;i<72;i++){ const cell=document.createElement('div'); cell.className='cell';
+  if(i<14){ const s=samples[Math.floor(i/3)%samples.length];
+    cell.innerHTML=`<div class="c-name">${s[0]}</div><div class="c-bars"><canvas data-code="${s[1]}"></canvas></div><div class="c-num">${s[1]}</div>`; }
+  grid.appendChild(cell); }
+requestAnimationFrame(renderAll); window.addEventListener('resize',renderAll);
+</script>
+</body>
+</html>

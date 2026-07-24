@@ -626,3 +626,49 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
      otomatik yakalanamamıştı.
   - **Kapsam:** Yalnız Büyük Etiket hücresinin iç yerleşimi (yükseklik bütçesi + savunma kodu); renk/tipografi/
     kesikli-ayraç kararları (v1.20) DEĞİŞMEZ. Yeni renk/altın YOK.
+- **"Ürün Etiketi" (6×12 = 72/A4) sekmesi — adet-tabanlı, fiyatsız barkod etiketi (KARAR v1.21 — kullanıcı
+  isteği, referans `design/urun-etiketi-taslak.html`):** Etiket ekranına **beşinci sekme**. Diğer üç etiket
+  sekmesinden (Yeni Etiket/Geniş Logo/Büyük Etiket) **iki temel farkı** vardır: (1) **etkileşim adet-tabanlıdır**
+  (numaralı hane değil), (2) **fiyat ve logo YOKTUR** — saf ürün/stok barkod etiketi. Mevcut sekmeleri
+  değiştirmez; yan yana yaşar.
+  - **Sekme yapısı:** üst `SegmentedButton` **beş segment** olur: **Yeni Etiket · Geniş Logo · Büyük Etiket ·
+    Ürün Etiketi · Kayıtlı Dosyalar** (sıra: dar → geniş → büyük → ürün → dosyalar). Aktif sekme token dili (§1
+    altın ekonomisi), yeni renk yok. ⚠️ **Responsive:** beş segment 360px'e sığmaz → mobilde segment kontrolü
+    **yatay-kaydırılabilir/sarmalı sekme çubuğuna** dönüştürülür (v1.19'daki dört-segment izleme notunun devamı;
+    fonksiyon/sıra değişmez, yalnız barındırma). Masaüstünde tam etiket + tek satır.
+  - **A4 baskı geometrisi (KİLİTLİ, kullanıcı ölçüleri):** A4 dikey 210×297mm. **Sayfa boşluğu: üst 10mm, alt
+    10mm, yatay 0** (etiketler tam genişliği doldurur). **6 sütun × 35mm = 210mm** · **12 satır × 23mm = 276mm**
+    (10+276+10 = 296 ≤ 297, ~1mm pay). **Hücre 35 × 23mm**, her kenardan **3mm iç pay** (kenardaki + ortadaki TÜM
+    etiketlerde eşit) → **içerik alanı 29 × 17mm**. HTML `@page{size:A4 portrait; margin:10mm 0}` + 6×12 grid;
+    PDF `PdfPageFormat.a4` + eşdeğer margin/hücre; önizleme aynı oran (1mm≈3.78px @96dpi). Üç çıktı (önizleme =
+    HTML = PDF) BİREBİR.
+  - **Kesim çizgisi (kullanıcı: çizgi istemiyorum):** die-cut hazır etiket kağıdı → **baskıda çerçeve/kesim
+    çizgisi YOK**. Yalnız **canlı önizlemede** ince nötr baskı-grisi hairline kılavuz (`#C9CDD6`/quad-tab grisi,
+    altın DEĞİL) hizalama için gösterilir; `@media print` içinde gizlenir. Altın ekonomisi ihlal edilmez.
+  - **Etiket-içi düzen (üstten alta, ortalı; içerik alanı 17mm sıkı bütçe):**
+    1. **Ürün adı** — **2 satır sabit** ayrılmış alan (~4.4mm), **ORTALI**, siyah; kısa ad üstte hizalı, uzun ad
+       2 satır + ellipsis (`FittedBox`/clip; barkod alanını YEMEZ). **Fiyat/logo YOK.**
+    2. **Code128 barkod** — ortalı, **sabit 7mm yükseklik** (KARAR v1.21.1 — kullanıcı; önce 10mm'di, **7mm'ye
+       indirildi**); yatayda hücre iç genişliğinde. Barkod → ürün çözme = mevcut mantık BİREBİR.
+    3. **Barkod numarası** — alt satır, ortalı, Inter tabular (~2mm), siyah.
+    - **Bütçe (v1.21.1 sonrası ferahladı):** 17mm iç yükseklikte 2-satır ad (~4.4mm) + 7mm barkod + numara
+      (~2mm) ≈ 13.4mm → ~3.6mm nefes payı. **v1.20.1 crash dersi yine geçerli** (güvenlik ağı korunur): sabit
+      öğeler (ad `flex:0 0` + ellipsis, numara `flex:0 0`) + barkod sabit 7mm; barkod alanının gerçek yüksekliği
+      ~8px eşiğin altına inerse `BarcodeWidget` render edilmez (assert/exception fırlatmaz). Ayar kolu (gerekirse,
+      ayrı KARAR): iç pay 3→2mm veya barkod yüksekliği.
+  - **Etkileşim — adet-tabanlı doldurma (yeni model):** Sol panelde bir giriş satırı: **Barkod hanesi** (okut/
+    Enter → `_resolveBarcode` cache→fetchByBarcode→fetchAll ile ürün adı çözülür, scan bip sesi v1.14.1) +
+    **Adet hanesi** (kaç etiket). Onaylanınca kalem listeye `(ürün adı · barkod · adet)` olarak eklenir, imleç
+    yeni boş barkod satırına geçer (satış/dar-logo `_onBarcodeSubmitted` deseni). Sağ panelde: listedeki her
+    kalem **adet kadar çoğaltılıp** 72'lik ızgaraya **sırayla** dizilir; toplam > 72 ise **2., 3. sayfaya taşar**
+    (çok-sayfalı PDF). Kalem silme + adet düzenleme mümkün. Aktif barkod hanesi = ince sol altın şerit + ink
+    kenarlık (§5 altın ekonomisi); çözülemeyen = `danger` ince uyarı.
+  - **State:** ayrı `labelProductSheetProvider` (`keepAlive`, kalem listesi — mevcut `labelSheetProvider` /
+    `labelWideSheetProvider` / `labelQuadSheetProvider`'a karışmaz, aynı desen). Mağaza logosu paylaşılmaz
+    (bu sekmede logo yok).
+  - **Aksiyonlar:** **Yazdır** (web `window.print`) + **PDF Kaydet** (`pdf` paketi, **çok-sayfalı**, aynı etiket-
+    içi düzen; Supabase Storage `etiket_pdfleri` bucket'ı → ortak **Kayıtlı Dosyalar** sekmesine düşer). Mevcut
+    aksiyon dili.
+  - **Ekran krom'u:** **ekran hero'su YOK** (araç/çalışma ekranı, §4 v1.10); stok listesi token dili (Manrope
+    başlık, Inter tabular, `cardDecoration`, `goldBg` başlık). Masaüstü iki bölge (sol barkod+adet girişi/kalem
+    listesi · sağ A4 önizleme), mobil tek kolon. Yeni renk/altın YOK. Baskı siyah/beyaz.
