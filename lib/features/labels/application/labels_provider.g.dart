@@ -108,5 +108,25 @@ final labelQuadSheetProvider =
     );
 
 typedef _$LabelQuadSheet = Notifier<LabelQuadSheetState>;
+String _$labelProductSheetHash() => r'8a55c900946aa2dafbe695b9c95a9c7e86340ea3';
+
+/// Ürün Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde kalem
+/// listesi korunur (UI-durumu provider'ı; dar/geniş/büyük etiket
+/// provider'larıyla KARIŞMAZ). Mağaza logosu paylaşılmaz (bu sekmede logo yok).
+///
+/// Copied from [LabelProductSheet].
+@ProviderFor(LabelProductSheet)
+final labelProductSheetProvider =
+    NotifierProvider<LabelProductSheet, LabelProductSheetState>.internal(
+      LabelProductSheet.new,
+      name: r'labelProductSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelProductSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelProductSheet = Notifier<LabelProductSheetState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

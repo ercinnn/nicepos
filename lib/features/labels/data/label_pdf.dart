@@ -9,6 +9,7 @@ import 'package:printing/printing.dart';
 
 import '../../../core/utils/formatters.dart';
 import 'models/label_slot.dart';
+import 'models/product_label_item.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Raf etiketi PDF üretimi (KARAR v1.11) — her platformda (native Android dahil)
@@ -718,6 +719,146 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
               style: const pw.TextStyle(fontSize: 9, color: _dateGrey),
             ),
           ],
+        ),
+      ],
+    ),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Ürün Etiketi PDF üretimi (KARAR v1.21) — adet-tabanlı, FİYATSIZ/LOGOSUZ barkod
+// etiketi. A4 dikey, 6 sütun × 12 satır = 72 etiket/sayfa. Sayfa boşluğu üst/alt
+// 10mm, yatay 0. Hücre 35×23mm, her kenardan 3mm iç pay → içerik 29×17mm. Toplam
+// > 72 ise 2., 3. sayfaya taşar (çok-sayfalı). Etiket-içi (ortalı, üstten alta):
+// ürün adı 2 satır sabit + Code128 barkod (esnek ~10mm) + barkod no. Çıktı
+// SİYAH/BEYAZ; die-cut → baskıda kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Kalemleri (adet kadar çoğaltarak) çok-sayfalı A4 dikey 6×12 Ürün Etiketi
+/// PDF'ine dönüştürür ve ham byte'ları döndürür.
+Future<Uint8List> buildProductLabelsPdf({
+  required List<ProductLabelItem> items,
+}) async {
+  pw.ThemeData theme;
+  try {
+    final base = await PdfGoogleFonts.robotoRegular();
+    final bold = await PdfGoogleFonts.robotoBold();
+    theme = pw.ThemeData.withFont(base: base, bold: bold);
+  } catch (_) {
+    theme = pw.ThemeData.base();
+  }
+
+  final pages = paginateProductLabels(items);
+  final doc = pw.Document(theme: theme);
+  for (final page in pages) {
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        // Sayfa boşluğu: üst/alt 10mm, yatay 0 (etiketler tam genişliği doldurur).
+        margin: pw.EdgeInsets.symmetric(vertical: 10 * PdfPageFormat.mm),
+        build: (context) {
+          return pw.Column(
+            children: List.generate(kProductLabelRows, (r) {
+              return pw.Expanded(
+                child: pw.Row(
+                  children: List.generate(kProductLabelCols, (c) {
+                    final idx = r * kProductLabelCols + c;
+                    final it = idx < page.length ? page[idx] : null;
+                    return pw.Expanded(child: _productCell(it));
+                  }),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
+
+  return doc.save();
+}
+
+// Tek Ürün Etiketi hücresi (KARAR v1.21). Boş hane → tamamen boş (die-cut →
+// kesim çizgisi YOK). Etiket-içi: ürün adı 2 satır sabit (ortalı) + Code128
+// barkod (esnek; sabit öğeler yerini korur, taşarsa yalnız barkod kısalır) +
+// barkod no (ortalı, tabular). Fiyat/logo YOK. Sıkı 17mm bütçe için ad `flex:0`
+// + numara `flex:0`, barkod `Expanded`; savunma katmanı (v1.20.1 dersi): gerçek
+// yükseklik eşiğin altındaysa barkod HİÇ render edilmez (assert asla fırlatılmaz).
+pw.Widget _productCell(ProductLabelItem? it) {
+  if (it == null) {
+    // Boş hücre — die-cut, çerçeve/kesim çizgisi YOK.
+    return pw.Container();
+  }
+
+  return pw.Container(
+    padding: pw.EdgeInsets.all(3 * PdfPageFormat.mm),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      mainAxisAlignment: pw.MainAxisAlignment.start,
+      children: [
+        // 1. Ürün adı — 2 satır sabit alan (~4.4mm), ORTALI, uzun ad kırpılır.
+        pw.SizedBox(
+          height: 4.4 * PdfPageFormat.mm,
+          width: double.infinity,
+          child: pw.Center(
+            child: pw.Text(
+              it.productName.toUpperCase(),
+              textAlign: pw.TextAlign.center,
+              maxLines: 2,
+              overflow: pw.TextOverflow.clip,
+              style: pw.TextStyle(
+                fontSize: 5,
+                fontWeight: pw.FontWeight.bold,
+                lineSpacing: 0.3,
+                color: PdfColors.black,
+              ),
+            ),
+          ),
+        ),
+        // 2. Code128 barkod — esnek (~10mm), yatayda %80'e ortalı (1:8:1 flex).
+        //    Savunma: yükseklik eşiğin altındaysa HİÇ render etme.
+        pw.Expanded(
+          child: pw.LayoutBuilder(
+            builder: (context, constraints) {
+              final maxHeight = constraints?.maxHeight ?? double.infinity;
+              if (maxHeight < 2 * PdfPageFormat.mm) {
+                return pw.SizedBox();
+              }
+              return pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.Spacer(flex: 1),
+                  pw.Expanded(
+                    flex: 8,
+                    child: bc.Barcode.code128().isValid(it.barcode)
+                        ? pw.BarcodeWidget(
+                            barcode: bc.Barcode.code128(),
+                            data: it.barcode,
+                            drawText: false,
+                            color: PdfColors.black,
+                          )
+                        : pw.SizedBox(),
+                  ),
+                  pw.Spacer(flex: 1),
+                ],
+              );
+            },
+          ),
+        ),
+        // 3. Barkod no — ORTALI, tabular (fontFeatures pdf'te yok → düz), siyah.
+        pw.SizedBox(
+          width: double.infinity,
+          child: pw.Text(
+            it.barcode,
+            textAlign: pw.TextAlign.center,
+            maxLines: 1,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(
+              fontSize: 6,
+              letterSpacing: 0.3,
+              color: PdfColors.black,
+            ),
+          ),
         ),
       ],
     ),

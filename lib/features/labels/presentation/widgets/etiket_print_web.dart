@@ -5,6 +5,7 @@ import 'package:web/web.dart' as web;
 
 import '../../../../core/utils/formatters.dart';
 import '../../data/models/label_slot.dart';
+import '../../data/models/product_label_item.dart';
 
 /// Dolu raf etiketlerini A4 dikey (3 sütun × 8 satır = 24) olarak yeni bir
 /// tarayıcı penceresinde açar ve otomatik yazdırma diyaloğunu tetikler
@@ -53,6 +54,23 @@ void printQuadLabelsA4({
   String? logoDataUrl,
 }) {
   final html = _buildQuadHtml(slots: slots, logoDataUrl: logoDataUrl);
+
+  final blob = web.Blob(
+    [html.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/html'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.window.open(url, '_blank');
+}
+
+/// Ürün Etiketlerini (adet kadar çoğaltarak) çok-sayfalı A4 dikey (6 sütun × 12
+/// satır = 72/sayfa) olarak yeni bir tarayıcı penceresinde açar ve otomatik
+/// yazdırır (KARAR v1.21). FİYAT ve LOGO YOK; çıktı SİYAH/BEYAZ; die-cut → kesim
+/// çizgisi YOK. Toplam > 72 ise 2., 3. sayfaya taşar. Barkod = Code128 SVG.
+void printProductLabelsA4({
+  required List<ProductLabelItem> items,
+}) {
+  final html = _buildProductHtml(items: items);
 
   final blob = web.Blob(
     [html.toJS].toJS,
@@ -603,6 +621,119 @@ String _buildQuadHtml({
   <div class="sheet">
     $cells
   </div>
+</body>
+</html>''';
+}
+
+// ─── Ürün Etiketi (KARAR v1.21) — 6 sütun × 12 satır = 72 etiket/sayfa ────────
+// Adet-tabanlı, FİYATSIZ/LOGOSUZ. A4 dikey; sayfa boşluğu üst/alt 10mm, yatay 0.
+// Hücre 35×23mm, her kenardan 3mm iç pay → içerik 29×17mm. Toplam > 72 ise 2.,
+// 3. sayfaya taşar (her sayfa `page-break-after`). Etiket-içi (ortalı, üstten
+// alta): ürün adı 2 satır sabit + Code128 barkod (esnek ~10mm) + barkod no.
+// die-cut → baskıda çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
+
+String _productCellHtml(ProductLabelItem? it) {
+  if (it == null) {
+    // Boş hücre — die-cut, çerçeve YOK.
+    return '<div class="dcell"></div>';
+  }
+  final bc = _barcodeSvg(it.barcode);
+  final bcHtml = bc.isEmpty ? '' : '<div class="dbc">$bc</div>';
+  return '''
+    <div class="dcell">
+      <div class="dname">${_esc(it.productName)}</div>
+      $bcHtml
+      <div class="dbcno">${_esc(it.barcode)}</div>
+    </div>''';
+}
+
+String _buildProductHtml({
+  required List<ProductLabelItem> items,
+}) {
+  final pages = paginateProductLabels(items);
+  final sheets = StringBuffer();
+  for (final page in pages) {
+    final cells = StringBuffer();
+    for (final it in page) {
+      cells.writeln(_productCellHtml(it));
+    }
+    sheets.writeln('<div class="dsheet">$cells</div>');
+  }
+
+  // A4 portrait 210×297mm; sayfa boşluğu üst/alt 10mm, yatay 0. 6 sütun × 35mm =
+  // 210mm, 12 satır × 23mm = 276mm. die-cut → hücre kenarlığı YOK.
+  return '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Ürün Etiketleri</title>
+<style>
+  @page { size: A4 portrait; margin: 10mm 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .dsheet {
+    width: 210mm;
+    display: grid;
+    grid-template-columns: repeat(6, 35mm);
+    grid-auto-rows: 23mm;
+    gap: 0;
+    page-break-after: always;
+  }
+  .dsheet:last-child { page-break-after: auto; }
+  /* Hücre — 3mm iç pay; die-cut → çerçeve/kesim çizgisi YOK. */
+  .dcell {
+    width: 35mm;
+    height: 23mm;
+    padding: 3mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  /* Ürün adı — 2 satır sabit alan, ORTALI, uzun ad kısalır (flex:0). */
+  .dname {
+    flex: 0 0 4.4mm;
+    width: 100%;
+    font-size: 5.4pt;
+    font-weight: 700;
+    line-height: 1.05;
+    text-transform: uppercase;
+    text-align: center;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Barkod — esnek (~10mm); sabit öğeler yerini korur, taşarsa yalnız barkod
+     kısalır. Yatayda %80'e ortalı. */
+  .dbc {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 80%;
+    margin: 0 auto;
+  }
+  .dbc svg { width: 100%; height: 100%; display: block; }
+  /* Barkod no — ORTALI, tabular, siyah (flex:0). */
+  .dbcno {
+    flex: 0 0 auto;
+    width: 100%;
+    font-size: 6pt;
+    letter-spacing: 0.3px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body onload="window.focus(); window.print();">
+  $sheets
 </body>
 </html>''';
 }

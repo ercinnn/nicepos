@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../data/labels_storage_repository.dart';
 import '../data/models/label_slot.dart';
+import '../data/models/product_label_item.dart';
 
 part 'labels_provider.g.dart';
 
@@ -183,6 +184,69 @@ class LabelQuadSheet extends _$LabelQuadSheet {
   void clearAll() {
     state = state.copyWith(slots: List<LabelSlot?>.filled(kQuadCount, null));
   }
+}
+
+// ─── Ürün Etiketi sayfası (KARAR v1.21) ──────────────────────────────────────
+
+/// Ürün Etiketi sayfasının durumu: adet-tabanlı kalem listesi (ürün adı ·
+/// barkod · adet). Fiyat/logo YOK. Kalemler adet kadar çoğaltılıp 72'lik
+/// ızgaraya dizilir; toplam > 72 ise 2., 3. sayfaya taşar. Diğer etiket
+/// provider'larına (`LabelSheet`/`LabelWideSheet`/`LabelQuadSheet`) KARIŞMAZ.
+class LabelProductSheetState {
+  final List<ProductLabelItem> items;
+
+  const LabelProductSheetState({required this.items});
+
+  factory LabelProductSheetState.initial() =>
+      const LabelProductSheetState(items: []);
+
+  /// Adet kadar çoğaltılınca oluşacak toplam etiket sayısı.
+  int get totalLabels => items.fold(0, (sum, it) => sum + it.quantity);
+
+  /// Baskıda oluşacak A4 sayfa sayısı (en az 1; her sayfa 72 etiket).
+  int get pageCount => totalLabels == 0
+      ? 1
+      : (totalLabels + kProductLabelPerPage - 1) ~/ kProductLabelPerPage;
+
+  LabelProductSheetState copyWith({List<ProductLabelItem>? items}) {
+    return LabelProductSheetState(items: items ?? this.items);
+  }
+}
+
+/// Ürün Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde kalem
+/// listesi korunur (UI-durumu provider'ı; dar/geniş/büyük etiket
+/// provider'larıyla KARIŞMAZ). Mağaza logosu paylaşılmaz (bu sekmede logo yok).
+@Riverpod(keepAlive: true)
+class LabelProductSheet extends _$LabelProductSheet {
+  @override
+  LabelProductSheetState build() => LabelProductSheetState.initial();
+
+  /// Listeye yeni bir kalem (ürün adı · barkod · adet) ekler.
+  void addItem(ProductLabelItem item) {
+    state = state.copyWith(items: [...state.items, item]);
+  }
+
+  /// [index] kalemini listeden çıkarır.
+  void removeItem(int index) {
+    if (index < 0 || index >= state.items.length) return;
+    final next = [...state.items]..removeAt(index);
+    state = state.copyWith(items: next);
+  }
+
+  /// [index] kaleminin adedini günceller (0/negatif → kalem silinir).
+  void updateQuantity(int index, int quantity) {
+    if (index < 0 || index >= state.items.length) return;
+    if (quantity <= 0) {
+      removeItem(index);
+      return;
+    }
+    final next = [...state.items];
+    next[index] = next[index].copyWith(quantity: quantity);
+    state = state.copyWith(items: next);
+  }
+
+  /// Tüm kalemleri temizler.
+  void clearAll() => state = LabelProductSheetState.initial();
 }
 
 // ─── Kayıtlı PDF'ler — Supabase Storage (KARAR v1.11) ────────────────────────
