@@ -60,47 +60,108 @@ class DashboardRepository {
     return all;
   }
 
-  // ── Bugünün satış adedi ve tutarını getir ────────────────────────────────
+  // ── O gün FİİLEN tahsil edilen borç ödemeleri (nakit-esaslı ciro için) ─────
+  // Nakit-esaslı günlük ciro tanımı: "o gün kasaya giren para". Bunun iki
+  // bileşeni var: (1) o gün yapılan satışların `paid_amount` (peşin) toplamı,
+  // (2) o gün gelen borç TAHSİLATLARI. Bu metot 2. bileşeni verir.
+  //
+  // ⚠️ KRİTİK: `customer_payments` tablosu HEM açık-hesap satışında
+  // `completeSale`/`updateSale`'in otomatik eklediği `type='borc'` hareketlerini
+  // (borcun kendisi — satış anında ciroya GİRMEYEN kısım), HEM de gerçek
+  // tahsilatları (`type='odeme'`) içerir. Nakit-esaslı ciroya YALNIZ gerçek
+  // tahsilatlar (`type='odeme'`) girer. `'borc'` hareketleri de POZİTİF `amount`
+  // ile saklandığından (bkz. sales_repository.completeSale), sayılırlarsa açık
+  // hesabı çifte-pozitif yazıp ciroyu şişirirdi — bu yüzden `.eq('type','odeme')`
+  // ile SADECE tahsilatlar toplanır. `'odeme'` tahsilatı hem nakit hem POS
+  // kanalını kapsar (ikisi de kasaya giren paradır) → channel filtresi YOK.
+  Future<List<Map<String, dynamic>>> _fetchOdemeRows({
+    required DateTime start,
+    DateTime? end,
+  }) async {
+    const pageSize = 1000;
+    final all = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      var filter = _client
+          .from('customer_payments')
+          .select('amount, payment_date')
+          .eq('type', 'odeme')
+          .gte('payment_date', start.toUtc().toIso8601String());
+      if (end != null) {
+        filter = filter.lt('payment_date', end.toUtc().toIso8601String());
+      }
+      final rows =
+          await filter.order('payment_date').range(from, from + pageSize - 1);
+      final list =
+          (rows as List).map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      all.addAll(list);
+      if (list.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  }
+
+  // [start, end) aralığındaki gerçek borç tahsilatlarının (type='odeme') toplamı.
+  Future<num> _sumDebtCollections(DateTime start, DateTime end) async {
+    final rows = await _fetchOdemeRows(start: start, end: end);
+    num total = 0;
+    for (final row in rows) {
+      total += _asNum(row['amount']);
+    }
+    return total;
+  }
+
+  // ── Bugünün satış adedi ve NAKİT-ESASLI cirosu ───────────────────────────
+  // Ciro = o gün fiilen tahsil edilen para:
+  //   (1) bugün yapılan satışların `paid_amount` toplamı (peşin kısım; açık
+  //       hesabın ödenmemiş kısmı `remaining_debt`'te kalır, otomatik dışlanır),
+  // + (2) bugün gelen borç tahsilatları (`customer_payments` type='odeme').
+  // Satış ADEDİ tanımı DEĞİŞMEDİ — bugün yapılan satış kalemlerinin miktar toplamı.
   Future<({int count, num revenue})> fetchTodaySummary() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
     final rows = await _fetchAllRows(
-      'total_amount, sale_items(quantity)',
+      'paid_amount, sale_items(quantity)',
       start: start,
       end: end,
     );
-    num revenue = 0;
+    num paidFromSales = 0;
     int count = 0;
     for (final row in rows) {
-      revenue += (row['total_amount'] as num? ?? 0);
+      paidFromSales += (row['paid_amount'] as num? ?? 0);
       for (final item in (row['sale_items'] as List? ?? [])) {
         count += ((item['quantity'] as num?) ?? 0).round();
       }
     }
-    return (count: count, revenue: revenue);
+    final collections = await _sumDebtCollections(start, end);
+    return (count: count, revenue: paidFromSales + collections);
   }
 
-  // ── Dünün satış adedi ve tutarını getir (değişim yüzdesi için) ───────────
+  // ── Dünün satış adedi ve NAKİT-ESASLI cirosu (hero değişim yüzdesi için) ──
+  // Hero'nun "düne göre değişim" göstergesi bugünle AYNI tabana (nakit-esaslı)
+  // dayanmalı ki karşılaştırma anlamlı olsun; bu yüzden dün de aynı tanımla
+  // hesaplanır (peşin `paid_amount` + o gün gelen borç tahsilatları).
   Future<({int count, num revenue})> fetchYesterdaySummary() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day)
         .subtract(const Duration(days: 1));
     final end = start.add(const Duration(days: 1));
     final rows = await _fetchAllRows(
-      'total_amount, sale_items(quantity)',
+      'paid_amount, sale_items(quantity)',
       start: start,
       end: end,
     );
-    num revenue = 0;
+    num paidFromSales = 0;
     int count = 0;
     for (final row in rows) {
-      revenue += (row['total_amount'] as num? ?? 0);
+      paidFromSales += (row['paid_amount'] as num? ?? 0);
       for (final item in (row['sale_items'] as List? ?? [])) {
         count += ((item['quantity'] as num?) ?? 0).round();
       }
     }
-    return (count: count, revenue: revenue);
+    final collections = await _sumDebtCollections(start, end);
+    return (count: count, revenue: paidFromSales + collections);
   }
 
   // ── Bu ayın satış adedi ve tutarını getir ────────────────────────────────
@@ -167,17 +228,22 @@ class DashboardRepository {
     return _fetchRevenueBetween(start, end);
   }
 
-  // ── Son N günün günlük satış tutarlarını getir ───────────────────────────
+  // ── Son N günün günlük NAKİT-ESASLI ciro serisini getir ──────────────────
+  // Hero "Bugünkü Ciro" ile TUTARLI olması için günlük grafik de nakit-esaslı
+  // tanımı kullanır: her gün için (1) o gün yapılan satışların `paid_amount`
+  // toplamı + (2) o gün gelen borç tahsilatları (`customer_payments`
+  // type='odeme'). Böylece grafikteki bugünkü çubuk hero ile birebir eşleşir.
   Future<List<({DateTime date, num amount})>> fetchDailySales(int days) async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: days - 1));
-    final rows = await _fetchAllRows(
-      'sale_date, total_amount',
+    final saleRows = await _fetchAllRows(
+      'sale_date, paid_amount',
       start: start,
     );
+    final odemeRows = await _fetchOdemeRows(start: start);
 
-    // Gün bazında grupla — tüm günleri sıfırla, sonra doldur
+    // Gün bazında grupla — tüm günleri sıfırla, sonra iki bileşeni de doldur
     final Map<String, num> grouped = {};
     for (var d = 0; d < days; d++) {
       final day = start.add(Duration(days: d));
@@ -185,13 +251,23 @@ class DashboardRepository {
           '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
       grouped[key] = 0;
     }
-    for (final row in rows) {
+    // (1) satışların peşin (paid_amount) kısmı
+    for (final row in saleRows) {
       final dt = DateTime.parse(row['sale_date'] as String).toLocal();
       final key =
           '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
       if (grouped.containsKey(key)) {
         grouped[key] =
-            (grouped[key]! + ((row['total_amount'] as num?) ?? 0));
+            (grouped[key]! + ((row['paid_amount'] as num?) ?? 0));
+      }
+    }
+    // (2) o gün gelen borç tahsilatları (yalnız type='odeme')
+    for (final row in odemeRows) {
+      final dt = DateTime.parse(row['payment_date'] as String).toLocal();
+      final key =
+          '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      if (grouped.containsKey(key)) {
+        grouped[key] = (grouped[key]! + _asNum(row['amount']));
       }
     }
     return grouped.entries
