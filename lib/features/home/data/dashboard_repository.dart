@@ -164,31 +164,39 @@ class DashboardRepository {
     return (count: count, revenue: paidFromSales + collections);
   }
 
-  // ── Bu ayın satış adedi ve tutarını getir ────────────────────────────────
+  // ── Bu ayın satış adedi ve NAKİT-ESASLI cirosu ───────────────────────────
+  // Ciro = bu ay fiilen kasaya giren para (hero/günlük grafik ile aynı tanım):
+  //   (1) bu ay yapılan satışların `paid_amount` toplamı (peşin kısım),
+  // + (2) bu ay gelen borç tahsilatları (`customer_payments` type='odeme').
+  // Satış ADEDİ tanımı DEĞİŞMEDİ — bu ay yapılan satış kalemlerinin miktar toplamı.
   Future<({int count, num revenue})> fetchMonthSummary() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, 1);
     final end = DateTime(now.year, now.month + 1, 1);
     final rows = await _fetchAllRows(
-      'total_amount, sale_items(quantity)',
+      'paid_amount, sale_items(quantity)',
       start: start,
       end: end,
     );
-    num revenue = 0;
+    num paidFromSales = 0;
     int count = 0;
     for (final row in rows) {
-      revenue += (row['total_amount'] as num? ?? 0);
+      paidFromSales += (row['paid_amount'] as num? ?? 0);
       for (final item in (row['sale_items'] as List? ?? [])) {
         count += ((item['quantity'] as num?) ?? 0).round();
       }
     }
-    return (count: count, revenue: revenue);
+    final collections = await _sumDebtCollections(start, end);
+    return (count: count, revenue: paidFromSales + collections);
   }
 
-  // ── Sunucu tarafında SUM(total_amount) — geniş tarih aralıkları için ─────
-  // `sales_revenue_between` RPC'si (bkz. 0015_sales_revenue_rpc.sql) toplamayı
-  // Postgres'te `sale_date` index'i ile tek sorguda yapar; istemci binlerce
-  // satır çekip Dart'ta toplamak yerine tek sayısal değer alır.
+  // ── Sunucu tarafında NAKİT-ESASLI ciro toplamı — geniş tarih aralıkları ───
+  // `sales_revenue_between` RPC'si toplamayı Postgres'te tek sorguda yapar
+  // (istemci binlerce satır çekmez). RPC nakit-esaslıdır (bkz.
+  // 0025_sales_revenue_cash_basis.sql): aralıktaki satışların `paid_amount`
+  // toplamı + aralıkta gelen borç tahsilatları (`customer_payments` type='odeme');
+  // `type='borc'` hariç. Hero/günlük grafik/aylık kart ile AYNI tanım → aynı
+  // aralık için "günlük toplamı = aylık = yıllık" tutarlılığı korunur.
   Future<num> _fetchRevenueBetween(DateTime start, DateTime end) async {
     final result = await _client.rpc('sales_revenue_between', params: {
       'start_ts': start.toUtc().toIso8601String(),
@@ -305,11 +313,12 @@ class DashboardRepository {
       ..sort((a, b) => a.date.compareTo(b.date));
   }
 
-  // ── Cari yılın aylık satış tutarları (yalnız bu yıl) ──────────────────────
+  // ── Cari yılın aylık NAKİT-ESASLI ciro tutarları (yalnız bu yıl) ──────────
   // Yıllık karşılaştırma grafiğinin HIZLI ilk çizimi için: yalnız cari yıl
   // (`DateTime.now().year`) `sales_monthly_totals` görünümünden çekilir (yıl
-  // başına en fazla 12 satır). Cari yıl satış eklendikçe değiştiği için
-  // CACHE'LENMEZ (geçmiş yıllardan farklı olarak).
+  // başına en fazla 12 satır). Görünüm artık nakit-esaslıdır (peşin paid_amount
+  // + o ay gelen type='odeme' tahsilatları; bkz. 0026_sales_monthly_cash_basis.sql)
+  // → hero/günlük/aylık kartla aynı taban. Cari yıl değiştikçe CACHE'LENMEZ.
   // Dönüş: `{currentYear: 12'lik aylık toplam listesi}` (0=Ocak..11=Aralık).
   Future<Map<int, List<num>>> fetchCurrentYearMonthly() async {
     final currentYear = DateTime.now().year;
@@ -327,9 +336,10 @@ class DashboardRepository {
     return {currentYear: list};
   }
 
-  // ── Geçmiş yılların aylık satış tutarları (yalnız y < currentYear) ────────
+  // ── Geçmiş yılların aylık NAKİT-ESASLI ciro tutarları (y < currentYear) ───
   // startYear..(currentYear-1) arası her yıl için 12 elemanlı aylık toplam
-  // listesi döner (index 0=Ocak..11=Aralık). Geçmiş yıllar DEĞİŞMEZ → static
+  // listesi döner (index 0=Ocak..11=Aralık). Kaynak: nakit-esaslı
+  // `sales_monthly_totals` görünümü (bkz. 0026). Geçmiş yıllar DEĞİŞMEZ → static
   // `_pastYearsCache` ile oturum ömrü boyunca en fazla bir kez çekilir: cache'te
   // olanlar doğrudan alınır, eksikler tek toplu sorguyla çekilip cache'lenir.
   // Cari yıl bilinçli olarak DIŞARIDA bırakılır (bkz. fetchCurrentYearMonthly).
@@ -382,7 +392,11 @@ class DashboardRepository {
     return grouped;
   }
 
-  // ── Son N ayın aylık satış tutarlarını getir ─────────────────────────────
+  // ── Son N ayın aylık NAKİT-ESASLI ciro tutarlarını getir ─────────────────
+  // Her ay için nakit-esaslı ciro (peşin `paid_amount` + o ay gelen borç
+  // tahsilatları) `sales_revenue_between` RPC'si ile hesaplanır — Yıllık Ciro /
+  // Son 365 Gün kartlarıyla AYNI kaynak → tutarlılık garanti. Ay başına tek RPC
+  // çağrısı (önceki sayfalı satır çekmeyle aynı sorgu sayısı, daha az veri).
   Future<List<({DateTime date, num amount})>> fetchMonthlySales(
       int months) async {
     final now = DateTime.now();
@@ -390,15 +404,7 @@ class DashboardRepository {
     for (var i = months - 1; i >= 0; i--) {
       final monthDate = DateTime(now.year, now.month - i, 1);
       final nextMonth = DateTime(monthDate.year, monthDate.month + 1, 1);
-      final rows = await _fetchAllRows(
-        'total_amount',
-        start: monthDate,
-        end: nextMonth,
-      );
-      final total = rows.fold<num>(
-        0,
-        (sum, row) => sum + ((row['total_amount'] as num?) ?? 0),
-      );
+      final total = await _fetchRevenueBetween(monthDate, nextMonth);
       results.add((date: monthDate, amount: total));
     }
     return results;
