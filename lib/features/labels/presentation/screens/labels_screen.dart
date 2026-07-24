@@ -2912,7 +2912,7 @@ class _ProductItemRow extends StatelessWidget {
 // = 72 etiket/sayfa. Kalemler adet kadar çoğaltılıp sırayla dizilir; toplam > 72
 // ise 2., 3. sayfa alt alta gösterilir. Sayfa boşluğu üst/alt 10mm, yatay 0.
 // Hücre 35×23mm, 3mm iç pay → içerik 29×17mm. Etiket-içi: ürün adı 2 satır sabit
-// (ortalı) + Code128 barkod (esnek ~10mm) + barkod no. Fiyat/logo YOK. Canlı
+// (ortalı) + Code128 barkod (SABİT 7mm) + barkod no. Fiyat/logo YOK. Canlı
 // önizlemede ince nötr baskı-grisi kesim kılavuzu; baskıda (PDF/HTML) çizgi YOK.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -2920,8 +2920,11 @@ const double _kProdMmPx = 3.7795; // 1mm @96dpi
 const double _kProdMarginV = 10 * _kProdMmPx; // sayfa üst/alt boşluğu ≈37.8px
 const double _kProdCellPad = 3 * _kProdMmPx; // hücre iç pay ≈11.34px
 const double _kProdNameH = 4.4 * _kProdMmPx; // ürün adı sabit alan ≈16.63px
+// Barkod çizgi bandı SABİT 7mm (KARAR v1.21.1) ≈26.46px — üç çıktıda birebir.
+const double _kProdBarcodeHeight = 7 * _kProdMmPx;
 // Savunma katmanı (KARAR v1.20.1 dersi): barkod alanının gerçek yüksekliği bu
 // eşiğin altına düşerse BarcodeWidget HİÇ render edilmez (assert asla fırlatılmaz).
+// Sabit 7mm'de tetiklenmez ama savunma katmanı korunur.
 const double _kProdBarcodeMinHeight = 8;
 
 class _ProductPreviewPane extends ConsumerWidget {
@@ -3014,7 +3017,7 @@ Widget buildProductLabelPageForGolden(List<ProductLabelItem?> slots) =>
 
 // Tek Ürün Etiketi hücresi (KARAR v1.21). Boş hane → yalnız ince nötr baskı-
 // grisi kesim kılavuzu (yalnız canlı önizleme; baskıda çizgi YOK). Etiket-içi:
-// ürün adı 2 satır sabit (ortalı, flex:0) + Code128 barkod (Expanded, savunma
+// ürün adı 2 satır sabit (ortalı, flex:0) + Code128 barkod (SABİT 7mm, savunma
 // eşiği altında render edilmez) + barkod no (ortalı, tabular, flex:0).
 class _ProductLabelCell extends StatelessWidget {
   final ProductLabelItem? item;
@@ -3063,10 +3066,13 @@ class _ProductLabelCell extends StatelessWidget {
                     ),
                   ),
                 ),
-                // 2. Code128 barkod — esnek (~10mm); sabit öğeler (ad, no)
-                //    yerini korur, taşarsa yalnız barkod kısalır. %80'e ortalı.
-                //    Savunma: yükseklik eşiğin altındaysa HİÇ render etme.
-                Expanded(
+                // 2. Code128 barkod — SABİT 7mm (KARAR v1.21.1); sabit öğeler
+                //    (ad, no) yerini korur, artan pay alt satırın altında kalır.
+                //    %80'e ortalı. Savunma: yükseklik eşiğin altındaysa HİÇ
+                //    render etme (sabit 7mm'de tetiklenmez ama katman korunur).
+                SizedBox(
+                  key: const Key('prodBarcodeArea'),
+                  height: _kProdBarcodeHeight,
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       if (constraints.maxHeight < _kProdBarcodeMinHeight) {

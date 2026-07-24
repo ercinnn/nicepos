@@ -629,7 +629,7 @@ String _buildQuadHtml({
 // Adet-tabanlı, FİYATSIZ/LOGOSUZ. A4 dikey; sayfa boşluğu üst/alt 10mm, yatay 0.
 // Hücre 35×23mm, her kenardan 3mm iç pay → içerik 29×17mm. Toplam > 72 ise 2.,
 // 3. sayfaya taşar (her sayfa `page-break-after`). Etiket-içi (ortalı, üstten
-// alta): ürün adı 2 satır sabit + Code128 barkod (esnek ~10mm) + barkod no.
+// alta): ürün adı 2 satır sabit + Code128 barkod (SABİT 7mm) + barkod no.
 // die-cut → baskıda çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
 
 String _productCellHtml(ProductLabelItem? it) {
@@ -712,11 +712,11 @@ String _buildProductHtml({
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  /* Barkod — esnek (~10mm); sabit öğeler yerini korur, taşarsa yalnız barkod
-     kısalır. Yatayda %80'e ortalı. */
+  /* Barkod — SABİT 7mm (KARAR v1.21.1); artan pay alt satırın altında kalır
+     (dcell justify-content: flex-start). Yatayda %80'e ortalı. */
   .dbc {
-    flex: 1 1 auto;
-    min-height: 0;
+    flex: 0 0 7mm;
+    height: 7mm;
     width: 80%;
     margin: 0 auto;
   }
