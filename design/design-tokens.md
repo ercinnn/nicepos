@@ -13,6 +13,15 @@
 > **v1.15 (KARAR — ONAYLANDI):** Anasayfa hero bandı "dijital platform" yönüne gradyan +
 > asimetri kazandı (bkz. §4 sonu). Yeni renk YOK, yalnız `primaryDeep #081226` eklendi
 > (mevcut lacivert rampasının bir durağı).
+> **v2.0 (KARAR — ONAYLANDI, kullanıcı: "uzay üssü gibi, çok dijital ve profesyonel;
+> gerekirse önceki kuralları alt üst et"):** Kimlik **"Enstrüman Konsolu"** diline evrildi
+> (bkz. **§6**). Palet KORUNUR (sıcak lacivert + altın + beyaz); yeni renk yok, mevcut
+> lacivert rampası "panel" yüzeyi olarak terfi etti. Yaklaşım **hibrit (Yön C)**: çalışma
+> ekranları (satış/stok/müşteri/form) **aydınlık** kalır; **metrik + hero + dashboard
+> yüzeyleri koyu "enstrüman paneli"ne** döner. İmza = Hero tutar **+ altın ray (KORUNUR)** +
+> yeni **enstrüman okuma detaylandırması** (reticle köşeler, graticule, tick'li ray). v1.17'nin
+> "tüm destek kartları aydınlık" kuralı §6'da bilinçli **alt üst edildi** (dashboard metrik
+> tile'ları artık koyu panel olabilir). Referans uygulama: **Dashboard**.
 
 ---
 
@@ -686,3 +695,79 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
        → üst/alt ~2.5mm eşit nefes payı (v1.20.1 crash savunması korunur; taşma olursa alt satır itilmez).
     4. **Barkod numarası bir font kademesi büyür:** HTML 6pt → **7pt**, PDF 6 → **7**, önizleme 7.5 → **8.5**px
        (Inter tabular, ortalı, siyah). Ürün adı fontu + 2-satır sabit alanı (4.4mm) DEĞİŞMEZ.
+
+---
+
+## 6. Konsol Tasarım Dili — **v2.0** (Enstrüman Konsolu)
+
+> **Kimlik dönüşümü (KARAR v2.0 — ONAYLANDI).** Uygulama "güvenilir esnaf kasası"ndan
+> **"görev-kontrol / uzay üssü enstrüman konsolu"** hissine evrilir: hassasiyet, veri
+> yoğunluğu, enstrüman disiplini. **Şablon sci-fi'dan kaçınılır** — siyah zemin + neon
+> cyan/yeşil parıltı + monospace görünümü YASAK (tipik AI çıktısı). Drama neon'dan değil,
+> **enstrüman detaylandırmasından** (graticule, reticle, tabular okuma göstergesi) gelir.
+> Palet KORUNUR: sıcak lacivert + altın + beyaz; **yeni hex yok** — mevcut lacivert rampası
+> panel yüzeyi olarak terfi eder.
+
+### 6.1 Yaklaşım — Hibrit (Yön C)
+İki yüzey dünyası bir arada yaşar:
+- **Çalışma yüzeyi (aydınlık, KORUNUR):** Satış · Stok · Müşteri · Formlar · rapor tabloları.
+  Aydınlık mağazada hızlı tarama + okunabilirlik önceliği → beyaz zemin, §1–§5 aynen geçerli.
+  Buralar koyu panele DÖNMEZ (kasiyer kullanılabilirliği; dark tema gün ışığında yorucu).
+- **Enstrüman paneli (koyu, YENİ):** Dashboard metrik/grafik yüzeyleri · tüm **hero** yüzeyleri.
+  "Konsol okuma göstergesi" dili. Bu, v1.15 (koyu hero bandı) dilinin **bir tasarım sütununa
+  terfisidir** — her şey çöpe atılmaz, o dil genişletilir.
+
+### 6.2 Yüzey token'ları (yeni rol adları, mevcut hex'ler)
+| Token | Hex / kaynak | Rol |
+|---|---|---|
+| `surface.working` | `#FFFFFF` (`pageBg`) | Aydınlık çalışma zemini (değişmedi) |
+| `surface.panel` | `primaryDark #0F1D35` → `primaryDeep #081226` gradyan (~155°) | Koyu enstrüman paneli yüzeyi |
+| `panel.ink` | `#FFFFFF` | Panel üstü birincil metin/rakam |
+| `panel.muted` | `textMuted #8898AA` | Panel üstü ikincil/mikro-etiket (soğuk çelik) |
+| `panel.hairline` | `textMuted #8898AA` @ **alfa 0.06–0.08** | Graticule ızgara çizgisi (panel içi) |
+| `panel.reticle` | `gold #C9A84C` @ **alfa 0.14–0.20** | Köşe reticle (nişangâh) işaretleri |
+
+Panel radius `radiusLg 16`; panel gölgesi `elevatedShadow`. Panel üstünde altın **parlar**
+(koyu zeminde kontrast yüksek) ama §5 **altın ekonomisi AYNEN** geçerli — altın panelde de
+dekor olarak yığılmaz.
+
+### 6.3 İmza güncellemesi — "Enstrüman Okuma Göstergesi" (§4 evrimi)
+Hero **tutar + altın ray KORUNUR** (kullanıcı kararı); üzerine enstrüman detaylandırması eklenir:
+1. **Reticle köşeler:** Hero/metrik panelin dört köşesinde küçük **L-şekilli nişangâh** işareti
+   (`panel.reticle` altın, ~10–14px kol, ~1.5px kalınlık) — uzay aracı göstergesi çerçevesi hissi.
+2. **Graticule taban:** Altın ray artık düz çubuk değil, **tick'li okuma cetveli** — ray boyunca
+   3–5 minik dikey tick + sağa doğru soluklaşan gradyan (`gold → goldLight → şeffaf`, v1.15 dili) +
+   yumuşak parıltı gölgesi. Ray genişliği yine rakamın ~%40'ı, `radiusPill`.
+3. **Mikro-etiket:** Hero tutarın üstünde küçük **uppercase enstrüman etiketi** (`type.utility`,
+   `panel.muted`, letter-spacing +0.5) — ör. "GÜNLÜK CİRO · ₺". Rakam `type.display` tabular.
+4. **Tabular okuma:** Panel üstündeki TÜM rakamlar Inter **tabular** + hafif pozitif tracking;
+   para `formatters`. (Kural 3: hero daima para formatı.)
+
+Kurallar değişmedi: **ekran başına tek hero** (§4.1), **altın ray yalnız hero altında**,
+ray başka yerde süs değil. Reticle/graticule yalnız enstrüman panellerinde; çalışma
+ekranlarına serpiştirilmez.
+
+### 6.4 Metrik tile'ları — koyu konsol (v1.17 alt-üst edilir)
+Dashboard destek metrik kartları (`_StatCard` vb.) artık **koyu enstrüman tile'ı** olabilir:
+`surface.panel` zemin + ince `panel.hairline` graticule köşe/kenar + kategorik ikon +
+mini sparkline (§4 v1.18 dili; çizgi var, dolgu yok — panelde çizgi rengi kartın kategorik
+tonu veya `panel.ink`). **Bu bir hero DEĞİL:** reticle köşe + tick'li ray yalnız GERÇEK
+hero'ya ait; tile'lar sakin konsol yüzeyidir (graticule ≤ 0.08 alfa, altın ray YOK).
+- **v1.17 istisnası:** "tüm destek kartları aydınlık + altın kenarlık" kuralı **bilinçli
+  kaldırıldı** (kullanıcı "önceki kuralları alt üst et" izni). Metrik yüzeyleri koyu panele
+  döner; §1 altın ekonomisi + tek-hero kuralı korunur.
+- Kategorik şerit renkleri (§4 v1.18) panelde de kimlik taşır (altın HARİÇ; `danger` HARİÇ).
+
+### 6.5 Tipografi & hareket
+- **Tipografi (§2 KORUNUR):** Manrope başlık · Inter gövde/rakam. Panelde rakamlar tabular +
+  hafif tracking = "enstrüman okuma" hissi. Yeni font YOK (mono cliché'sine düşülmez).
+- **Hareket:** Mevcut dashboard hero ışıltı `AnimationController`'ı KORUNUR (CLAUDE.md: yeni
+  controller AÇMA — faz türet). Yavaş, göze batmayan; neon flaş yok.
+
+### 6.6 Kapsam & rollout
+- **Faz 1 (bu tur, referans):** **Dashboard** — hero bandı enstrüman okuma göstergesine yükseltilir
+  (reticle + tick'li ray + mikro-etiket) + stat tile'ları koyu konsola döner. `satis-grafikleri-
+  tasarimci` uygular; sonuç bu §6'ya karşı denetlenir + görsel QA.
+- **Faz 2+ (beğenilirse, AYRI KARAR):** Diğer koyu hero'lar (Kasa · Müşteri · Raporlar) aynı
+  enstrüman diline taşınır. Çalışma ekranları aydınlık kalır; yalnız hairline/tabular rötuş alır.
+- Her faz ayrı onaydan geçer; tek seferde tüm uygulama yeniden yazılmaz.

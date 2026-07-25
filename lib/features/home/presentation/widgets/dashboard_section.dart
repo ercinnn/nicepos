@@ -19,6 +19,78 @@ final _currencyFmt = NumberFormat.currency(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Enstrüman Konsolu yüzeyi (design-tokens §6.2 — surface.panel)
+// ═══════════════════════════════════════════════════════════════════════════
+// KARAR v2.0 (Faz 1 — Dashboard): metrik + grafik yüzeyleri koyu "enstrüman
+// paneli"ne döner. Yeni hex YOK — mevcut lacivert rampası (primaryDark →
+// primaryDeep) panel yüzeyi olarak terfi eder. §5 altın ekonomisi + tek-hero
+// kuralı AYNEN geçerli (reticle köşe + tick'li ray yalnız gerçek hero'da).
+
+/// Koyu panel gradyanı (~155°, sol-üstten sağ-alta). primaryDark → primaryDeep.
+const _kPanelGradient = LinearGradient(
+  begin: Alignment(-0.6, -1),
+  end: Alignment(0.6, 1),
+  colors: [AppColors.primaryDark, AppColors.primaryDeep],
+);
+
+/// Enstrüman paneli kutu dekorasyonu (§6.2): koyu gradyan + çok soluk graticule
+/// kenar (`textMuted` ≤0.08) + yumuşak yükseltilmiş gölge. Stat tile'ları ve
+/// grafik kartları bunu paylaşır (konsol bütünlüğü). Altın kenarlık YOK —
+/// altın panelde yalnız gerçek hero rayında/reticle'da belirir.
+BoxDecoration _panelDecoration() => BoxDecoration(
+  gradient: _kPanelGradient,
+  borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+  border: Border.all(color: AppColors.textMuted.withValues(alpha: 0.08)),
+  boxShadow: AppSizes.elevatedShadow,
+);
+
+/// Koyu panel üstünde kategorik/koyu bir rengi okunur kılmak için beyazla
+/// harmanlar (§6.4 — koyu `primary`/`danger` durakları koyu zeminde kaybolur;
+/// hue korunur, yalnız parlaklık artar). İmza/semantik DEĞİŞMEZ; yalnız panel
+/// okunabilirliği içindir.
+Color _panelUzerinde(Color c) =>
+    Color.alphaBlend(Colors.white.withValues(alpha: 0.30), c);
+
+/// Reticle (nişangâh) köşe rengi — gold ~%18 alfa (`panel.reticle`, §6.2).
+const _kReticleRenk = Color(0x2EC9A84C);
+
+/// L-şekilli köşe nişangâhı — "enstrüman göstergesi çerçevesi" hissi (§6.3).
+/// Yalnız GERÇEK hero'da altın; stat tile'larında kullanılmaz. `Positioned`'ın
+/// çocuğu olarak Stack'e yerleştirilir (Positioned Stack'in doğrudan çocuğu).
+class _ReticleCorner extends StatelessWidget {
+  final Alignment kose;
+  final Color renk;
+
+  const _ReticleCorner({required this.kose, required this.renk});
+
+  // Nişangâh kolunun uzunluğu ve çizgi kalınlığı — sabit (§6.3); tüm köşeler
+  // aynı ölçüyü paylaşır (çağrı bazında değişmediği için parametre değil).
+  static const double _kol = 12;
+  static const double _kalinlik = 1.5;
+
+  @override
+  Widget build(BuildContext context) {
+    final ust = kose.y < 0;
+    final sol = kose.x < 0;
+    final kenar = BorderSide(color: renk, width: _kalinlik);
+    return SizedBox(
+      width: _kol,
+      height: _kol,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: ust ? kenar : BorderSide.none,
+            bottom: ust ? BorderSide.none : kenar,
+            left: sol ? kenar : BorderSide.none,
+            right: sol ? BorderSide.none : kenar,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Ana Dashboard Bölümü
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -309,6 +381,50 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                     ),
                   ),
                 ),
+            // ── Reticle köşeler (enstrüman göstergesi çerçevesi, §6.3) ──────
+            // Panelin 4 köşesinde küçük L-nişangâh (gold ~%18 alfa). Positioned
+            // DAİMA Stack'in DOĞRUDAN çocuğu (ParentDataWidget kısıtı) — ara
+            // widget (IgnorePointer) onun İÇİNDE, dışında değil.
+            const Positioned(
+              top: 10,
+              left: 10,
+              child: IgnorePointer(
+                child: _ReticleCorner(
+                  kose: Alignment.topLeft,
+                  renk: _kReticleRenk,
+                ),
+              ),
+            ),
+            const Positioned(
+              top: 10,
+              right: 10,
+              child: IgnorePointer(
+                child: _ReticleCorner(
+                  kose: Alignment.topRight,
+                  renk: _kReticleRenk,
+                ),
+              ),
+            ),
+            const Positioned(
+              bottom: 10,
+              left: 10,
+              child: IgnorePointer(
+                child: _ReticleCorner(
+                  kose: Alignment.bottomLeft,
+                  renk: _kReticleRenk,
+                ),
+              ),
+            ),
+            const Positioned(
+              bottom: 10,
+              right: 10,
+              child: IgnorePointer(
+                child: _ReticleCorner(
+                  kose: Alignment.bottomRight,
+                  renk: _kReticleRenk,
+                ),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSizes.space20,
@@ -325,15 +441,17 @@ class _HeroBandState extends ConsumerState<_HeroBand>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Flexible(
+                        // Mikro-etiket (§6.3): uppercase enstrüman okuma etiketi
+                        // + " · ₺" birim; panel.muted (textMuted) soğuk çelik ton.
                         child: Text(
-                          'BUGÜNKÜ CİRO',
+                          'BUGÜNKÜ CİRO · ₺',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.1,
-                            color: Colors.white.withValues(alpha: 0.62),
+                            color: AppColors.textMuted,
                           ),
                         ),
                       ),
@@ -452,6 +570,24 @@ class _AnimatedRail extends StatelessWidget {
   static const _kSweepPeriod = 3.4;
   static const _kGlowPeriod = 4.6;
 
+  // Graticule tick'leri (§6.3): ray boyunca minik dikey çentikler → "okuma
+  // cetveli" hissi. Ray gradyanı sağa soluklaştığı için soldaki tick'ler daha
+  // belirgin okunur (kasıtlı — ölçek başı solda).
+  static const _tickKesirleri = [0.12, 0.30, 0.48, 0.66];
+
+  /// Verilen genişlik için tick çubukları (koyu `primaryDeep` çentik, altın
+  /// ray üstünde görünür). `Positioned` → Stack'in doğrudan çocuğu.
+  List<Widget> _tickler(double w) => [
+    for (final f in _tickKesirleri)
+      Positioned(
+        left: w * f,
+        top: 0,
+        bottom: 0,
+        width: 1.5,
+        child: const ColoredBox(color: Color(0x8C081226)), // primaryDeep ~%55
+      ),
+  ];
+
   static const _railGradient = LinearGradient(
     colors: [
       AppColors.gold,
@@ -478,6 +614,10 @@ class _AnimatedRail extends StatelessWidget {
                 spreadRadius: 1,
               ),
             ],
+          ),
+          // Tick'li okuma cetveli (§6.3) — animasyon kapalıyken de görünür.
+          child: LayoutBuilder(
+            builder: (context, c) => Stack(children: _tickler(c.maxWidth)),
           ),
         ),
       );
@@ -514,6 +654,7 @@ class _AnimatedRail extends StatelessWidget {
                 final left = -bandWidth + sweepT * (w + bandWidth * 2);
                 return Stack(
                   children: [
+                    // Işık huzmesi (altta), tick'ler (üstte → her zaman okunur).
                     Positioned(
                       left: left,
                       top: 0,
@@ -532,6 +673,7 @@ class _AnimatedRail extends StatelessWidget {
                         ),
                       ),
                     ),
+                    ..._tickler(w),
                   ],
                 );
               },
@@ -572,31 +714,41 @@ class _DegisimBadgeOnDark extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSizes.radiusPill),
         border: Border.all(color: glowRenk.withValues(alpha: 0.35)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(ikon, size: 12, color: glowRenk),
-          const SizedBox(width: AppSizes.space2),
-          Text(
-            yuzdeMetin,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: glowRenk,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          if (etiket.isNotEmpty) ...[
-            const SizedBox(width: AppSizes.space4),
+      // Dar stat kartında (koyu panel, masaüstünde 5 kart yan yana → kart
+      // içeriği ~90px'e inebilir) rozet doğal genişliğini aşarsa SERT taşma
+      // yerine oransal küçülür (asla büyümez); hero gibi geniş/serbest bir
+      // bağlamda doğal boyutunda kalır. FittedBox unbounded genişlikte de
+      // güvenlidir (Flexible'ın aksine hero'da "unbounded constraints"
+      // hatası vermez) — bu yüzden burada tercih edildi.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(ikon, size: 12, color: glowRenk),
+            const SizedBox(width: AppSizes.space2),
             Text(
-              etiket,
+              yuzdeMetin,
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.white.withValues(alpha: 0.55),
+                fontWeight: FontWeight.w700,
+                color: glowRenk,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
+            if (etiket.isNotEmpty) ...[
+              const SizedBox(width: AppSizes.space4),
+              Text(
+                etiket,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -798,19 +950,22 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final degisim = data.degisim;
     final sparkline = data.sparkline;
+    // KARAR v2.0 §6.4 — koyu enstrüman tile'ı. Kategorik kimlik rengi koyu
+    // panelde okunur kalması için parlatılır (koyu `primary` durağı zeminle
+    // çakışır); şerit/ikon/sparkline aynı parlatılmış tonu paylaşır.
+    final renk = _panelUzerinde(data.renk);
 
-    // Dış Container'ın kenarlık/gölge/radius'u AppSizes.cardDecoration()'dan
-    // (§4 v1.17 tutarlılığı) — sol renk şeridi ClipRRect ile aynı radius'a
-    // kırpılır, aksi halde kartın yuvarlatılmış köşesinden taşar.
+    // Koyu panel yüzeyi (§6.2) — altın kenarlık/reticle YOK (tile hero değil);
+    // sol renk şeridi ClipRRect ile aynı radius'a kırpılır.
     return Container(
-      decoration: AppSizes.cardDecoration(),
+      decoration: _panelDecoration(),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppSizes.cardRadius),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ── Sol kategorik renk şeridi (KARAR v1.18, altın DEĞİL) ─────
-            Container(width: 3, color: data.renk),
+            Container(width: 3, color: renk),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(AppSizes.cardPadding),
@@ -826,15 +981,15 @@ class _StatCard extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(data.icon, size: 14, color: data.renk),
+                              Icon(data.icon, size: 14, color: renk),
                               const SizedBox(width: AppSizes.space4),
                               Flexible(
                                 child: Text(
                                   data.baslik,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
+                                    color: Colors.white.withValues(alpha: 0.75),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -868,7 +1023,7 @@ class _StatCard extends StatelessWidget {
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
+                                color: Colors.white,
                                 fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             ),
@@ -877,13 +1032,13 @@ class _StatCard extends StatelessWidget {
                     // ── Mini sparkline (KARAR v1.18) ────────────────────
                     if (sparkline != null && sparkline.length >= 2) ...[
                       const SizedBox(height: AppSizes.space4),
-                      _MiniSparkline(values: sparkline, renk: data.renk),
+                      _MiniSparkline(values: sparkline, renk: renk),
                     ],
 
-                    // ── Değişim rozeti ───────────────────────────────────
+                    // ── Değişim rozeti (koyu panel → OnDark varyant) ─────
                     if (degisim != null) ...[
                       const SizedBox(height: AppSizes.space4),
-                      _DegisimBadge(
+                      _DegisimBadgeOnDark(
                         yuzde: degisim,
                         etiket: data.karsilastirmaEtiketi,
                       ),
@@ -956,83 +1111,25 @@ class _DonemPill extends StatelessWidget {
         vertical: AppSizes.space2,
       ),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.06),
+        // Koyu panel üstünde sakin beyaz-alfa pill (§6.4).
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppSizes.radiusPill),
       ),
       child: Text(
         donem,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: AppColors.primary,
+          color: Colors.white.withValues(alpha: 0.70),
         ),
       ),
     );
   }
 }
 
-// ── Değişim Badge'i ────────────────────────────────────────────────────────
-
-class _DegisimBadge extends StatelessWidget {
-  final double yuzde;
-  final String etiket;
-
-  const _DegisimBadge({required this.yuzde, this.etiket = 'dünden'});
-
-  @override
-  Widget build(BuildContext context) {
-    final artis = yuzde >= 0;
-    // Semantik renk: kazanç → success, kayıp → danger (token §1).
-    final renk = artis ? AppColors.success : AppColors.danger;
-    final ikon = artis
-        ? Icons.arrow_upward_rounded
-        : Icons.arrow_downward_rounded;
-    final yuzdeMetin = '${artis ? '+' : ''}${yuzde.toStringAsFixed(1)}%';
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Yüzde pill'i (semantik tonlu yumuşak zemin)
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSizes.space6,
-            vertical: AppSizes.space2,
-          ),
-          decoration: BoxDecoration(
-            color: renk.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(ikon, size: 12, color: renk),
-              const SizedBox(width: AppSizes.space2),
-              Text(
-                yuzdeMetin,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: renk,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (etiket.isNotEmpty) ...[
-          const SizedBox(width: AppSizes.space4),
-          Flexible(
-            child: Text(
-              etiket,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
+// NOT: Beyaz-zemin `_DegisimBadge` KARAR v2.0 (§6.4) ile kaldırıldı — dashboard
+// stat kartları koyu panele döndüğü için değişim rozeti artık `_DegisimBadgeOnDark`
+// (camsı/parlak varyant) kullanır.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Günlük Satış Grafiği Kartı (son 8/15/30 gün)
@@ -1067,7 +1164,8 @@ class _DailySalesChartCardState extends ConsumerState<_DailySalesChartCard> {
     final veriAsync = ref.watch(dailySalesProvider(_secilenGun));
 
     return Container(
-      decoration: AppSizes.cardDecoration(),
+      // Koyu enstrüman paneli (§6.2/§6.3 — grafik kartları konsola taşınır).
+      decoration: _panelDecoration(),
       padding: const EdgeInsets.all(AppSizes.cardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1079,7 +1177,9 @@ class _DailySalesChartCardState extends ConsumerState<_DailySalesChartCard> {
               Flexible(
                 child: Text(
                   '$_secilenGun Günlük Satış Grafiği',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: Colors.white),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1118,7 +1218,8 @@ class _DailySalesChartCardState extends ConsumerState<_DailySalesChartCard> {
                       style: const TextStyle(
                         fontSize: 8,
                         height: 1.2,
-                        color: AppColors.textSecondary,
+                        // Koyu panelde okunur (textSecondary koyu → kaybolurdu).
+                        color: Colors.white70,
                         fontFeatures: [FontFeature.tabularFigures()],
                       ),
                     ),
@@ -1192,6 +1293,9 @@ class _SatisLineChart extends StatelessWidget {
       );
     }
 
+    // Koyu panelde tek çizgi rengi (koyu `primary` zeminle çakışır → parlatılır).
+    final cizgiRenk = _panelUzerinde(AppColors.primary);
+
     // Y ekseni max değeri
     final maxY = veriler
         .map((v) => v.amount.toDouble())
@@ -1236,26 +1340,26 @@ class _SatisLineChart extends StatelessWidget {
           verticalRangeAnnotations: haftaSonuBantlari,
         ),
 
-        // Grid
+        // Grid (koyu panel graticule — §6.2 panel.hairline ~0.07)
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
           horizontalInterval: yMax / 4,
           getDrawingHorizontalLine: (_) => FlLine(
-            color: AppColors.textMuted.withValues(alpha: 0.15),
+            color: AppColors.textMuted.withValues(alpha: 0.07),
             strokeWidth: 1,
           ),
         ),
 
-        // Kenarlık
+        // Kenarlık (koyu panelde eksen ~0.18)
         borderData: FlBorderData(
           show: true,
           border: Border(
             bottom: BorderSide(
-              color: AppColors.textMuted.withValues(alpha: 0.25),
+              color: AppColors.textMuted.withValues(alpha: 0.18),
             ),
             left: BorderSide(
-              color: AppColors.textMuted.withValues(alpha: 0.25),
+              color: AppColors.textMuted.withValues(alpha: 0.18),
             ),
           ),
         ),
@@ -1322,7 +1426,7 @@ class _SatisLineChart extends StatelessWidget {
         // Tooltip
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
-            getTooltipColor: (_) => AppColors.primary.withValues(alpha: 0.85),
+            getTooltipColor: (_) => AppColors.primary,
             getTooltipItems: (spots) => spots.map((s) {
               final idx = s.x.round().clamp(0, veriler.length - 1);
               final v = veriler[idx];
@@ -1345,16 +1449,16 @@ class _SatisLineChart extends StatelessWidget {
             spots: spots,
             isCurved: true,
             curveSmoothness: 0.35,
-            color: AppColors.primary,
+            color: cizgiRenk,
             barWidth: 2.5,
             isStrokeCapRound: true,
             dotData: FlDotData(
               show: veriler.length <= 15,
               getDotPainter: (spot, xPct, bar, idx) => FlDotCirclePainter(
                 radius: 3,
-                color: Colors.white,
+                color: AppColors.primaryDeep,
                 strokeWidth: 2,
-                strokeColor: AppColors.primary,
+                strokeColor: cizgiRenk,
               ),
             ),
             belowBarData: BarAreaData(
@@ -1363,8 +1467,8 @@ class _SatisLineChart extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  AppColors.primary.withValues(alpha: 0.18),
-                  AppColors.primary.withValues(alpha: 0.0),
+                  cizgiRenk.withValues(alpha: 0.22),
+                  cizgiRenk.withValues(alpha: 0.0),
                 ],
               ),
             ),
@@ -1452,16 +1556,18 @@ class _YillikKarsilastirmaCardState
     final ikisiDeHata = currentAsync.hasError && historicalAsync.hasError;
 
     return Container(
-      // HERO değil, ray YOK — ama KARAR v1.17 ile diğer anasayfa kartlarıyla
-      // aynı çerçeve dili (ince altın kenarlık + gölge) kullanılır.
-      decoration: AppSizes.cardDecoration(),
+      // HERO değil, ray YOK — koyu enstrüman paneli (§6.2/§6.3); reticle köşe +
+      // tick'li ray yalnız gerçek hero'ya ait, burada kullanılmaz.
+      decoration: _panelDecoration(),
       padding: const EdgeInsets.all(AppSizes.cardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Yıllık Ciro Karşılaştırma (Oca–Ara)',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: Colors.white),
           ),
           const SizedBox(height: AppSizes.space12),
 
@@ -1596,6 +1702,9 @@ class _YilChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Koyu panelde chip: renk noktası/kenarlık grafik çizgisiyle aynı
+    // parlatılmış tonu paylaşır (§6.4); metin beyaz/soluk.
+    final r = _panelUzerinde(renk);
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -1605,10 +1714,10 @@ class _YilChip extends StatelessWidget {
           vertical: AppSizes.space6,
         ),
         decoration: BoxDecoration(
-          color: acik ? renk.withValues(alpha: 0.12) : Colors.transparent,
+          color: acik ? r.withValues(alpha: 0.18) : Colors.transparent,
           borderRadius: BorderRadius.circular(AppSizes.radiusPill),
           border: Border.all(
-            color: acik ? renk : AppColors.textMuted.withValues(alpha: 0.30),
+            color: acik ? r : AppColors.textMuted.withValues(alpha: 0.35),
           ),
         ),
         child: Row(
@@ -1619,7 +1728,7 @@ class _YilChip extends StatelessWidget {
               width: 10,
               height: 10,
               decoration: BoxDecoration(
-                color: acik ? renk : renk.withValues(alpha: 0.30),
+                color: acik ? r : r.withValues(alpha: 0.35),
                 shape: BoxShape.circle,
               ),
             ),
@@ -1629,7 +1738,7 @@ class _YilChip extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: acik ? FontWeight.w700 : FontWeight.w500,
-                color: acik ? AppColors.textPrimary : AppColors.textMuted,
+                color: acik ? Colors.white : AppColors.textMuted,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
@@ -1667,7 +1776,9 @@ class _YillikLineChart extends StatelessWidget {
         for (var ay = 0; ay < 12; ay++)
           FlSpot(ay.toDouble(), aylik[ay].toDouble()),
       ];
-      final renk = _yilRengi(yil);
+      // Koyu panelde koyu kategorik duraklar (ör. primary) parlatılır; hue/
+      // kategorik ayrım korunur (§6.4).
+      final renk = _panelUzerinde(_yilRengi(yil));
       return LineChartBarData(
         spots: spots,
         isCurved: true,
@@ -1694,7 +1805,7 @@ class _YillikLineChart extends StatelessWidget {
           drawVerticalLine: false,
           horizontalInterval: yMax / 4,
           getDrawingHorizontalLine: (_) => FlLine(
-            color: AppColors.textMuted.withValues(alpha: 0.15),
+            color: AppColors.textMuted.withValues(alpha: 0.07),
             strokeWidth: 1,
           ),
         ),
@@ -1704,10 +1815,10 @@ class _YillikLineChart extends StatelessWidget {
           show: true,
           border: Border(
             bottom: BorderSide(
-              color: AppColors.textMuted.withValues(alpha: 0.25),
+              color: AppColors.textMuted.withValues(alpha: 0.18),
             ),
             left: BorderSide(
-              color: AppColors.textMuted.withValues(alpha: 0.25),
+              color: AppColors.textMuted.withValues(alpha: 0.18),
             ),
           ),
         ),
@@ -1766,7 +1877,7 @@ class _YillikLineChart extends StatelessWidget {
         // Tooltip: yıl + ay + tutar (her açık seri için).
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
-            getTooltipColor: (_) => AppColors.primary.withValues(alpha: 0.90),
+            getTooltipColor: (_) => AppColors.primary,
             getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
               final ay = s.x.round().clamp(0, 11);
               // barIndex → açık yıl sırası ile eşleşir.
@@ -1777,7 +1888,9 @@ class _YillikLineChart extends StatelessWidget {
               return LineTooltipItem(
                 '$onEk${_ayKisaltma[ay]}\n${_currencyFmt.format(s.y)}',
                 TextStyle(
-                  color: yil != null ? _yilRengi(yil) : Colors.white,
+                  color: yil != null
+                      ? _panelUzerinde(_yilRengi(yil))
+                      : Colors.white,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -1869,16 +1982,18 @@ class _YillikOrtalamaCiroCardState
     final ikisiDeHata = currentAsync.hasError && historicalAsync.hasError;
 
     return Container(
-      // HERO değil, ray YOK — ama KARAR v1.17 ile diğer anasayfa kartlarıyla
-      // aynı çerçeve dili (ince altın kenarlık + gölge) kullanılır.
-      decoration: AppSizes.cardDecoration(),
+      // HERO değil, ray YOK — koyu enstrüman paneli (§6.2/§6.3); reticle köşe +
+      // tick'li ray yalnız gerçek hero'ya ait, burada kullanılmaz.
+      decoration: _panelDecoration(),
       padding: const EdgeInsets.all(AppSizes.cardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Yıllık Ortalama Ciro (Kümülatif Günlük Ortalama)',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: Colors.white),
           ),
           const SizedBox(height: AppSizes.space12),
 
@@ -1989,7 +2104,9 @@ class _YillikOrtalamaLineChart extends StatelessWidget {
     final yMax = maxY == 0 ? 100.0 : maxY * 1.2;
 
     final barlar = acikYillar.map((yil) {
-      final renk = _yilRengi(yil);
+      // Koyu panelde koyu kategorik duraklar (ör. primary) parlatılır; hue/
+      // kategorik ayrım korunur (§6.4).
+      final renk = _panelUzerinde(_yilRengi(yil));
       return LineChartBarData(
         spots: serilerSpot[yil]!,
         isCurved: true,
@@ -2015,7 +2132,7 @@ class _YillikOrtalamaLineChart extends StatelessWidget {
           drawVerticalLine: false,
           horizontalInterval: yMax / 4,
           getDrawingHorizontalLine: (_) => FlLine(
-            color: AppColors.textMuted.withValues(alpha: 0.15),
+            color: AppColors.textMuted.withValues(alpha: 0.07),
             strokeWidth: 1,
           ),
         ),
@@ -2024,10 +2141,10 @@ class _YillikOrtalamaLineChart extends StatelessWidget {
           show: true,
           border: Border(
             bottom: BorderSide(
-              color: AppColors.textMuted.withValues(alpha: 0.25),
+              color: AppColors.textMuted.withValues(alpha: 0.18),
             ),
             left: BorderSide(
-              color: AppColors.textMuted.withValues(alpha: 0.25),
+              color: AppColors.textMuted.withValues(alpha: 0.18),
             ),
           ),
         ),
@@ -2086,7 +2203,7 @@ class _YillikOrtalamaLineChart extends StatelessWidget {
         // Tooltip: yıl + ay + o ana kadarki kümülatif günlük ortalama.
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
-            getTooltipColor: (_) => AppColors.primary.withValues(alpha: 0.90),
+            getTooltipColor: (_) => AppColors.primary,
             getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
               final ay = s.x.round().clamp(0, 11);
               final yil = (s.barIndex >= 0 && s.barIndex < acikYillar.length)
@@ -2096,7 +2213,9 @@ class _YillikOrtalamaLineChart extends StatelessWidget {
               return LineTooltipItem(
                 '$onEk${_ayKisaltma[ay]}\n${_currencyFmt.format(s.y)}',
                 TextStyle(
-                  color: yil != null ? _yilRengi(yil) : Colors.white,
+                  color: yil != null
+                      ? _panelUzerinde(_yilRengi(yil))
+                      : Colors.white,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -2145,11 +2264,15 @@ class _ChipSecici extends StatelessWidget {
                   vertical: AppSizes.space4,
                 ),
                 decoration: BoxDecoration(
-                  color: aktif ? AppColors.primary : Colors.transparent,
+                  // Koyu panelde seçici: aktif → beyaz-alfa dolgu, pasif →
+                  // soluk hairline kenar (§6.4).
+                  color: aktif
+                      ? Colors.white.withValues(alpha: 0.16)
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(AppSizes.radiusPill),
                   border: Border.all(
                     color: aktif
-                        ? AppColors.primary
+                        ? Colors.white.withValues(alpha: 0.40)
                         : AppColors.textMuted.withValues(alpha: 0.30),
                   ),
                 ),
@@ -2158,7 +2281,7 @@ class _ChipSecici extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: aktif ? FontWeight.w700 : FontWeight.w500,
-                    color: aktif ? Colors.white : AppColors.textSecondary,
+                    color: aktif ? Colors.white : AppColors.textMuted,
                   ),
                 ),
               ),
