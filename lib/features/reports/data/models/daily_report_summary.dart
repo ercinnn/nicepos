@@ -26,4 +26,9 @@ class DailyReportSummary {
 
   num get receivedPaymentsTotal =>
       receivedPayments.fold<num>(0, (sum, p) => sum + p.amount);
+
+  /// Nakit-esaslı ciro (ana sayfa "günlük ciro" tanımıyla BİREBİR):
+  /// Nakit tahsilatı + POS tahsilatı + o gün/aralıkta alınan borç ödemeleri.
+  /// Açık hesap/borç (openAccountTotal) HARİÇ — "kasaya giren para".
+  num get cashBasisTurnover => cashTotal + posTotal + receivedPaymentsTotal;
 }

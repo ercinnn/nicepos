@@ -123,8 +123,8 @@ class _ReportContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // İmza: ekranın TEK kahramanı — Toplam Ciro.
-          ReportHero(amount: report.grandTotal),
+          // İmza: ekranın TEK kahramanı — Toplam Ciro (nakit-esaslı: Nakit+POS+Alınan Ödemeler).
+          ReportHero(amount: report.cashBasisTurnover),
           const SizedBox(height: AppSizes.space16),
           ReportSummaryRow(report: report),
           const SizedBox(height: AppSizes.space24),
