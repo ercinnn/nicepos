@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/widgets/instrument_hero.dart';
 import '../../application/customers_provider.dart';
 import '../../data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
@@ -164,10 +165,7 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
               // ── İmza HERO: Kalan Borç (müşteri bakiyesi) ─────────────────────
               // Ekranın tek kahramanı. İri tabular tutar + altında semantik ray:
               // borç (>0) → danger, alacak/sıfır → positive (§4 istisna, altın değil).
-              _BalanceHero(
-                balance: customer.remainingDebt,
-                isMobile: context.isMobile,
-              ),
+              _BalanceHero(balance: customer.remainingDebt),
               const SizedBox(height: AppSizes.space12),
               // ── Sakin destek kartları (hero ile yarışmaz) ────────────────────
               // Toplam Satış nötr; Toplam Borç danger; Ödeme success semantik.
@@ -768,70 +766,18 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 // borç (>0) → danger, alacak/sıfır → positive (§4 müşteri istisnası, altın değil).
 class _BalanceHero extends StatelessWidget {
   final num balance;
-  final bool isMobile;
-  const _BalanceHero({required this.balance, required this.isMobile});
+  const _BalanceHero({required this.balance});
 
   @override
   Widget build(BuildContext context) {
     final hasDebt = balance > 0;
+    // Enstrüman hero (§6.3): koyu panel + reticle köşe + tick'li ray. Reticle
+    // ALTIN; ray SEMANTİK — borç (>0) → danger, alacak/sıfır → success.
     final semantic = hasDebt ? AppColors.danger : AppColors.success;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.space20,
-        vertical: AppSizes.space20,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-        boxShadow: AppSizes.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            hasDebt ? 'KALAN BORÇ' : 'BAKİYE',
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-              color: AppColors.textMuted,
-            ),
-          ),
-          const SizedBox(height: AppSizes.space8),
-          IntrinsicWidth(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  formatCurrency(balance),
-                  style: TextStyle(
-                    fontSize: isMobile ? 30 : 38,
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
-                    letterSpacing: -0.5,
-                    color: semantic,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(height: AppSizes.space6),
-                // Altın değil — tutara göre semantik ray (~%40 genişlik).
-                FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: 0.4,
-                  child: Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: semantic,
-                      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return InstrumentHero(
+      label: hasDebt ? 'KALAN BORÇ · ₺' : 'BAKİYE · ₺',
+      amount: balance,
+      railColor: semantic,
     );
   }
 }

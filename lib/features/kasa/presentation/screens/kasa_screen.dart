@@ -8,6 +8,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/widgets/instrument_hero.dart';
 import '../../../products/data/models/company.dart';
 import '../../application/kasa_provider.dart';
 import '../../data/models/kasa_entry.dart';
@@ -228,7 +229,6 @@ class _KasaHero extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final mobil = context.isMobile;
     final ozetAsync = ref.watch(
       kasaCumulativeSummaryProvider(
         KasaSummaryQuery(fiscalYear: fiscalYear, uptoDate: date),
@@ -241,145 +241,149 @@ class _KasaHero extends ConsumerWidget {
     );
     final acilisAsync = ref.watch(kasaOpeningBalanceProvider(fiscalYear));
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Enstrüman hero (§6.3): koyu panel + reticle köşe + tick'li ALTIN
+        // ray. SOL = birikimli yıl kasası (hero) · SAĞ (trailing) = işletme
+        // giderleri (kırmızı, − öneki, ray YOK — tek hero kuralı §4.1).
+        ozetAsync.when(
+          loading: () => const _KasaHeroPlaceholder(),
+          error: (e, s) => const _KasaHeroPlaceholder(hata: true),
+          data: (ozet) => InstrumentHero(
+            label: '$fiscalYear YILI KASASI · ₺',
+            amount: ozet.income,
+            // Para metriği → ray altın (varsayılan; imza korunur, §4 v1.9).
+            trailing: _GiderleriOkuma(
+              fiscalYear: fiscalYear,
+              expense: ozet.expense,
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSizes.space12),
+        // ── Sakin destek AYDINLIK kalır (§6.1): yalnız hero yüzeyi enstrümana
+        // döner. Seçili günün Nakit+POS+açılış kırılımı beyaz kartta.
+        _GunKirilimDestek(
+          date: date,
+          nakit: gunAsync.valueOrNull?.nakit,
+          pos: gunAsync.valueOrNull?.pos,
+          acilis: acilisAsync.valueOrNull?.openingIncome ?? 0,
+        ),
+      ],
+    );
+  }
+}
+
+/// Kasa hero'su yüklenirken/hata durumunda gösterilen yer tutucu — hero ile
+/// AYNI koyu enstrüman yüzeyini gösterir (layout sıçraması olmaz). Reticle/ray
+/// içermez (henüz okuma yok); yalnız panel + spinner/dash.
+class _KasaHeroPlaceholder extends StatelessWidget {
+  final bool hata;
+  const _KasaHeroPlaceholder({this.hata = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: 116,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: AppSizes.space20),
+      decoration: instrumentPanelDecoration(),
+      child: hata
+          ? const Text(
+              '—',
+              style: TextStyle(
+                fontSize: 38,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            )
+          : const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(AppColors.gold),
+              ),
+            ),
+    );
+  }
+}
+
+/// Hero panelinin SAĞ trailing okuması: işletme giderleri (yıl bazlı). Kırmızı
+/// + eksi öneki, ray YOK (tek hero kuralı). Koyu panel üstünde okunur olması
+/// için `danger` beyaza doğru harmanlanır (`instrumentPanelReadable`).
+class _GiderleriOkuma extends StatelessWidget {
+  final int fiscalYear;
+  final num expense;
+  const _GiderleriOkuma({required this.fiscalYear, required this.expense});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$fiscalYear İŞLETME GİDERLERİ',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.right,
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.4,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: AppSizes.space6),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Text(
+            '−${formatCurrency(expense)}',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              height: 1.05,
+              letterSpacing: -0.5,
+              color: instrumentPanelReadable(AppColors.danger),
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Hero altındaki AYDINLIK destek kartı — seçili günün Nakit+POS kırılımı +
+/// yıl açılışı (§6.1 çalışma/destek yüzeyi beyaz kalır; ray/vurgu YOK).
+class _GunKirilimDestek extends StatelessWidget {
+  final DateTime date;
+  final num? nakit;
+  final num? pos;
+  final num acilis;
+
+  const _GunKirilimDestek({
+    required this.date,
+    required this.nakit,
+    required this.pos,
+    required this.acilis,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
         horizontal: AppSizes.space20,
-        vertical: AppSizes.space20,
+        vertical: AppSizes.space16,
       ),
-      // Hero yüzeyi KENARLIKSIZ (§5 hero istisnası): beyaz zemin + yumuşak gölge.
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-        boxShadow: AppSizes.cardShadow,
-      ),
+      decoration: AppSizes.cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // İki başlık: SOLA hizalı Kasa Birikimi · SAĞA hizalı İşletme Giderleri.
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '$fiscalYear YILI KASA BİRİKİMİ',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                    color: AppColors.textMuted,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSizes.space12),
-              Expanded(
-                child: Text(
-                  '$fiscalYear YILI İŞLETME GİDERLERİ',
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.8,
-                    color: AppColors.textMuted,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSizes.space8),
-          // SOL: kasa birikimi hero + altın ray · SAĞ: işletme giderleri (kırmızı, − öneki, ray YOK).
-          ozetAsync.when(
-            loading: () => const SizedBox(
-              height: 44,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            ),
-            error: (e, s) => Text(
-              '—',
-              style: TextStyle(
-                fontSize: mobil ? 30 : 38,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textMuted,
-              ),
-            ),
-            data: (ozet) => Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // SOL: kasa birikimi (hero) + altın ray.
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          formatCurrency(ozet.income),
-                          style: TextStyle(
-                            fontSize: mobil ? 30 : 38,
-                            fontWeight: FontWeight.w800,
-                            height: 1.05,
-                            letterSpacing: -0.5,
-                            color: AppColors.primary,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSizes.space6),
-                      // Altın aksan rayı — yalnız kasa birikimi (hero) altında (~%40).
-                      FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: 0.4,
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: AppColors.gold,
-                            borderRadius:
-                                BorderRadius.circular(AppSizes.radiusPill),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSizes.space12),
-                // SAĞ: işletme giderleri — kırmızı + eksi öneki, ray YOK.
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          '−${formatCurrency(ozet.expense)}',
-                          style: TextStyle(
-                            fontSize: mobil ? 30 : 38,
-                            fontWeight: FontWeight.w800,
-                            height: 1.05,
-                            letterSpacing: -0.5,
-                            color: AppColors.danger,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSizes.space16),
-          const Divider(height: 1, color: AppColors.divider),
-          const SizedBox(height: AppSizes.space12),
-          // Seçili günün kırılımı + açılış — sakin destek (ray YOK).
           Text(
             '${formatShortDate(date)} — Gün Kırılımı',
             style: const TextStyle(
@@ -394,19 +398,11 @@ class _KasaHero extends ConsumerWidget {
             spacing: AppSizes.space20,
             runSpacing: AppSizes.space12,
             children: [
-              _DestekMetrik(
-                etiket: 'Nakit',
-                deger: gunAsync.valueOrNull?.nakit,
-                renk: AppColors.cash,
-              ),
-              _DestekMetrik(
-                etiket: 'POS',
-                deger: gunAsync.valueOrNull?.pos,
-                renk: AppColors.pos,
-              ),
+              _DestekMetrik(etiket: 'Nakit', deger: nakit, renk: AppColors.cash),
+              _DestekMetrik(etiket: 'POS', deger: pos, renk: AppColors.pos),
               _DestekMetrik(
                 etiket: 'Yıl Açılışı',
-                deger: acilisAsync.valueOrNull?.openingIncome ?? 0,
+                deger: acilis,
                 renk: AppColors.textSecondary,
               ),
             ],

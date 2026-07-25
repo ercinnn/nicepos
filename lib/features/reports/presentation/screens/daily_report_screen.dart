@@ -5,6 +5,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../../core/widgets/instrument_hero.dart';
 import '../../../customers/data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
 import '../../../sales/data/repositories/sales_repository.dart';
@@ -158,79 +159,22 @@ class _ReportContent extends StatelessWidget {
 }
 
 // ── Hero Tutar (public — imza öğesi, §4) ──────────────────────────────────────
-// Ekranın TEK kahramanı: Toplam Ciro. İri tabular tutar + ince altın ray.
-// Kenarlıksız yüzey (§5 hero istisnası): yalnız zemin + yumuşak gölge + ray.
-
+// Ekranın TEK kahramanı: Toplam Ciro. Enstrüman okuma göstergesi (§6.3) —
+// koyu panel + reticle köşe + tick'li ALTIN ray. Günlük + Tarihsel raporlar
+// PAYLAŞIR. `amount` mantığı (cashBasisTurnover) DEĞİŞMEDİ.
 class ReportHero extends StatelessWidget {
   final num amount;
   final String label;
   const ReportHero({
     super.key,
     required this.amount,
-    this.label = 'TOPLAM CİRO',
+    this.label = 'TOPLAM CİRO · ₺',
   });
 
   @override
   Widget build(BuildContext context) {
-    final mobil = context.isMobile;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSizes.space20,
-        vertical: AppSizes.space20,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
-        boxShadow: AppSizes.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-              color: AppColors.textMuted,
-            ),
-          ),
-          const SizedBox(height: AppSizes.space8),
-          IntrinsicWidth(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  formatCurrency(amount),
-                  style: TextStyle(
-                    fontSize: mobil ? 30 : 38,
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
-                    letterSpacing: -0.5,
-                    color: AppColors.primary,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(height: AppSizes.space6),
-                // Altın aksan rayı — yalnızca hero tutarın altında (~%40).
-                FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: 0.4,
-                  child: Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: AppColors.gold,
-                      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    // Para metriği → ray altın (imza korunur, §4 v1.3).
+    return InstrumentHero(label: label, amount: amount);
   }
 }
 
