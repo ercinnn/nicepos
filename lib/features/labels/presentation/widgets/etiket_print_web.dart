@@ -627,9 +627,9 @@ String _buildQuadHtml({
 
 // ─── Ürün Etiketi (KARAR v1.21) — 6 sütun × 12 satır = 72 etiket/sayfa ────────
 // Adet-tabanlı, FİYATSIZ/LOGOSUZ. A4 dikey; sayfa boşluğu üst/alt 10mm, yatay 0.
-// Hücre 35×23mm, her kenardan 3mm iç pay → içerik 29×17mm. Toplam > 72 ise 2.,
-// 3. sayfaya taşar (her sayfa `page-break-after`). Etiket-içi (ortalı, üstten
-// alta): ürün adı 2 satır sabit + Code128 barkod (SABİT 7mm) + barkod no.
+// Hücre 35×23mm, her kenardan 1.5mm iç pay → içerik 32×20mm (KARAR v1.22). Toplam
+// > 72 ise 2., 3. sayfaya taşar (her sayfa `page-break-after`). Etiket-içi (dikey
+// ORTALI): ürün adı 2 satır sabit + Code128 barkod (SABİT 8mm) + barkod no.
 // die-cut → baskıda çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
 
 String _productCellHtml(ProductLabelItem? it) {
@@ -687,16 +687,17 @@ String _buildProductHtml({
     page-break-after: always;
   }
   .dsheet:last-child { page-break-after: auto; }
-  /* Hücre — 3mm iç pay; die-cut → çerçeve/kesim çizgisi YOK. */
+  /* Hücre — 1.5mm iç pay (KARAR v1.22); die-cut → çerçeve/kesim çizgisi YOK.
+     3 öğe grubu dikey ORTALI (justify-content: center). */
   .dcell {
     width: 35mm;
     height: 23mm;
-    padding: 3mm;
+    padding: 1.5mm;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
   }
   /* Ürün adı — 2 satır sabit alan, ORTALI, uzun ad kısalır (flex:0). */
   .dname {
@@ -712,11 +713,11 @@ String _buildProductHtml({
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  /* Barkod — SABİT 7mm (KARAR v1.21.1); artan pay alt satırın altında kalır
-     (dcell justify-content: flex-start). Yatayda %80'e ortalı. */
+  /* Barkod — SABİT 8mm (KARAR v1.22); grup dikey ortalı (dcell
+     justify-content: center). Yatayda %80'e ortalı. */
   .dbc {
-    flex: 0 0 7mm;
-    height: 7mm;
+    flex: 0 0 8mm;
+    height: 8mm;
     width: 80%;
     margin: 0 auto;
   }
@@ -725,7 +726,7 @@ String _buildProductHtml({
   .dbcno {
     flex: 0 0 auto;
     width: 100%;
-    font-size: 6pt;
+    font-size: 7pt;
     letter-spacing: 0.3px;
     text-align: center;
     font-variant-numeric: tabular-nums;

@@ -672,3 +672,17 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   - **Ekran krom'u:** **ekran hero'su YOK** (araç/çalışma ekranı, §4 v1.10); stok listesi token dili (Manrope
     başlık, Inter tabular, `cardDecoration`, `goldBg` başlık). Masaüstü iki bölge (sol barkod+adet girişi/kalem
     listesi · sağ A4 önizleme), mobil tek kolon. Yeni renk/altın YOK. Baskı siyah/beyaz.
+  - **Ürün Etiketi — iç pay daraltma + barkod büyütme + dikey ortalama (KARAR v1.22 — kullanıcı isteği):**
+    KARAR v1.21/v1.21.1 etiket-içi geometrisi dört noktada güncellenir (önizleme = HTML = PDF, üçü BİREBİR;
+    yeni renk/palet/imza YOK — yalnız baskı geometrisi). Hücre 35×23mm ve 6×12=72/A4 grid **DEĞİŞMEZ**:
+    1. **İç pay 3mm → 1.5mm** (kenardaki + ortadaki TÜM etiketlerde 4 kenardan eşit) → **içerik alanı
+       29×17mm → 32×20mm** (yatay 35−3=32, dikey 23−3=20). Fiziksel die-cut hücre değişmez; 1.5mm hâlâ
+       güvenli baskı payı.
+    2. **Barkod çizgi yüksekliği 7mm → 8mm** (SABİT; v1.21.1'in 7mm'sini büyütür). 20mm iç yükseklikte
+       rahat sığar. Savunma katmanı (v1.20.1 dersi, ~8px eşiği altında BarcodeWidget render edilmez) korunur.
+    3. **Dikey ortalama — 3 öğe grubu (ürün adı + barkod + barkod no) içerik alanında dikey ORTALANIR**
+       (`mainAxisAlignment.start`/`justify-content: flex-start` → **`center`**): etikete bakınca üstte ve
+       altta kalan boşluklar **eşit** görünür. 20mm − (~4.4 ad + 8 barkod + ~2.5 no ≈ 14.9mm) ≈ ~5mm boşluk
+       → üst/alt ~2.5mm eşit nefes payı (v1.20.1 crash savunması korunur; taşma olursa alt satır itilmez).
+    4. **Barkod numarası bir font kademesi büyür:** HTML 6pt → **7pt**, PDF 6 → **7**, önizleme 7.5 → **8.5**px
+       (Inter tabular, ortalı, siyah). Ürün adı fontu + 2-satır sabit alanı (4.4mm) DEĞİŞMEZ.

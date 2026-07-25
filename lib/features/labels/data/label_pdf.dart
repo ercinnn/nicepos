@@ -728,9 +728,9 @@ pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Ürün Etiketi PDF üretimi (KARAR v1.21) — adet-tabanlı, FİYATSIZ/LOGOSUZ barkod
 // etiketi. A4 dikey, 6 sütun × 12 satır = 72 etiket/sayfa. Sayfa boşluğu üst/alt
-// 10mm, yatay 0. Hücre 35×23mm, her kenardan 3mm iç pay → içerik 29×17mm. Toplam
-// > 72 ise 2., 3. sayfaya taşar (çok-sayfalı). Etiket-içi (ortalı, üstten alta):
-// ürün adı 2 satır sabit + Code128 barkod (SABİT 7mm) + barkod no. Çıktı
+// 10mm, yatay 0. Hücre 35×23mm, her kenardan 1.5mm iç pay → içerik 32×20mm (KARAR
+// v1.22). Toplam > 72 ise 2., 3. sayfaya taşar (çok-sayfalı). Etiket-içi (dikey
+// ORTALI): ürün adı 2 satır sabit + Code128 barkod (SABİT 8mm) + barkod no. Çıktı
 // SİYAH/BEYAZ; die-cut → baskıda kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -778,12 +778,12 @@ Future<Uint8List> buildProductLabelsPdf({
   return doc.save();
 }
 
-// Tek Ürün Etiketi hücresi (KARAR v1.21). Boş hane → tamamen boş (die-cut →
+// Tek Ürün Etiketi hücresi (KARAR v1.22). Boş hane → tamamen boş (die-cut →
 // kesim çizgisi YOK). Etiket-içi: ürün adı 2 satır sabit (ortalı) + Code128
-// barkod (SABİT 7mm; artan pay alt satırın altında kalır) + barkod no (ortalı,
-// tabular). Fiyat/logo YOK. Ad `flex:0` + numara `flex:0`, barkod SABİT 7mm
-// `SizedBox`; savunma katmanı (v1.20.1 dersi): gerçek yükseklik eşiğin altındaysa
-// barkod HİÇ render edilmez (sabit 7mm'de tetiklenmez ama katman korunur).
+// barkod (SABİT 8mm) + barkod no (ortalı, tabular); 3 öğe grubu içerik alanında
+// dikey ORTALANIR. Fiyat/logo YOK. Ad `flex:0` + numara `flex:0`, barkod SABİT
+// 8mm `SizedBox`; savunma katmanı (v1.20.1 dersi): gerçek yükseklik eşiğin
+// altındaysa barkod HİÇ render edilmez (sabit 8mm'de tetiklenmez ama korunur).
 pw.Widget _productCell(ProductLabelItem? it) {
   if (it == null) {
     // Boş hücre — die-cut, çerçeve/kesim çizgisi YOK.
@@ -791,10 +791,10 @@ pw.Widget _productCell(ProductLabelItem? it) {
   }
 
   return pw.Container(
-    padding: pw.EdgeInsets.all(3 * PdfPageFormat.mm),
+    padding: pw.EdgeInsets.all(1.5 * PdfPageFormat.mm),
     child: pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
-      mainAxisAlignment: pw.MainAxisAlignment.start,
+      mainAxisAlignment: pw.MainAxisAlignment.center,
       children: [
         // 1. Ürün adı — 2 satır sabit alan (~4.4mm), ORTALI, uzun ad kırpılır.
         pw.SizedBox(
@@ -815,12 +815,12 @@ pw.Widget _productCell(ProductLabelItem? it) {
             ),
           ),
         ),
-        // 2. Code128 barkod — SABİT 7mm (KARAR v1.21.1), yatayda %80'e ortalı
-        //    (1:8:1 flex). Artan ~3.6mm boşluk alt satırın altında kalır
-        //    (Column mainAxisAlignment.start). Savunma: yükseklik eşiğin
-        //    altındaysa HİÇ render etme (sabit 7mm'de tetiklenmez ama korunur).
+        // 2. Code128 barkod — SABİT 8mm (KARAR v1.22), yatayda %80'e ortalı
+        //    (1:8:1 flex). Grup dikey ortalı (Column mainAxisAlignment.center).
+        //    Savunma: yükseklik eşiğin altındaysa HİÇ render etme (sabit 8mm'de
+        //    tetiklenmez ama katman korunur).
         pw.SizedBox(
-          height: 7 * PdfPageFormat.mm,
+          height: 8 * PdfPageFormat.mm,
           child: pw.LayoutBuilder(
             builder: (context, constraints) {
               final maxHeight = constraints?.maxHeight ?? double.infinity;
@@ -857,7 +857,7 @@ pw.Widget _productCell(ProductLabelItem? it) {
             maxLines: 1,
             overflow: pw.TextOverflow.clip,
             style: pw.TextStyle(
-              fontSize: 6,
+              fontSize: 7,
               letterSpacing: 0.3,
               color: PdfColors.black,
             ),

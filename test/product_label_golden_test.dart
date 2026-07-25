@@ -1,11 +1,11 @@
-// Regresyon testi — Ürün Etiketi (6×12 = 72/A4, KARAR v1.21 / v1.21.1): sıkı
-// 17mm iç yükseklik bütçesinde (2 satır ad + SABİT 7mm barkod + barkod no) bir
+// Regresyon testi — Ürün Etiketi (6×12 = 72/A4, KARAR v1.22): sıkı
+// 20mm iç yükseklik bütçesinde (2 satır ad + SABİT 8mm barkod + barkod no) bir
 // hücre, 2 satıra taşan uzun bir ürün adıyla crash/overflow vermeden render
-// edilmeli. Barkod bandı artık ESNEK değil, SABİT 7mm (KARAR v1.21.1) —
+// edilmeli. Barkod bandı artık ESNEK değil, SABİT 8mm (KARAR v1.22) —
 // aşağıdaki test bunu doğrular. v1.20.1 dersi: barkod alanına sıfır/negatif
 // yükseklik düşerse `barcode` paketinin `assert(height > 0)` kontrolü GERÇEK bir
 // Flutter çökmesine yol açar; bu yüzden savunma eşiği (yükseklik altındaysa HİÇ
-// render edilmez) korunur. Bu test hem o çökmeyi hem 7mm sabitini yakalar.
+// render edilmez) korunur. Bu test hem o çökmeyi hem 8mm sabitini yakalar.
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -68,7 +68,7 @@ void main() {
   );
 
   testWidgets(
-    'barkod bandı SABİT 7mm yükseklikte (KARAR v1.21.1, esnek değil)',
+    'barkod bandı SABİT 8mm yükseklikte (KARAR v1.22, esnek değil)',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(900, 1250));
 
@@ -83,16 +83,16 @@ void main() {
       );
       await tester.pump();
 
-      // 7mm @96dpi = 7 * 3.7795 ≈ 26.46px. Golden tuval FittedBox olmadan
+      // 8mm @96dpi = 8 * 3.7795 ≈ 30.24px. Golden tuval FittedBox olmadan
       // native ölçekte render edilir → bant tam sabit yükseklikte olmalı.
-      const expected7mmPx = 7 * 3.7795;
+      const expected8mmPx = 8 * 3.7795;
       final areas = find.byKey(const Key('prodBarcodeArea'));
       // Dolu hücre sayısı kadar (bu sayfada 3) barkod bandı bulunmalı.
       expect(areas, findsWidgets);
       for (final el in areas.evaluate()) {
         final size = tester.getSize(find.byWidget(el.widget));
-        expect(size.height, closeTo(expected7mmPx, 0.5),
-            reason: 'Barkod bandı SABİT 7mm olmalı (esnek Expanded değil)');
+        expect(size.height, closeTo(expected8mmPx, 0.5),
+            reason: 'Barkod bandı SABİT 8mm olmalı (esnek Expanded değil)');
       }
     },
   );
