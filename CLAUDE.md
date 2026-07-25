@@ -75,6 +75,7 @@ lib/
     theme/         # app_theme.dart + app_theme.g.dart (Riverpod provider)
     utils/         # formatters.dart, responsive.dart (isMobile <650px / isDesktop)
     supabase/      # SupabaseConfig, supabaseClientProvider
+    widgets/       # InstrumentHero — paylaşılan "enstrüman konsolu" hero'su (design-tokens §6.3, v2.0)
   app/             # Router, AppScaffold (web: sidebar + canlı saat; mobil: Drawer + BottomNav)
   features/
     auth/          # Login, ConfigMissingScreen
@@ -90,6 +91,8 @@ lib/
 ### Tasarım Sistemi
 
 Tek kaynak: `lib/core/theme/app_theme.dart` (`appThemeProvider`, `@Riverpod(keepAlive: true)`). Palet: beyaz zemin, lacivert (#1B2A4A) butonlar, altın (#D4B86A) kenarlıklar — sabitler `lib/core/constants/app_colors.dart`. Detaylı token/karar geçmişi: `design/design-tokens.md`.
+
+**v2.0 — "Enstrüman Konsolu" tasarım dili (design-tokens §6):** Kimlik "uzay üssü / görev-kontrol" yönüne evrildi — **palet KORUNDU** (sıcak lacivert + altın + beyaz; yeni hex yok, mevcut lacivert rampası "panel" yüzeyi olarak terfi etti). Yaklaşım **hibrit**: çalışma ekranları (satış/stok/müşteri liste-tablo/form/rapor tabloları) **aydınlık** kalır; **metrik + hero + dashboard yüzeyleri koyu "enstrüman paneli"ne** döner (`primaryDark → primaryDeep` gradyan + soluk graticule + altın reticle köşeler + tick'li ray + mikro-etiket). İmza = Hero tutar + **altın ray (korundu)** + enstrüman detaylandırması. **Faz 1:** Dashboard (`dashboard_section.dart` — bespoke, ışıltı/asimetri korundu). **Faz 2:** Raporlar/Kasa (altın ray) + Müşteri liste/detay (**semantik ray** — borç=danger, alacak/sıfır=success; reticle yine altın) → hepsi tek paylaşılan **`InstrumentHero`** bileşeninden (`lib/core/widgets/instrument_hero.dart`, statik/animasyonsuz — ışıltı YALNIZ Dashboard'a ait). Kurallar korunur: ekran başına tek hero, altın ekonomisi, altın ray yalnız hero'da. ⚠️ Koyu panele Row eklerken **yatay-taşma tuzağı** (CLAUDE.md Dashboard notu) tekrar ısırır — `InstrumentHero` bunu `FittedBox(scaleDown)+IntrinsicWidth+CustomPaint` ile çözer (bounded/unbounded güvenli; `LayoutBuilder`, `IntrinsicWidth` altında çökertir → tick'ler `CustomPaint`).
 
 ### State Yönetimi — Riverpod Generator
 
@@ -113,8 +116,8 @@ Rapor ekranlarından ve müşteri detayından açılır; kalem/iskonto/ödeme t�
 ## Dashboard (Anasayfa)
 
 `dashboard_section.dart`:
-- **Hero bandı:** bugünkü ciro — lacivert gradyan + altın ray + ışıltı animasyonu (TEK `AnimationController`, faz türetmeli — yeni bir nabız efekti eklenirse AYRI controller AÇMA). Yalnız Anasayfa'da; diğer ekranların hero'ları düz kalır.
-- **Stat kartları (`_StatCardsRow`):** Satış Adedi / Aylık Ciro / Aylık Adet / Yıllık Ciro / Son 365 Günlük Ciro. Her kart: sol ince kategorik renk şeridi + ikon + değerin altında mini sparkline (`fl_chart`, eksensiz/dolgusuz). Kartlar `AppSizes.cardDecoration()` (altın kenarlık) ile tutarlı — altın ray/dolgu YOK, bu hero'ya özel kalır.
+- **Hero bandı (v2.0 enstrüman göstergesi):** bugünkü ciro — koyu lacivert gradyan + altın ray + ışıltı animasyonu (TEK `AnimationController`, faz türetmeli — yeni bir nabız efekti eklenirse AYRI controller AÇMA), üzerine **4 köşe altın reticle nişangâh + tick'li ray + mikro-etiket** (design-tokens §6.3). Işıltı yalnız Anasayfa'da; diğer ekranların hero'ları (`InstrumentHero`) statik/düz kalır.
+- **Stat kartları (`_StatCardsRow`) — v2.0 koyu konsol:** Satış Adedi / Aylık Ciro / Aylık Adet / Yıllık Ciro / Son 365 Günlük Ciro. Her kart artık **koyu enstrüman paneli** (`_panelDecoration()` — `primaryDark→primaryDeep` gradyan + soluk graticule; ESKİ `cardDecoration()` altın-kenarlık dili KALDIRILDI, design-tokens §6.4 v1.17'yi bilinçli alt üst etti): sol ince kategorik renk şeridi (koyu zeminde görünmeyen `primary`/`danger` durakları `_panelUzerinde` ile parlatılır) + ikon + mini sparkline (`fl_chart`, eksensiz/dolgusuz). **Reticle/tick/altın ray YOK** — onlar yalnız gerçek hero'da. Grafik kartları da (`fl_chart`) koyu panele taşındı; grid/eksen/etiket koyu zeminde okunur ayarlı.
 - **Günlük satış grafiği + Yıllık Ciro Karşılaştırma + Yıllık Ortalama Ciro:** `fl_chart` çizgi grafikler, hiçbiri hero değil.
 - **⚠️ Bilinen Flutter tuzakları (regresyon testiyle yakalandı, `flutter analyze` GÖRMEZ):**
   - `Positioned` DAİMA `Stack`'in DOĞRUDAN çocuğu olmalı — `IgnorePointer`/`AnimatedBuilder` gibi bir ara widget'ın içine gömülürse "Incorrect use of ParentDataWidget" ile TÜM dashboard çöker.
@@ -139,13 +142,15 @@ Rapor ekranlarından ve müşteri detayından açılır; kalem/iskonto/ödeme t�
 
 `/reports` — Günlük / Tarihsel / Ürün raporları. İskonto sütunu `% 82.25` formatında (2 ondalık).
 
+**"TOPLAM CİRO" hero (Günlük + Tarihsel) = nakit-esaslı**, ana sayfa "günlük ciro" ile BİREBİR: `Nakit + POS + Alınan Ödemeler (borç tahsilatı)`; **açık hesap/borç HARİÇ** ("o gün kasaya giren para"). Kaynak: `DailyReportSummary.cashBasisTurnover` (`= cashTotal + posTotal + receivedPaymentsTotal`). `grandTotal` (borç DAHİL) modelde durur ama hero'yu beslemez — yalnız tablo/diğer kullanımlar için. Hero widget'ı `ReportHero` artık paylaşılan `InstrumentHero`'yu sarar (altın ray). Dashboard'ın nakit-esaslı ciro tanımı da aynıdır (`sales_revenue_between` RPC: `paid_amount` + `type='odeme'` tahsilatları).
+
 ## Etiket — Raf Etiketi A4 Yazdırma
 
 `/etiket` — üç sekme: **Yeni Etiket** (24 hane, 3×8 ızgara, logo+fiyat+Code128+barkod no+tarih), **Geniş Logo** (10 hane, 2×5 ızgara, sabit marka figürü — turuncu tente + NiCE, 88mm×55mm hücre), **Kayıtlı Dosyalar** (Supabase Storage `etiket_pdfleri` bucket'ı, imzalı URL). Barkod → ürün çözme satış ekranıyla aynı desen. Yazdır/PDF Üret yalnız web. Etiket çıktısı kendi hero'suna (FİYAT, altın ray YOK) sahiptir — app krom'undan ayrı bir görsel dil.
 
 ## Kasa
 
-Gelir-gider defteri: Gelir (Nakit/POS banka kırılımı + mutabakat) · Gider (kategori + firma) · Firma Giderleri (yıl bazlı rapor) sekmeleri. Hero = birikimli yıl kasası.
+Gelir-gider defteri: Gelir (Nakit/POS banka kırılımı + mutabakat) · Gider (kategori + firma) · Firma Giderleri (yıl bazlı rapor) sekmeleri. Hero = birikimli yıl kasası (v2.0 `InstrumentHero`, altın ray; sağda ray'sız gider okuması — `instrumentPanelReadable` ile koyu panelde okunur).
 
 ## Veritabanı (Supabase)
 
