@@ -22,6 +22,9 @@
 > yeni **enstrüman okuma detaylandırması** (reticle köşeler, graticule, tick'li ray). v1.17'nin
 > "tüm destek kartları aydınlık" kuralı §6'da bilinçli **alt üst edildi** (dashboard metrik
 > tile'ları artık koyu panel olabilir). Referans uygulama: **Dashboard**.
+> **v2.2 (KARAR — ONAYLANDI):** **Satış ekranı ödeme paneli** Faz 3 olarak enstrüman diline
+> alınır + **ödeme aksiyonu iki sınıfa ayrılır** (bkz. **§6.7**). Yeni renk YOK. v1.9.1'in
+> "ödeme türü butonu kenarlığı `goldBorder`" kuralı **bu ekranda geri alındı** (altın yığılması).
 
 ---
 
@@ -225,6 +228,9 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
   **Seçili durum:** o türün renginde dolgu/kenarlık. Açık hesap seçili değilken
   etiket/ikon rengi **`color.ink`** (altın metin açık zemine yazılmaz, §1). `goldBg`
   zemin ödeme butonlarında kullanılmaz — dört butonu "altın duvar"a çevirir.
+  **⚠️ v2.2 ile GÜNCELLENDİ (satış ekranı):** yukarıdaki "kenarlık `goldBorder`" izni satış
+  ekranı ödeme panelinde **geri alındı** (kenarlık nötr `divider`) ve butonlar **iki aksiyon
+  sınıfına** ayrıldı — bkz. **§6.7**. Diğer ekranlardaki ödeme-türü rozet/butonları etkilenmez.
 - **Altın ekonomisi (imza koruması, §4):** Altın aynı ekranda dekor olarak yığılmaz.
   İzin verilen: hero ray, aktif/seçili durum, tablo başlığı `goldBg`, ince kart
   kenarlığı. Yasak: her input + her buton + her bölücüde altın → imza sulandırılır,
@@ -726,6 +732,12 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
 | `panel.muted` | `textMuted #8898AA` | Panel üstü ikincil/mikro-etiket (soğuk çelik) |
 | `panel.hairline` | `textMuted #8898AA` @ **alfa 0.06–0.08** | Graticule ızgara çizgisi (panel içi) |
 | `panel.reticle` | `gold #C9A84C` @ **alfa 0.14–0.20** | Köşe reticle (nişangâh) işaretleri |
+| `panel.control` | `#FFFFFF` @ **kenarlık 0.24–0.30 · dolgu 0.04–0.08** | Koyu panel üstündeki **etkileşimli öğe** (buton/çember) kenarlığı + zemini |
+
+`panel.control` (KARAR v2.2 ile eklendi): `panel.hairline` pasif bir ızgara çizgisidir, bir
+**butonu** taşıyamaz (0.06–0.08 alfa dokunulabilirliği belirsiz bırakır). Koyu panel üstünde
+duran etkileşimli öğe bu rolü kullanır — yeni hex YOK (beyaz = `panel.ink`), yalnız alfa
+kompozisyonu. Bu öğeler **altın kenarlık ALMAZ**: panelde altın yalnız ray + reticle'a aittir.
 
 Panel radius `radiusLg 16`; panel gölgesi `elevatedShadow`. Panel üstünde altın **parlar**
 (koyu zeminde kontrast yüksek) ama §5 **altın ekonomisi AYNEN** geçerli — altın panelde de
@@ -770,4 +782,118 @@ hero'ya ait; tile'lar sakin konsol yüzeyidir (graticule ≤ 0.08 alfa, altın r
   tasarimci` uygular; sonuç bu §6'ya karşı denetlenir + görsel QA.
 - **Faz 2+ (beğenilirse, AYRI KARAR):** Diğer koyu hero'lar (Kasa · Müşteri · Raporlar) aynı
   enstrüman diline taşınır. Çalışma ekranları aydınlık kalır; yalnız hairline/tabular rötuş alır.
+- **Faz 3 (KARAR v2.2, ONAYLANDI):** **Satış ekranı ödeme paneli** — bkz. §6.7.
 - Her faz ayrı onaydan geçer; tek seferde tüm uygulama yeniden yazılmaz.
+
+### 6.7 Faz 3 — Satış ekranı ödeme paneli (KARAR v2.2 — ONAYLANDI)
+
+> **Kapsam:** yalnız `payment_panel.dart` + `sales_screen.dart`'ın ödeme/hero ile ilgili
+> parçaları. Sepet tablosu (`cart_table.dart`), müşteri sekmeleri, hızlı ürünler paneli,
+> barkod arama alanı ve ürün arama dropdown'ı **DEĞİŞMEZ** (aydınlık çalışma yüzeyi, §6.1).
+> **Yeni renk/hex YOK.** Ekranın önceliği (hız + büyük dokunma hedefi) hiçbir maddede
+> feda edilmez — hiçbir yere ek onay adımı/dialog eklenmez.
+
+#### (a) Hero TOPLAM → enstrüman paneli
+`_HeroTotal` v1 dilinden (beyaz kart + düz altın ray) **koyu enstrüman paneline** taşınır;
+Faz 2 emsali → paylaşılan **`InstrumentHero`** (`lib/core/widgets/instrument_hero.dart`)
+kullanılır, yeni bespoke hero YAZILMAZ. Statik/animasyonsuz — **ışıltı yalnız Dashboard'a ait**.
+- **Mikro-etiket (§6.3/3):** normal `TOPLAM · ₺` · iade modunda `İADE TUTARI · ₺`.
+- **Ray (semantik, müşteri hero'su emsali):** normal mod **altın**, iade modu **`danger`**.
+  Reticle köşeler her iki durumda da **altın** (§6.2 `panel.reticle`).
+- Rakam `type.display` tabular + `formatCurrency`. Hero, ödeme panelinin **en üstünde** kalır.
+- §5 "hero yüzeyi kenarlıksız" istisnası korunur — koyu panele altın kenarlık eklenmez.
+
+#### (b) Altın ekonomisi temizliği (ray parlasın diye çevre sakinleşir)
+Bu ekranda altın **YALNIZCA** hero rayında + reticle köşelerde kalır. Aşağıdakiler nötrleşir:
+| Öğe | Önce | Sonra |
+|---|---|---|
+| 🇬🇧 seslendirme butonu çemberi | `goldBorder` | Hero panelinin **içinde** kalır; kenarlık beyaz-alfa (`panel.hairline` mantığı), ikon/çember **altın DEĞİL** |
+| Ödeme türü butonu kenarlığı (4 buton) | `goldBorder` | nötr `divider` (seçili durumda yine türün kendi rengi) |
+| Mobil ödeme barı kenarlığı | `goldBorder` | nötr `divider` |
+| "Hızlı Ürünler" ⚡ ikonu (mobil) | `gold` | `textSecondary` |
+
+Gerekçe: ikon altını §5'in izinli listesinde yok; 4 altın kenarlıklı buton + hero rayı +
+altın çember yan yana "altın duvar" yapıyordu — v1.9.1'in kenarlık izni bu yoğunlukta
+imzayı sulandırıyor, bu yüzden **bu ekranda** geri alındı.
+
+#### (c) Mobilde tek hero (§4.1 ihlali düzeltmesi)
+Ödeme sheet'i (`initialChildSize 0.6`) açıkken arkadaki `_MobilePaymentBar`'ın tutarı + altın
+rayı görünür kalıyordu → ekranda **iki altın ray**. Düzeltme:
+- **`_MobilePaymentBar` artık hero DEĞİL:** altın ray **KALDIRILIR**, tutar `28 → ~24` küçülür
+  (hâlâ iri ve tabular; okunabilirlik korunur), rengi `primary` / iade modunda `danger`.
+- **Mobilin tek hero'su = ödeme sheet'i içindeki `InstrumentHero`.** Bar bir "sakin okuma",
+  hero değil.
+
+#### (d) Ödeme aksiyonu **iki sınıfa** ayrılır (bu kararın kalbi)
+Dört buton aynı görünüp iki farklı iş yapıyordu: Nakit/POS **tek dokunuşta satışı bitiriyor**,
+Açık Hesap/Parçalı yalnızca **mod seçiyor**. Görsel dil bu ayrımı taşımak ZORUNDA:
+- **Yerleşim:** tek sıra 4 buton yerine **iki gruplu 2+2**, her grubun üstünde küçük
+  uppercase mikro-etiket (`type.utility`, `textMuted`, letter-spacing +0.5):
+  1. **`TEK DOKUNUŞTA TAMAMLAR`** → **Nakit · POS**
+  2. **`ÖNCE SEÇ, SONRA TAMAMLA`** → **Açık Hesap · Parçalı**
+- **Sınıf 1 (terminal aksiyon — Nakit/POS):** **dolu** buton — türün kendi renginde zemin
+  (`cash #1B7A45` / `pos #1B6A9A`) + beyaz ikon/etiket. Ağırlık, "bu buton işi bitirir"
+  bilgisini taşır. İade modunda ikisi de `danger` dolgu (mevcut davranış korunur).
+- **Sınıf 2 (mod seçimi — Açık Hesap/Parçalı):** **outline** — nötr `divider` kenarlık +
+  mevcut **sol renk şeridi + ikon** kimliği (§5 dili korunur); seçiliyken türün renginde
+  dolgu (mevcut davranış). Açık hesap seçili değilken etiket/ikon `color.ink` (§1 — altın
+  metin açık zemine yazılmaz) kuralı **aynen** geçerli.
+- **Onay dialog'u/çift dokunuş EKLENMEZ** — satış ekranının önceliği hızdır; güvenlik
+  görsel ağırlık + gruplama ile sağlanır. (Snackbar "Geri Al" fikri iş mantığı gerektirir →
+  kapsam dışı, istenirse AYRI KARAR.)
+- **Dokunma hedefi:** her buton mobilde ≥ **48×48** (§3) — gruplama bunu küçültmez.
+
+#### (e) İade modu: üç sinyal → iki sinyal
+Masaüstünde iade modu üç kez bildiriliyordu (panel içi banner + kartın 2px `danger` kenarlığı +
+buton durumu) = gürültü. Kalan sinyaller:
+1. **Hero** — `İADE TUTARI` mikro-etiketi + `danger` rakam + `danger` ray (en güçlü sinyal),
+2. **`_ReturnModeButton`** aktif durumu.
+→ Masaüstünde **panel içi banner ve kartın 2px kırmızı kenarlığı KALDIRILIR**.
+**Mobilde banner KALIR** — orada hero sheet'in içinde olduğu için ana ekranda görünmez;
+banner tek sinyaldir, kaldırılamaz.
+
+#### (f) Layout sağlamlığı (görsel değil, kırılganlık)
+- **`SizedBox(height: 320, child: PaymentPanel())` KALDIRILIR.** "Parçalı" seçilince panele
+  2 input + özet + buton ekleniyor ve 320px'e sığmıyordu (taşma). Panel **içeriği kadar**
+  yer alır; alttaki hızlı ürünler paneli `Expanded` olarak kalan alanı yutar. ⚠️ Satış ekranı
+  gövdesi `Column > Expanded > Row` ile **bounded**'dır; yine de CLAUDE.md'nin
+  "stretch'li/Expanded'lı Row → `IntrinsicHeight`" ve "`Positioned` doğrudan `Stack` çocuğu"
+  tuzakları geçerlidir — `flutter analyze` bunları GÖRMEZ.
+- **Sağ sütun sabit `580px` → esnek:** `ConstrainedBox(minWidth: 420, maxWidth: 580)` mantığı
+  (dar laptopta sepet tablosunu ezmesin). Sepet tablosu `flex: 3` kalır.
+- **`_ReturnModeButton` ölü koşul temizliği:** `isActive ? Icons.undo_rounded :
+  Icons.undo_rounded` → tek ikon.
+
+#### (h) Denetim düzeltmeleri (tasarım-lideri review turu, v2.2 içinde)
+İlk uygulama turunun token denetiminde çıkan üç düzeltme — hepsi v2.2 kapsamındadır:
+1. **`InstrumentHero.trailing` kompakt mod (imza koruması, ÖNEMLİ):** Bileşen `trailing`'e
+   `Expanded(flex: 2)` veriyor — bu, Kasa'nın **geniş metin okuması** için doğruydu, ama satış
+   ekranının 40×40'lık 🇬🇧 butonu için hero tutarın genişliğinin ~%40'ını feda ediyor ve tutarı
+   `FittedBox(scaleDown)` ile gereksizce küçültüyor. Sağ sütun 420px'e daraldığında hero
+   "ekranın en baskın öğesi" olmaktan çıkar → **§4 imzası zayıflar.** Düzeltme: `InstrumentHero`'ya
+   **toplamsal** `trailingTight` bayrağı (varsayılan `false`) — `true` iken trailing `Expanded`
+   değil **intrinsic genişlik** alır, kalan tüm genişlik hero tutarındır. Satış ekranı `true`
+   geçer. **Mevcut çağıranlar (Raporlar · Kasa · Müşteri liste/detay) DEĞİŞMEZ** — varsayılan
+   davranış birebir korunur, o hero'lar bu turda yeniden ölçülmez.
+2. **Panel üstü buton kenarlığı → `panel.control`:** Uygulamada kullanılan beyaz-alfa değerleri
+   (`0.28` kenarlık / `0.06` dolgu) §6.2'de adlandırılmamıştı — bu bir **token boşluğuydu**, artık
+   `panel.control` olarak tanımlı ve uygulanan değerler bu aralığın içinde, **uyumlu**. `panel.hairline`
+   (textMuted @0.06–0.08) bir butonu taşıyamaz; ona çevrilmemelidir.
+3. **Sağ sütun dikey taşma emniyeti:** `SizedBox(height: 320)` kalkınca taşma panel içinden
+   **sütuna** taşındı: kısa pencerede (ör. 1366×768, Parçalı açık) `QuickProductsPanel` 0'a iner,
+   ardından `PaymentPanel` sığmazsa sütun **overflow** verir. Sabit yükseklik geri GELMEZ; bunun
+   yerine ödeme paneli **`Flexible`** olur ve kendi içeriğini gerektiğinde **kaydırır**
+   (`SingleChildScrollView`), hızlı ürünler paneline **makul bir alt sınır** (`minHeight`) tanınır.
+   Kural: **hero asla kaydırma nedeniyle kırpılmaz** — panelin en üstünde kalır.
+
+#### (i) Token disiplini — dosya içi tutarlılık
+Ödeme panelinin "Parçalı" ve "Açık Hesap" alt bloklarında ham sayılar kalmıştı
+(`SizedBox(width: 8)`, `height: 16`, `EdgeInsets.only(top: 4)`). Değerler §3 ölçeğinde **doğru**
+ama sabitleri kullanılmamış → aynı dosyanın yarısı token'lı, yarısı ham. Hepsi `AppSizes`
+sabitlerine çevrilir (`space8` · `space16` · `space4` · `space12`). Yeni ölçü icat edilmez.
+
+#### (g) Bu kararın DIŞINDA kalanlar (kapsam kilidi)
+Sepet tablosu satır dili · satır-içi %/₺ iskonto · çoklu seçim barı · "+Muhtelif" satırı
+(KARAR v1.6.2) · Fiyat1 radyosu (v1.6/v1.6.1) · canlı arama dropdown'ı · müşteri sekmeleri ·
+barkod bip sesi (v1.14.1) — **hiçbiri değişmez**. Sepet tablosu aydınlık kalır; koyu panel
+YALNIZCA hero yüzeyidir.
