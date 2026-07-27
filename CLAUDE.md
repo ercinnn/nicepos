@@ -195,7 +195,14 @@ git worktree remove .claude\worktrees\agent-<id>
 ```
 Yani "Already up to date" **başarı değil, alarmdır** — merge'den sonra `git log --stat -1` veya `git diff HEAD~1 --stat` ile beklenen dosyaların gerçekten geldiğini doğrula. (⚠️ Merge **commit'lerinde** `git log --stat -1` boş gelir; içeriği görmek için `git diff HEAD^1 HEAD --stat` kullan.)
 
-**⚠️ Worktree bazen ESKİ commit'ten açılır (yaşanmış):** Yeni bir worktree'nin tabanı her zaman güncel `master` olmayabilir — v2.2 düzeltme turunda worktree `dbdd4ae` üzerinde açıldı, master ise `9d7a42d`'ydi; yani agent bir önceki turun kendi işini worktree'de **göremedi**. Önlem: (1) devirden önce tabanı teyit et, (2) görev metnine "ilk iş: `git log -1` ile tabanını doğrula, master değilse bildir" yaz (agent'ın kabuk erişimi yoksa dosya içeriğinden anlamasını iste). **Taban eskiyse `git merge` KULLANMA** — üç yönlü birleştirme aynı dosyalarda çakışma çıkarır; bunun yerine yalnız ilgili dosyaları çek:
+**🔴 Worktree'ler ESKİ commit'ten açılır — VARSAYILAN DAVRANIŞ, her turda kontrol et.** Yeni worktree'nin tabanı güncel `master` DEĞİL, **oturumun başladığı commit**tir. Aynı oturumda arka arkaya verilen görevlerde bu her seferinde tekrarlar: v2.2/v2.3 turlarında üç ayrı worktree de `dbdd4ae`'den açıldı, master ise sırayla `9d7a42d` → `9615918`'e ilerlemişti. Yani **agent bir önceki turun işini göremez** ve üzerine yazarsa onu geri alır.
+
+**Görev metnine ZORUNLU "Adım 0" koy:**
+- **Kabuk erişimi OLAN agent** (`general-purpose` vb.) → `git status --short` (temiz olmalı) + `git merge --ff-only master`. Worktree'de yerel değişiklik yokken bu **saf ileri sarmadır, çakışma imkânsızdır**. Sonra sentinel ile doğrula.
+- **Kabuk erişimi OLMAYAN agent** (ekran tasarımcıları: `Read/Edit/Glob/Grep`) → tabanını **tazeleyemez**, yalnız fark edip durabilir. Bu yüzden taban tazeliği kritikse görevi kabuklu bir agent'a ver.
+- **Sentinel yöntemi:** son turda eklenen bir sembolü ve token başlığını arat (ör. `trailingTight` + `### 6.8`). İkisi de yoksa taban eski → DUR.
+
+**Merge stratejisi:** Worktree **temiz + fast-forward** ise `git merge --ff-only master` risksizdir. Ama worktree'de **yerel değişiklik varken** taban eskiyse `git merge` üç yönlü birleştirmeye döner ve aynı dosyalarda çakışır — o durumda yalnız ilgili dosyaları çek:
 ```powershell
 git checkout worktree-agent-<id> -- <dosya1> <dosya2> ...
 git diff --stat HEAD    # beklenen dosyalar geldi mi

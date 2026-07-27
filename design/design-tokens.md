@@ -897,3 +897,82 @@ Sepet tablosu satır dili · satır-içi %/₺ iskonto · çoklu seçim barı ·
 (KARAR v1.6.2) · Fiyat1 radyosu (v1.6/v1.6.1) · canlı arama dropdown'ı · müşteri sekmeleri ·
 barkod bip sesi (v1.14.1) — **hiçbiri değişmez**. Sepet tablosu aydınlık kalır; koyu panel
 YALNIZCA hero yüzeyidir.
+
+---
+
+### 6.8 KARAR v2.3 — Görsel QA düzeltmeleri (ONAYLANDI)
+
+> **Kaynak:** `gorsel-elestirmen`'in v2.2 turu — projenin **ilk gerçek piksel ölçümlü** QA'sı
+> (login guard aşılamadı; gerçek `SalesScreen` bir render harness'ında çalıştırılıp gerçek
+> Skia pikselleri + kesin geometri ölçüldü, harness sonra silindi). S1 (360px buton grubu) ve
+> S3 (dar sütunda hero) **PASS**; aşağıdaki dört madde düzeltmedir. **Yeni renk/hex YOK.**
+
+#### (a) Ana aksiyon asla kaydırma alanında olmaz (YENİ GENEL KURAL)
+**Bulgu (S2/a FAIL):** 1366×768'de "Parçalı" seçiliyken ödeme paneli kendi içinde kayıyor ve
+**"Satışı Tamamla" butonu 145px aşağıda, görünmüyor**. Ne scrollbar, ne fade, ne ok — hiçbir
+affordance yok; kesme bir input'un ortasından geçtiği için kullanıcıya "kaydırılabilir" değil
+**"render bozuk"** hissi veriyor. §6.7(h)/3'ün *lafzı* karşılanmıştı ("panel kendi içinde
+kaydırılır") ama *amacı* değil: en yaygın laptop çözünürlüğünde satışı bitirmek, keşfedilmesi
+gereken gizli bir kaydırmaya bağlıydı.
+
+**Kural (bu ekranla sınırlı değil, tüm panel/sheet yüzeylerinde geçerli):** Kaydırılabilir bir
+panelde **üç bölge** vardır ve dıştaki ikisi kaydırma alanının DIŞINDADIR:
+1. **Üstte sabit:** hero (zaten §6.7(h)/3 gereği kırpılamaz),
+2. **Ortada kayan:** değişken içerik (ödeme türü butonları, Parçalı input'ları, özet, uyarılar),
+3. **Altta sabit:** **ana aksiyon** ("Satışı Tamamla" / "Ödeme Al" vb.).
+
+Palyatif ayarlar (`_kMinHizliUrunlerYuksekligi`'yi düşürmek, oranla oynamak) **çözüm sayılmaz** —
+başka bir çözünürlükte aynı hata tekrar eder. Ana aksiyon görünürlüğü **çözünürlükten bağımsız
+garanti** olmalıdır.
+**Kapsam:** masaüstü ödeme paneli **ve** mobil ödeme sheet'i. Mobilde bu, QA'nın ayrı bulgusunu
+(sheet `initialChildSize 0.6` iken Parçalı'da 121px içerik katlanın altında kalıyor, "Satışı
+Tamamla" görünmüyor) da çözer — sheet'in `initialChildSize`'ı ile oynamaya gerek kalmaz.
+
+#### (b) §6.7(b) kapsam düzeltmesi — dürüst geri adım
+§6.7(b) *"bu ekranda altın YALNIZCA hero rayında + reticle köşelerde kalır"* diyordu. QA gerçek
+kareden saydı: **~20 altın öğe · 1 altın ray + 4 reticle.** Müdahale bunların yalnız 6'sını
+kaldırabildi (ödeme butonu kenarlıkları · mobil bar kenarlığı · ⚡ ikonu) çünkü **kalanı tema
+seviyesindedir** (`cardTheme.side` · `outlinedButtonTheme.side` · `inputDecorationTheme` odak
+kenarlığı) ve §5 "altın ekonomisi" onları zaten **izinli** sayar (ince kart kenarlığı, aktif durum).
+En çarpıcı kanıt: Açık Hesap/Parçalı butonları nötr gri, hemen altlarındaki Nakit/Kart input'ları
+altın kenarlıklı — **iki komşu öğe, iki farklı kural.**
+
+**Düzeltme:** §6.7(b)'nin kapsamı *"bu ekranda"* değil, **"ödeme aksiyon bölgesinde"** olarak
+okunur. Yani tablodaki 4 nötrleştirme geçerlidir ve kalıcıdır; ekranın geri kalanındaki altın
+kenarlıklar **ihlal değildir**, §5 izinlidir.
+**Açık kalan (AYRI KARAR — v3.0 tema turu, bu turda YAPILMAZ):** QA'nın asıl estetik teşhisi
+kabul edilir — *"koyu hero, altın kenarlıklı hap çorbasının üstünde başka bir tasarım sisteminden
+gelmiş misafir gibi duruyor."* Bu gerçek bir kopukluktur ama çözümü **uygulama geneli** tema
+turudur (tüm ekranlar etkilenir), tek ekran kararı değildir. Kapsam şişmesin diye bilinçle ertelendi.
+
+#### (c) İade modunda hero rakam rengi — metin ile kod uzlaştırıldı
+§6.7(e)/1 "danger rakam" diyordu; uygulama rakamı **beyaz** basıyor (`instrument_hero.dart`
+`color: Colors.white` sabit). QA'nın itirazı **haklı**: `danger #C0392B` üzerine koyu panel
+kontrastı ≈ **2.7:1** → §1'in WCAG AA (≥4.5:1) taahhüdünü karşılamaz. Yani kod güvenli
+davranıyordu, KARAR metni hatalıydı.
+**Çözüm (ikisini uzlaştırır):** `InstrumentHero`'ya **toplamsal** `amountColor` parametresi
+(varsayılan `Colors.white` → mevcut tüm çağıranlar **değişmez**). Satış ekranı iade modunda
+**`instrumentPanelReadable(AppColors.danger)`** geçer — bu mekanizma dosyada zaten vardır
+(`instrument_hero.dart`, koyu panelde semantik rengi beyazla harmanlayarak parlatma; §6.4'te
+Kasa için kullanılıyor). Sonuç: iade modu güçlü okunur **ve** AA sağlanır. Yeni hex yok.
+§6.7(e)/1 bu şekilde okunur: **parlatılmış `danger` rakam + `danger` ray + `İADE TUTARI` etiketi.**
+
+#### (d) §3 istisna temizliği
+`payment_panel.dart`'ta iki `SizedBox(height: 2)` kalmış. §3, `space2`'yi **yalnızca pill/rozet
+iç dikey dolgusu** için ayırmıştır; burada layout aralığı olarak kullanılıyor → küçük §3 ihlali.
+`AppSizes.space4`'e çıkarılır (görsel etki ihmal edilebilir).
+
+#### (e) Bu turda ERTELENENLER (kapsam kilidi)
+- **Sağ sütun oranı:** QA haklı — `0.42·W clamp(420,580)` 1366'da yalnız **6px** kazandırıyor ve
+  sepette "Tutar"/"Sil" sütunları görünmüyor. Ama gerçek fayda `cart_table` sütun genişliklerinin
+  yeniden ölçülmesini gerektirir → **ayrı KARAR**, bu tur kapsamı dışında.
+- **v3.0 tema turu:** (b) maddesindeki kopukluk — ayrı oturum.
+- **`cart_table.dart` mobil render hatası:** tasarım değil **bug** (bkz. aşağıdaki not) → ayrı görev.
+
+> ⚠️ **QA'nın kapsam dışı KRİTİK bulgusu (tasarım kararı DEĞİL, bug):** `cart_table.dart`'ta
+> mobil dalda `SingleChildScrollView(horizontal) > ConstrainedBox(minWidth:...)` sarmalayıcısı
+> `IntrinsicWidth` ile sarılmamış; içerideki `Spacer()` unbounded genişlik alınca
+> *"RenderFlex children have non-zero flex but incoming width constraints are unbounded"* ile
+> **mobil satış ekranı tamamen kırmızı hata ekranına düşüyor** (masaüstü ikizi `_buildFooter`
+> aynı deseni `IntrinsicWidth` ile doğru sarıyor — mobil kopyada unutulmuş). v2.2'nin mobil
+> kısmının piksel doğrulaması bu yüzden alınamadı. Ayrı bug-fix görevine verildi.
