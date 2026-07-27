@@ -222,11 +222,19 @@ class _CartTableState extends ConsumerState<CartTable> {
                 ],
               ),
             );
+            // IntrinsicWidth ZORUNLU (masaüstü _buildFooter ile birebir aynı
+            // desen): yatay SingleChildScrollView çocuğuna SINIRSIZ genişlik
+            // verir, ConstrainedBox'ın minWidth'i yalnız ALT sınır koyar → üst
+            // sınır Infinity kalır. Yukarıdaki Row bir Spacer (flex) taşıdığı
+            // için sınırsız genişlikte "RenderFlex children have non-zero flex
+            // but incoming width constraints are unbounded" ile TÜM mobil satış
+            // ekranı çöker. IntrinsicWidth, Row'un doğal genişliğini ölçüp
+            // aşağıya SIKI bir genişlik kısıtı geçirerek flex'i çözülebilir kılar.
             return SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: row,
+                child: IntrinsicWidth(child: row),
               ),
             );
           },
