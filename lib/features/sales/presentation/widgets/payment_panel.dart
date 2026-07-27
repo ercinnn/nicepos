@@ -7,6 +7,7 @@ import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/utils/tts_service.dart';
+import '../../../../core/widgets/instrument_hero.dart';
 import '../../application/barcode_focus_notifier.dart';
 import '../../application/payment_input_notifier.dart';
 import '../../application/sales_cart_notifier.dart';
@@ -51,110 +52,101 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
     final cartEmpty = tab.items.isEmpty;
 
     return Card(
-      shape: isReturnMode
-          ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: AppColors.danger, width: 2),
-            )
-          : null,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSizes.cardPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          // Panel, içeriği kadar yer kaplar (sabit yükseklik YOK) — Parçalı
+          // açılınca büyür, kapanınca küçülür. Sağ sütunda kalan alanı
+          // Hızlı Ürünler paneli yutar.
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // İade modu banner
+            // ── İmza öğesi (§4 + §6.3): ekranın TEK hero'su = sepet GENEL TOPLAM.
+            // Koyu enstrüman paneli; ray normalde altın, iadede danger.
+            // 🇬🇧 seslendirme butonu hero panelinin İÇİNDE durur (yalnız web).
+            InstrumentHero(
+              label: isReturnMode ? 'İADE TUTARI · ₺' : 'TOPLAM · ₺',
+              amount: tab.total,
+              railColor: isReturnMode ? AppColors.danger : AppColors.gold,
+              trailing: kIsWeb
+                  ? Align(
+                      alignment: Alignment.centerRight,
+                      // heightFactor: 1 → hero panelin yüksekliğini şişirmez
+                      // (Align, sınırlı yükseklikte aksi hâlde tüm alanı kaplar).
+                      heightFactor: 1,
+                      child: _SpeakTotalButton(amount: tab.total),
+                    )
+                  : null,
+            ),
+            const SizedBox(height: AppSizes.space16),
             if (isReturnMode) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    vertical: AppSizes.space6, horizontal: AppSizes.space8),
-                decoration: BoxDecoration(
-                  color: AppColors.danger.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-                  border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.undo_rounded, color: AppColors.danger, size: 16),
-                    SizedBox(width: 6),
-                    Text(
-                      'İADE MODU AKTİF',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.danger,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            // İmza öğesi — hero toplam + altın aksan rayı (ekran başına tek hero)
-            _HeroTotal(amount: tab.total, isReturnMode: isReturnMode),
-            const SizedBox(height: 16),
-            if (isReturnMode) ...[
-              // İade modu — sadece Nakit ve POS
+              // İade modu — sadece Nakit ve POS; ikisi de tek dokunuşta tamamlar.
+              const _AksiyonGrupEtiketi('TEK DOKUNUŞTA TAMAMLAR'),
+              const SizedBox(height: AppSizes.space8),
               Row(
                 children: [
                   Expanded(
                     child: _PaymentTypeButton(
                       label: 'Nakit İade',
-                      sublabel: '',
                       icon: Icons.payments_outlined,
                       color: AppColors.danger,
-                      selected: false,
+                      filled: true,
                       onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.nakit),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSizes.space8),
                   Expanded(
                     child: _PaymentTypeButton(
                       label: 'POS İadesi',
-                      sublabel: '',
                       icon: Icons.credit_card_outlined,
                       color: AppColors.danger,
-                      selected: false,
+                      filled: true,
                       onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.pos),
                     ),
                   ),
                 ],
               ),
               if (_completing) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSizes.space16),
                 const Center(child: CircularProgressIndicator()),
               ],
             ] else ...[
-              // Normal satış modu butonları
+              // ── Ödeme aksiyonu iki sınıfa ayrılır: tek dokunuşta biten (dolu)
+              // ve önce seçim isteyen (outline). Kasiyer hangi butonun satışı
+              // hemen kapatacağını bir bakışta görür.
+              const _AksiyonGrupEtiketi('TEK DOKUNUŞTA TAMAMLAR'),
+              const SizedBox(height: AppSizes.space8),
               Row(
                 children: [
                   Expanded(
                     child: _PaymentTypeButton(
                       label: 'Nakit',
-                      sublabel: '',
                       icon: Icons.payments_outlined,
                       color: AppColors.cash,
-                      selected: false,
+                      filled: true,
                       onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.nakit),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSizes.space8),
                   Expanded(
                     child: _PaymentTypeButton(
                       label: 'POS',
-                      sublabel: '',
                       icon: Icons.credit_card_outlined,
                       color: AppColors.pos,
-                      selected: false,
+                      filled: true,
                       onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.pos),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                ],
+              ),
+              const SizedBox(height: AppSizes.space16),
+              const _AksiyonGrupEtiketi('ÖNCE SEÇ, SONRA TAMAMLA'),
+              const SizedBox(height: AppSizes.space8),
+              Row(
+                children: [
                   Expanded(
                     child: _PaymentTypeButton(
                       label: 'Açık Hesap',
-                      sublabel: '',
                       icon: Icons.account_balance_wallet_outlined,
                       color: AppColors.openAccount,
                       selected: payment.type == PaymentType.acikHesap,
@@ -163,11 +155,10 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                           : () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSizes.space8),
                   Expanded(
                     child: _PaymentTypeButton(
                       label: 'Parçalı',
-                      sublabel: '',
                       icon: Icons.call_split_outlined,
                       color: AppColors.splitPayment,
                       selected: payment.type == PaymentType.parcali,
@@ -178,7 +169,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: AppSizes.space12),
               if (payment.type == PaymentType.parcali) ...[
                 Row(
                   children: [
@@ -364,77 +355,25 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
   }
 }
 
-/// İmza öğesi (design-tokens §4): bir ekrandaki en önemli tutar kahraman olarak
-/// gösterilir — iri tabular rakam + altında ince altın aksan rayı.
-/// Satış ekranında bu, sepetin GENEL TOPLAM'ıdır. Ekran başına yalnızca bir tane.
-class _HeroTotal extends StatelessWidget {
-  final num amount;
-  final bool isReturnMode;
+/// Ödeme aksiyon grubu mikro-etiketi (§6.3 mikro-etiket dili, `type.utility`):
+/// butonların hangi sınıfa ait olduğunu bir bakışta söyler.
+class _AksiyonGrupEtiketi extends StatelessWidget {
+  final String text;
 
-  const _HeroTotal({required this.amount, required this.isReturnMode});
+  const _AksiyonGrupEtiketi(this.text);
 
   @override
   Widget build(BuildContext context) {
-    final color = isReturnMode ? AppColors.danger : AppColors.primary;
-    final rayColor = isReturnMode ? AppColors.danger : AppColors.gold;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isReturnMode ? 'İADE TUTARI' : 'TOPLAM',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.8,
-                  color: isReturnMode ? AppColors.danger : AppColors.textMuted,
-                ),
-              ),
-              const SizedBox(height: 2),
-              // Ray genişliği hero rakam genişliğine bağlanır (~%40) — sabit px yerine.
-              IntrinsicWidth(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      formatCurrency(amount),
-                      style: TextStyle(
-                        fontSize: 38,
-                        fontWeight: FontWeight.w800,
-                        height: 1.05,
-                        letterSpacing: -0.5,
-                        color: color,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    const SizedBox(height: AppSizes.space6),
-                    // Altın aksan rayı — yalnızca hero tutarın altında belirir (~%40).
-                    FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: 0.4,
-                      child: Container(
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: rayColor,
-                          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (kIsWeb) ...[
-          const SizedBox(width: AppSizes.space12),
-          _SpeakTotalButton(amount: amount),
-        ],
-      ],
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.5,
+        color: AppColors.textMuted,
+      ),
     );
   }
 }
@@ -442,6 +381,9 @@ class _HeroTotal extends StatelessWidget {
 /// Hero toplamın yanındaki "İngilizce sesli oku" butonu — İngiliz bayrağı emoji
 /// ikonu (yeni bir asset/paket eklemeden platformlar arası tutarlı görünüm için
 /// emoji tercih edildi). Konuşma sırasında küçük bir yükleniyor göstergesine döner.
+///
+/// Koyu enstrüman paneli içinde yaşar: çemberi altın DEĞİL, beyaz-alfa hairline
+/// (§5 altın ekonomisi — bu ekranda altın yalnız hero rayı + reticle köşelerdedir).
 class _SpeakTotalButton extends StatefulWidget {
   final num amount;
   const _SpeakTotalButton({required this.amount});
@@ -477,27 +419,37 @@ class _SpeakTotalButtonState extends State<_SpeakTotalButton> {
 
   @override
   Widget build(BuildContext context) {
+    // Mobil dokunma hedefi ≥ 48×48 (§3); masaüstünde 40 yeterli.
+    final olcu = context.isMobile ? 48.0 : 40.0;
     return Tooltip(
       message: 'Toplamı İngilizce seslendir',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-        onTap: _speak,
-        child: Container(
-          width: 40,
-          height: 40,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.goldBorder),
+      // Şeffaf Material: dokunma dalgası koyu panelin ÜSTÜNDE çizilir (aksi
+      // hâlde alttaki Card'a çizilir ve gradyanın altında kaybolur).
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+          onTap: _speak,
+          child: Container(
+            width: olcu,
+            height: olcu,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+            ),
+            child: _speaking
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('🇬🇧', style: TextStyle(fontSize: 20)),
           ),
-          child: _speaking
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('🇬🇧', style: TextStyle(fontSize: 20)),
         ),
       ),
     );
@@ -578,79 +530,90 @@ class _SummaryLine extends StatelessWidget {
   }
 }
 
+/// Ödeme türü butonu (§5) — iki sınıfta yaşar:
+/// • [filled] = **tek dokunuşta tamamlar** (Nakit/POS): türün renginde DOLU zemin
+///   + beyaz ikon/etiket. Bastığın anda satış biter, bu yüzden en baskın olan bu.
+/// • varsayılan = **önce seç, sonra tamamla** (Açık Hesap/Parçalı): nötr `divider`
+///   kenarlıklı outline + sol renk şeridi; [selected] iken türün renginde dolgu.
+/// Kenarlıkta altın KULLANILMAZ — bu ekranda altın yalnız hero rayı + reticle.
 class _PaymentTypeButton extends StatelessWidget {
   final String label;
-  final String sublabel;
   final IconData icon;
   final Color color;
   final bool selected;
+  final bool filled;
   final VoidCallback? onTap;
 
   const _PaymentTypeButton({
     required this.label,
-    required this.sublabel,
     required this.icon,
     required this.color,
-    required this.selected,
     required this.onTap,
+    this.selected = false,
+    this.filled = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
-    // §5 "Ödeme türü butonu": seçili değilken zemin nötr beyaz (color.surface) +
-    // ince hairline kenarlık. Tür kimliği SOL renk şeridi + ikon/etiket ile taşınır;
-    // dört buton "altın duvar"a dönüşmesin diye goldBg zemin kullanılmaz.
-    final isGold = color == AppColors.openAccount;
-    final bg = selected ? color : AppColors.cardBg;
-    // §1: altın metin açık zemine yazılmaz → açık hesap seçili değilken etiket/ikon
+    final dolu = filled || selected;
+    // §1: altın metin açık zemine yazılmaz → açık hesap outline'dayken etiket/ikon
     // lacivert (ink). Diğer türler kendi renginde okunur (AA sağlar).
-    final fg = selected
-        ? Colors.white
-        : disabled
-            ? AppColors.textMuted
+    final isGold = color == AppColors.openAccount;
+
+    final bg = dolu
+        ? (disabled ? AppColors.divider : color)
+        : AppColors.cardBg;
+    final fg = disabled
+        ? AppColors.textMuted
+        : dolu
+            ? Colors.white
             : isGold
                 ? AppColors.primary
                 : color;
-    final borderColor = selected
-        ? color
-        : disabled
-            ? AppColors.divider
-            : AppColors.goldBorder;
-    // Sol şerit, türü bir bakışta ayırt ettirir; seçiliyken dolgu üstünde beyaz aksan.
-    final stripColor = disabled
-        ? AppColors.textMuted
-        : selected
-            ? Colors.white
-            : color;
+    final borderColor = (dolu && !disabled) ? color : AppColors.divider;
 
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         clipBehavior: Clip.antiAlias,
+        // Mobil dokunma hedefi ≥ 48 (§3) — içerik zaten daha uzun, bu bir taban.
+        constraints: const BoxConstraints(minHeight: 48),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-          border: Border.all(color: borderColor, width: selected ? 1.5 : 1),
+          border: Border.all(color: borderColor, width: dolu ? 1.5 : 1),
         ),
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Tür kimliği — sol renk şeridi
-              Container(width: 4, color: stripColor),
+              // Tür kimliği — sol renk şeridi (yalnız outline sınıfında; dolu
+              // butonda zaten tüm zemin türün rengi).
+              if (!filled)
+                Container(
+                  width: 4,
+                  color: disabled
+                      ? AppColors.textMuted
+                      : selected
+                          ? Colors.white
+                          : color,
+                ),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                       vertical: AppSizes.space12, horizontal: AppSizes.space8),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(icon, color: fg, size: 22),
                       const SizedBox(height: AppSizes.space4),
                       Text(
                         label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -658,12 +621,6 @@ class _PaymentTypeButton extends StatelessWidget {
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      if (sublabel.isNotEmpty)
-                        Text(
-                          sublabel,
-                          style:
-                              TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.7)),
-                        ),
                     ],
                   ),
                 ),
