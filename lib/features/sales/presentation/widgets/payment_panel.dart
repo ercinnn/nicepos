@@ -58,7 +58,9 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           // Panel, içeriği kadar yer kaplar (sabit yükseklik YOK) — Parçalı
           // açılınca büyür, kapanınca küçülür. Sağ sütunda kalan alanı
-          // Hızlı Ürünler paneli yutar.
+          // Hızlı Ürünler paneli yutar. Sığmazsa kaydırma sarmalayıcı
+          // (sales_screen masaüstü sütunu) devreye girer; panel kendi içinde
+          // ikinci bir kaydırılabilir AÇMAZ — mobil sheet'te iç içe kaydırma olmasın.
           mainAxisSize: MainAxisSize.min,
           children: [
             // ── İmza öğesi (§4 + §6.3): ekranın TEK hero'su = sepet GENEL TOPLAM.
@@ -68,15 +70,12 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
               label: isReturnMode ? 'İADE TUTARI · ₺' : 'TOPLAM · ₺',
               amount: tab.total,
               railColor: isReturnMode ? AppColors.danger : AppColors.gold,
-              trailing: kIsWeb
-                  ? Align(
-                      alignment: Alignment.centerRight,
-                      // heightFactor: 1 → hero panelin yüksekliğini şişirmez
-                      // (Align, sınırlı yükseklikte aksi hâlde tüm alanı kaplar).
-                      heightFactor: 1,
-                      child: _SpeakTotalButton(amount: tab.total),
-                    )
-                  : null,
+              // Kompakt trailing (§6.7(h)/1): 40×40 ikon butonu hero tutarın
+              // genişliğinden pay ALMAZ → tutar ekranın en baskın öğesi kalır.
+              trailingTight: true,
+              // Buton sabit ölçülü (Container 40/48) → ne dikeyde ne yatayda
+              // paneli şişirir; ek Align/heightFactor sarmalayıcısı GEREKMEZ.
+              trailing: kIsWeb ? _SpeakTotalButton(amount: tab.total) : null,
             ),
             const SizedBox(height: AppSizes.space16),
             if (isReturnMode) ...[
@@ -181,7 +180,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                         onChanged: (v) => paymentNotifier.setCashSplit(num.tryParse(v.replaceAll(',', '.')) ?? 0),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppSizes.space8),
                     Expanded(
                       child: TextFormField(
                         controller: _cardController,
@@ -192,9 +191,9 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSizes.space8),
                 Text('Toplam Ödenen: ${formatCurrency(payment.cashSplit + payment.cardSplit)}'),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSizes.space16),
                 Row(
                   children: [
                     Expanded(
@@ -205,7 +204,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                             : const Text('Satışı Tamamla'),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppSizes.space12),
                     _ParcaliSummary(
                       cashSplit: payment.cashSplit,
                       cardSplit: payment.cardSplit,
@@ -220,10 +219,10 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                 ),
                 if (tab.customerId == null)
                   const Padding(
-                    padding: EdgeInsets.only(top: 4),
+                    padding: EdgeInsets.only(top: AppSizes.space4),
                     child: Text('Lütfen müşteri seçin.', style: TextStyle(color: AppColors.danger)),
                   ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSizes.space16),
                 ElevatedButton(
                   onPressed: (cartEmpty || _completing) ? null : () => _completeSale(tab, payment),
                   child: _completing
@@ -382,8 +381,8 @@ class _AksiyonGrupEtiketi extends StatelessWidget {
 /// ikonu (yeni bir asset/paket eklemeden platformlar arası tutarlı görünüm için
 /// emoji tercih edildi). Konuşma sırasında küçük bir yükleniyor göstergesine döner.
 ///
-/// Koyu enstrüman paneli içinde yaşar: çemberi altın DEĞİL, beyaz-alfa hairline
-/// (§5 altın ekonomisi — bu ekranda altın yalnız hero rayı + reticle köşelerdedir).
+/// Koyu enstrüman paneli içinde yaşar: çemberi altın DEĞİL, `panel.control`
+/// beyaz-alfa (§6.2 — bu ekranda altın yalnız hero rayı + reticle köşelerdedir).
 class _SpeakTotalButton extends StatefulWidget {
   final num amount;
   const _SpeakTotalButton({required this.amount});
@@ -419,7 +418,8 @@ class _SpeakTotalButtonState extends State<_SpeakTotalButton> {
 
   @override
   Widget build(BuildContext context) {
-    // Mobil dokunma hedefi ≥ 48×48 (§3); masaüstünde 40 yeterli.
+    // Mobil dokunma hedefi ≥ 48×48 (§3); masaüstünde 40 yeterli. Sabit ölçü →
+    // hero panelinin kompakt trailing'i olarak ne dikeyde ne yatayda taşırmaz.
     final olcu = context.isMobile ? 48.0 : 40.0;
     return Tooltip(
       message: 'Toplamı İngilizce seslendir',
@@ -434,6 +434,7 @@ class _SpeakTotalButtonState extends State<_SpeakTotalButton> {
             width: olcu,
             height: olcu,
             alignment: Alignment.center,
+            // `panel.control` (§6.2): kenarlık 0.24–0.30 · dolgu 0.04–0.08.
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.06),
               shape: BoxShape.circle,

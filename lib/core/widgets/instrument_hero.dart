@@ -64,11 +64,20 @@ Color instrumentPanelReadable(Color c) =>
 /// [railColor] tick'li ray rengi; varsayılan altın. Müşteri hero'larında
 ///   semantik (borç → `danger`, alacak/sıfır → `success`) geçilir.
 /// [trailing] panelin sağında opsiyonel ikincil okuma (Kasa işletme giderleri).
+/// [trailingTight] `trailing` yerleşim kipi (§6.7(h)/1):
+///   • `false` (VARSAYILAN, mevcut davranış BİREBİR korunur): trailing
+///     `Expanded(flex: 2)` alır → hero ile 3:2 bölüşülür. Kasa'nın **geniş metin
+///     okuması** gibi kendi başına satır kaplayan içerikler için doğrudur.
+///   • `true` (kompakt): trailing `Expanded` ALMAZ, **intrinsic** genişlikte durur;
+///     kalan tüm genişlik hero tutarına kalır. Satış ekranının 40×40'lık ikon
+///     butonu gibi küçük kontroller için — aksi hâlde hero genişliğinin ~%40'ı
+///     boşa gider ve tutar `FittedBox` ile gereksizce küçülür (§4 imzası zayıflar).
 class InstrumentHero extends StatelessWidget {
   final String label;
   final num amount;
   final Color railColor;
   final Widget? trailing;
+  final bool trailingTight;
 
   const InstrumentHero({
     super.key,
@@ -76,6 +85,7 @@ class InstrumentHero extends StatelessWidget {
     required this.amount,
     this.railColor = AppColors.gold,
     this.trailing,
+    this.trailingTight = false,
   });
 
   @override
@@ -116,7 +126,9 @@ class InstrumentHero extends StatelessWidget {
                     // taşarsa FittedBox ile küçülür (asla overflow yok).
                     // trailing yokken tek çocuk → tüm genişlik hero'nundur;
                     // varken 3:2 bölünür (her iki taraf da bounded → FittedBox
-                    // güvenle küçülür, overflow yok).
+                    // güvenle küçülür, overflow yok). `trailingTight` ile trailing
+                    // esnek olmaktan çıkar → tek esnek çocuk hero kalır, kalan
+                    // genişliğin tamamını alır (flex değeri o kipte etkisizdir).
                     Expanded(
                       flex: 3,
                       child: _HeroReading(
@@ -127,7 +139,11 @@ class InstrumentHero extends StatelessWidget {
                     ),
                     if (trailing != null) ...[
                       const SizedBox(width: AppSizes.space16),
-                      Expanded(flex: 2, child: trailing!),
+                      // Kompakt kip: Row, esnek olmayan çocuğu ana eksende
+                      // sınırsız ölçer → trailing kendi doğal (intrinsic)
+                      // genişliğini alır; taşma riski yok çünkü hero tarafı
+                      // Expanded + FittedBox(scaleDown) ile küçülebilir.
+                      if (trailingTight) trailing! else Expanded(flex: 2, child: trailing!),
                     ],
                   ],
                 ),

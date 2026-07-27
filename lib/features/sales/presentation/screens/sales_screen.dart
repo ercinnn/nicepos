@@ -22,6 +22,12 @@ import '../widgets/payment_panel.dart';
 import '../widgets/product_search_dialog.dart';
 import '../widgets/quick_products_panel.dart';
 
+/// Masaüstü sağ sütunda Hızlı Ürünler paneline garanti edilen en az yükseklik
+/// (§6.7(h)/3 "makul alt sınır"): grup çipleri + birkaç ürün satırı okunur kalır,
+/// panel kısa pencerede 0'a inip yok olmaz. Mobildeki sabit hızlı ürünler
+/// yüksekliğiyle (196) aynı aileden, bir kademe kısa.
+const double _kMinHizliUrunlerYuksekligi = 160;
+
 class SalesScreen extends ConsumerStatefulWidget {
   const SalesScreen({super.key});
 
@@ -168,6 +174,19 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                 // ekranda 580'de durur. Sepet (flex: 3) kalan alanı alır.
                 final double sagSutunGenisligi =
                     (constraints.maxWidth * 0.42).clamp(420.0, 580.0).toDouble();
+                // ── Dikey taşma emniyeti (§6.7(h)/3). Sabit yükseklik GERİ GELMEZ;
+                // bunun yerine ödeme paneline bir ÜST SINIR verilir: sığmazsa panel
+                // KENDİ İÇİNDE kaydırılır (hero panelin en üstünde olduğu için
+                // kaydırma nedeniyle asla kırpılmaz), altındaki Hızlı Ürünler
+                // paneline de bir alt sınır kalır. Not: iki çocuğu birden
+                // `Flexible` yapmak alanı flex ORANINA göre bölerdi (panelin doğal
+                // yüksekliği korunmazdı) — bu yüzden üst-sınır + `Expanded` düzeni.
+                final double sutunYuksekligi = constraints.maxHeight;
+                final double maxOdemeYuksekligi = (sutunYuksekligi -
+                        _kMinHizliUrunlerYuksekligi -
+                        AppSizes.space12)
+                    .clamp(sutunYuksekligi * 0.5, sutunYuksekligi)
+                    .toDouble();
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -183,14 +202,21 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                     const SizedBox(width: AppSizes.space12),
                     SizedBox(
                       width: sagSutunGenisligi,
-                      child: const Column(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // Ödeme paneli sabit yükseklikli DEĞİL — içeriği kadar
-                          // yer alır (Parçalı seçilince büyür, taşmaz).
-                          PaymentPanel(),
-                          SizedBox(height: AppSizes.space12),
-                          Expanded(child: Card(child: QuickProductsPanel())),
+                          // yer alır (Parçalı seçilince büyür); yalnız üst sınırı
+                          // aşarsa kaydırılır.
+                          ConstrainedBox(
+                            constraints:
+                                BoxConstraints(maxHeight: maxOdemeYuksekligi),
+                            child: const SingleChildScrollView(
+                              child: PaymentPanel(),
+                            ),
+                          ),
+                          const SizedBox(height: AppSizes.space12),
+                          const Expanded(child: Card(child: QuickProductsPanel())),
                         ],
                       ),
                     ),

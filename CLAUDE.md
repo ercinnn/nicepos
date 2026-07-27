@@ -4,13 +4,15 @@ Bu dosya, Claude Code'a bu depoda çalışırken rehberlik eder.
 
 ## Agent'lar
 
-`.claude/agents/` altında 4 özel agent tanımlı:
-- **`tasarim-lideri`** — tasarım yönü/token kararları verir, `design/design-tokens.md`'nin tek sahibi. Kod yazmadan önce görsel bir karar gerekiyorsa buradan geçer.
-- **`ekran-tasarimcisi`** — `tasarim-lideri`nin onayladığı yönü Flutter koduna uygular (alt-agent).
-- **`gorsel-elestirmen`** — responsive/token uygunluğunu QA eder, kod yazmaz (alt-agent).
-- **`yazilim-uzmani`** — tasarım dışı somut görevler (bug fix, özellik, refactor) için genel amaçlı agent.
+`.claude/agents/` altında özel agent'lar tanımlı:
+- **`tasarim-lideri`** — tasarım yönü/token kararları verir, `design/design-tokens.md`'nin tek sahibi. Kod yazmadan önce görsel bir karar gerekiyorsa buradan geçer. Kod YAZMAZ: yön verir, token'ı yönetir, alt agent'ların çıktısını token'a karşı **denetler**.
+- **Ekran tasarımcıları (alt-agent, `tasarim-lideri` devreder):** `satis-ekrani-tasarimci` · `satis-grafikleri-tasarimci` (dashboard/grafikler) · `stok-listesi-tasarimci` (ürünler) · `musteri-kayitlari-tasarimci`. Her biri yalnız kendi ekranının widget'larını düzenler; `design-tokens.md`'yi **okur, değiştirmez**.
+- **`gorsel-elestirmen`** — responsive/token uygunluğunu Playwright ile piksel üstünde QA eder, kod yazmaz (alt-agent).
+- **`icerik-duzenleme-uzmani`** — UI içeriği/metin + arkasındaki matematiksel mantık (toplam, iskonto, yüzde, fiyat formatı) değişiklikleri.
 
-`design/design-tokens.md` tasarım sisteminin tek doğru kaynağıdır (palet, tipografi, spacing, §4 imza öğesi: Hero Tutar + Altın Ray, §5 bileşen notları + KARAR geçmişi). Ekran tasarımcıları bu dosyayı okur, değiştirmez.
+`design/design-tokens.md` tasarım sisteminin tek doğru kaynağıdır (palet, tipografi, spacing, §4 imza öğesi: Hero Tutar + Altın Ray, §5 bileşen notları + KARAR geçmişi, §6 v2.0 Enstrüman Konsolu dili). Ekran tasarımcıları bu dosyayı okur, değiştirmez.
+
+**⚠️ Sıralama kuralı (yaşanmış hata):** Bir KARAR token'a yazıldıysa, alt agent'a devretmeden **ÖNCE commit edilmelidir**. Worktree'ler temiz `HEAD`'den açılır → ana checkout'ta *uncommitted* duran token değişikliğini alt agent **göremez** ve kararı belgeden doğrulayamaz (v2.2 turunda yaşandı: agent §6.7'yi bulamadı, yalnız görev metnine dayanarak uyguladı).
 
 ## Supabase Kimlik Bilgileri
 
@@ -92,7 +94,7 @@ lib/
 
 Tek kaynak: `lib/core/theme/app_theme.dart` (`appThemeProvider`, `@Riverpod(keepAlive: true)`). Palet: beyaz zemin, lacivert (#1B2A4A) butonlar, altın (#D4B86A) kenarlıklar — sabitler `lib/core/constants/app_colors.dart`. Detaylı token/karar geçmişi: `design/design-tokens.md`.
 
-**v2.0 — "Enstrüman Konsolu" tasarım dili (design-tokens §6):** Kimlik "uzay üssü / görev-kontrol" yönüne evrildi — **palet KORUNDU** (sıcak lacivert + altın + beyaz; yeni hex yok, mevcut lacivert rampası "panel" yüzeyi olarak terfi etti). Yaklaşım **hibrit**: çalışma ekranları (satış/stok/müşteri liste-tablo/form/rapor tabloları) **aydınlık** kalır; **metrik + hero + dashboard yüzeyleri koyu "enstrüman paneli"ne** döner (`primaryDark → primaryDeep` gradyan + soluk graticule + altın reticle köşeler + tick'li ray + mikro-etiket). İmza = Hero tutar + **altın ray (korundu)** + enstrüman detaylandırması. **Faz 1:** Dashboard (`dashboard_section.dart` — bespoke, ışıltı/asimetri korundu). **Faz 2:** Raporlar/Kasa (altın ray) + Müşteri liste/detay (**semantik ray** — borç=danger, alacak/sıfır=success; reticle yine altın) → hepsi tek paylaşılan **`InstrumentHero`** bileşeninden (`lib/core/widgets/instrument_hero.dart`, statik/animasyonsuz — ışıltı YALNIZ Dashboard'a ait). Kurallar korunur: ekran başına tek hero, altın ekonomisi, altın ray yalnız hero'da. ⚠️ Koyu panele Row eklerken **yatay-taşma tuzağı** (CLAUDE.md Dashboard notu) tekrar ısırır — `InstrumentHero` bunu `FittedBox(scaleDown)+IntrinsicWidth+CustomPaint` ile çözer (bounded/unbounded güvenli; `LayoutBuilder`, `IntrinsicWidth` altında çökertir → tick'ler `CustomPaint`).
+**v2.0 — "Enstrüman Konsolu" tasarım dili (design-tokens §6):** Kimlik "uzay üssü / görev-kontrol" yönüne evrildi — **palet KORUNDU** (sıcak lacivert + altın + beyaz; yeni hex yok, mevcut lacivert rampası "panel" yüzeyi olarak terfi etti). Yaklaşım **hibrit**: çalışma ekranları (satış/stok/müşteri liste-tablo/form/rapor tabloları) **aydınlık** kalır; **metrik + hero + dashboard yüzeyleri koyu "enstrüman paneli"ne** döner (`primaryDark → primaryDeep` gradyan + soluk graticule + altın reticle köşeler + tick'li ray + mikro-etiket). İmza = Hero tutar + **altın ray (korundu)** + enstrüman detaylandırması. **Faz 1:** Dashboard (`dashboard_section.dart` — bespoke, ışıltı/asimetri korundu). **Faz 2:** Raporlar/Kasa (altın ray) + Müşteri liste/detay (**semantik ray** — borç=danger, alacak/sıfır=success; reticle yine altın) → hepsi tek paylaşılan **`InstrumentHero`** bileşeninden (`lib/core/widgets/instrument_hero.dart`, statik/animasyonsuz — ışıltı YALNIZ Dashboard'a ait). **Faz 3:** Satış ekranı ödeme paneli (`payment_panel.dart`, KARAR **v2.2** / design-tokens **§6.7**) — hero `InstrumentHero`'ya taşındı (iade modunda semantik `danger` ray), ödeme butonları **iki aksiyon sınıfına** ayrıldı, altın bu ekranda yalnız ray+reticle'a indirildi, sabit 320px panel yüksekliği kaldırıldı. Ayrıca §6.2'ye **`panel.control`** token'ı eklendi (koyu panel üstündeki etkileşimli öğe kenarlığı = beyaz @0.24–0.30, dolgu @0.04–0.08 — `panel.hairline` bir butonu taşıyamaz). Kurallar korunur: ekran başına tek hero, altın ekonomisi, altın ray yalnız hero'da. ⚠️ Koyu panele Row eklerken **yatay-taşma tuzağı** (CLAUDE.md Dashboard notu) tekrar ısırır — `InstrumentHero` bunu `FittedBox(scaleDown)+IntrinsicWidth+CustomPaint` ile çözer (bounded/unbounded güvenli; `LayoutBuilder`, `IntrinsicWidth` altında çökertir → tick'ler `CustomPaint`).
 
 ### State Yönetimi — Riverpod Generator
 
@@ -106,7 +108,13 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` ile üretilir; her 
 - **Sepet (`cart_table.dart`):** satır bazlı %/₺ iskonto (`_CompactDiscountCell`) + sepet geneli iskonto. **Çoklu seçim + toplu %iskonto:** her satırın solunda yuvarlak seçim ikonu (`_RowSelectToggle`); seçim varken üstte "Seçilenlere % İndirim Uygula" barı belirir, yalnız YÜZDE tipinde iskonto uygular ve yalnız seçili satırları etkiler (mevcut tekil %/₺ iskontodan ayrı bir akış). Seçim `Set<int>` index bazlı, sekme değişince veya satır sayısı değişince otomatik temizlenir.
 - **Birim fiyat:** elle düzenlenebilir + yanında "Fiyat1 yap" radyosu (`products.price1`'i kalıcı günceller).
 - **Mobil:** kamera barkod okuma, sepet kart listesi (sola kaydır → sil), ödeme `DraggableScrollableSheet`.
-- **Ödeme paneli (`payment_panel.dart`) — hero TOPLAM:** ekranın tek imza öğesi (iri tutar + altın ray). Yanında (yalnız web, `kIsWeb`) 🇬🇧 ikonlu buton — toplamı İngilizce sesli okur (`flutter_tts`, `tts_service.dart` + `english_number_words.dart`). Erkek ses platform bazlı best-effort (kesin garanti yok); `speak()` çağrısı öncesindeki her hazırlık adımı (`setPitch/setVoice/getVoices`) ayrı try/catch korumalı — biri hata verse bile `speak()`'e her zaman ulaşılır.
+- **Ödeme paneli (`payment_panel.dart`) — v2.2 enstrüman dili (design-tokens §6.7):** Hero TOPLAM ekranın tek imza öğesidir ve artık paylaşılan **`InstrumentHero`**'yu kullanır (koyu panel + reticle + tick'li ray; bespoke `_HeroTotal` KALDIRILDI). Ray semantiktir: normal **altın**, iade modunda **`danger`**; reticle her durumda altın.
+  - **Ödeme butonları iki aksiyon sınıfına ayrılır** (bu kararın kalbi): `TEK DOKUNUŞTA TAMAMLAR` grubu (**Nakit · POS**) türün renginde **dolu** buton — tek dokunuşta satışı bitirir; `ÖNCE SEÇ, SONRA TAMAMLA` grubu (**Açık Hesap · Parçalı**) nötr `divider` kenarlıklı **outline** + sol renk şeridi — yalnız mod seçer. Önceden dördü de aynı görünüyordu ve yanlış dokunuş satışı yanlış türle kapatıyordu. **Onay dialog'u EKLENMEZ** — ekranın önceliği hızdır, güvenlik görsel ağırlıkla sağlanır.
+  - **Altın ekonomisi:** bu ekranda altın YALNIZ hero rayı + reticle'dadır. Ödeme butonu kenarlığı, mobil ödeme barı kenarlığı ve "Hızlı Ürünler" ⚡ ikonu **altın DEĞİL** (v1.9.1'in `goldBorder` izni bu ekranda bilinçli geri alındı).
+  - **Mobilde tek hero:** `_MobilePaymentBar` hero DEĞİL (altın ray yok, tutar ~24) — mobilin tek hero'su ödeme sheet'indeki `InstrumentHero`'dur.
+  - **İade modu 2 sinyal:** hero (`İADE TUTARI` + danger rakam/ray) + `_ReturnModeButton`. Masaüstündeki panel içi banner ve kartın 2px kırmızı kenarlığı kaldırıldı; **mobil banner KALIR** (orada hero sheet içinde, ana ekranda görünmez).
+  - **⚠️ Sabit yükseklik YOK:** `SizedBox(height: 320, child: PaymentPanel())` kaldırıldı (Parçalı açılınca taşıyordu). Panel içeriği kadar yer alır; sağ sütun genişliği akışkandır (~%42, 420–580 arası). Taşma riski panelden **sütuna** taşındığı için ödeme paneli `Flexible` + kendi içinde kaydırılabilir olmalıdır — **hero asla kaydırma yüzünden kırpılmaz**.
+  - Yanında (yalnız web, `kIsWeb`) 🇬🇧 ikonlu buton — hero panelinin **içinde** durur (`InstrumentHero.trailing`), çemberi `panel.control` beyaz-alfa (altın değil) — toplamı İngilizce sesli okur (`flutter_tts`, `tts_service.dart` + `english_number_words.dart`). Erkek ses platform bazlı best-effort (kesin garanti yok); `speak()` çağrısı öncesindeki her hazırlık adımı (`setPitch/setVoice/getVoices`) ayrı try/catch korumalı — biri hata verse bile `speak()`'e her zaman ulaşılır.
 - **Ödeme tamamlama:** `SalesRepository.completeSale()` → RPC → sales + sale_items insert → stok düşür → borç hareketi.
 
 ### Satış Düzenleme & Silme (`SaleEditScreen`)
@@ -174,7 +182,24 @@ Site: `https://ercinnn.github.io/nicepos` · Repo: `https://github.com/ercinnn/n
 
 **⚠️ `MissingPluginException` (release'de, localde değil) — yaşanmış kök neden:** Yeni bir paket (`pubspec.yaml`) eklendikten sonra `.dart_tool` derleme önbelleği bayat kalıp web plugin registrant'ını (ör. `flutter_tts`'in web implementasyonu) atlayabiliyor — `flutter run -d web-server` her seferinde taze başladığı için sorun çıkmaz ama `flutter build web --release` önbelleği yeniden kullanabilir. Belirti: konsolda `MissingPluginException(No implementation found for method X on channel Y)`, paket kodu doğru olsa bile. **Çözüm:** yeni bağımlılık eklendikten sonraki İLK release build'den önce `flutter clean && flutter pub get` çalıştır.
 
-**⚠️ Ortam izolasyonu — agent yazma engeli:** Arka planda spawn edilen agent'lar paylaşılan checkout'a doğrudan yazamaz ("hasn't isolated its changes yet" hatası) — bu yüzden kod değişikliği gerektiren her görev `isolation: "worktree"` ile verilir (agent kendi dalına commit eder, build/push YAPMAZ), ardından ana oturum (bu kısıtlamaya tabi değil) `git merge worktree-agent-<id>` ile ana checkout'a alır, `git worktree remove` ile temizler, `flutter analyze` ile doğrular. Yalnızca markdown/doküman değişikliğinde web rebuild gerekmez.
+**⚠️ Ortam izolasyonu — agent yazma engeli:** Arka planda spawn edilen agent'lar paylaşılan checkout'a doğrudan yazamaz ("hasn't isolated its changes yet" hatası) — bu yüzden kod değişikliği gerektiren her görev `isolation: "worktree"` ile verilir (agent build/push YAPMAZ), ardından ana oturum (bu kısıtlamaya tabi değil) `git merge worktree-agent-<id>` ile ana checkout'a alır, `git worktree remove` ile temizler, `flutter analyze` ile doğrular. Yalnızca markdown/doküman değişikliğinde web rebuild gerekmez.
+
+**⚠️⚠️ Agent commit ETMEYEBİLİR — iş kaybı tuzağı (yaşanmış):** Kabuk erişimi olmayan alt agent'lar (ekran tasarımcılarının araç seti `Read/Edit/Glob/Grep`'tir, `Bash` YOK) worktree'de **commit edemez**; değişiklikler orada *uncommitted* kalır. Belirti: `git merge worktree-agent-<id>` → **"Already up to date."** ve `git worktree remove` → *"contains modified or untracked files"*. 🔴 **Bu durumda `--force` ile SİLME — tüm iş kaybolur.** Doğru kurtarma:
+```powershell
+cd .claude\worktrees\agent-<id>
+git status                     # önce ne var bak (untracked dosyalar dahil)
+git add -A; git commit -m "..."
+cd C:\Projects\nice-pos
+git merge worktree-agent-<id>
+git worktree remove .claude\worktrees\agent-<id>
+```
+Yani "Already up to date" **başarı değil, alarmdır** — merge'den sonra `git log --stat -1` veya `git diff HEAD~1 --stat` ile beklenen dosyaların gerçekten geldiğini doğrula. (⚠️ Merge **commit'lerinde** `git log --stat -1` boş gelir; içeriği görmek için `git diff HEAD^1 HEAD --stat` kullan.)
+
+**⚠️ Worktree bazen ESKİ commit'ten açılır (yaşanmış):** Yeni bir worktree'nin tabanı her zaman güncel `master` olmayabilir — v2.2 düzeltme turunda worktree `dbdd4ae` üzerinde açıldı, master ise `9d7a42d`'ydi; yani agent bir önceki turun kendi işini worktree'de **göremedi**. Önlem: (1) devirden önce tabanı teyit et, (2) görev metnine "ilk iş: `git log -1` ile tabanını doğrula, master değilse bildir" yaz (agent'ın kabuk erişimi yoksa dosya içeriğinden anlamasını iste). **Taban eskiyse `git merge` KULLANMA** — üç yönlü birleştirme aynı dosyalarda çakışma çıkarır; bunun yerine yalnız ilgili dosyaları çek:
+```powershell
+git checkout worktree-agent-<id> -- <dosya1> <dosya2> ...
+git diff --stat HEAD    # beklenen dosyalar geldi mi
+```
 
 **Diğer notlar:**
 - `docs/main.dart.js` her kod değişikliğinden sonra rebuild edilmeden ESKİ kalır — "değişikliği göremiyorum" şikâyetinde önce bunu kontrol et, sonra service worker/tarayıcı önbelleğini (hard refresh/gizli pencere) düşün.
