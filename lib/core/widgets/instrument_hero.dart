@@ -63,6 +63,11 @@ Color instrumentPanelReadable(Color c) =>
 /// [amount] hero tutar — `formatCurrency` ile tabular basılır.
 /// [railColor] tick'li ray rengi; varsayılan altın. Müşteri hero'larında
 ///   semantik (borç → `danger`, alacak/sıfır → `success`) geçilir.
+/// [amountColor] hero rakamının rengi (§6.8(c)) — **varsayılan `Colors.white`**,
+///   yani mevcut tüm çağıranların davranışı BİREBİR korunur. Semantik bir renk
+///   geçilecekse koyu panelde AA (≥4.5:1) sağlamak için `instrumentPanelReadable`
+///   ile parlatılmış hâli geçilmelidir (ham `danger` ≈ 2.7:1 → §1 ihlali). Satış
+///   ekranı iade modunda `instrumentPanelReadable(AppColors.danger)` geçer.
 /// [trailing] panelin sağında opsiyonel ikincil okuma (Kasa işletme giderleri).
 /// [trailingTight] `trailing` yerleşim kipi (§6.7(h)/1):
 ///   • `false` (VARSAYILAN, mevcut davranış BİREBİR korunur): trailing
@@ -76,6 +81,7 @@ class InstrumentHero extends StatelessWidget {
   final String label;
   final num amount;
   final Color railColor;
+  final Color amountColor;
   final Widget? trailing;
   final bool trailingTight;
 
@@ -84,6 +90,7 @@ class InstrumentHero extends StatelessWidget {
     required this.label,
     required this.amount,
     this.railColor = AppColors.gold,
+    this.amountColor = Colors.white,
     this.trailing,
     this.trailingTight = false,
   });
@@ -134,6 +141,7 @@ class InstrumentHero extends StatelessWidget {
                       child: _HeroReading(
                         amount: amount,
                         railColor: railColor,
+                        amountColor: amountColor,
                         mobil: mobil,
                       ),
                     ),
@@ -190,11 +198,13 @@ class InstrumentHero extends StatelessWidget {
 class _HeroReading extends StatelessWidget {
   final num amount;
   final Color railColor;
+  final Color amountColor;
   final bool mobil;
 
   const _HeroReading({
     required this.amount,
     required this.railColor,
+    required this.amountColor,
     required this.mobil,
   });
 
@@ -218,7 +228,10 @@ class _HeroReading extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 height: 1.05,
                 letterSpacing: -0.5,
-                color: Colors.white, // panel.ink
+                // panel.ink (varsayılan beyaz). §6.8(c): semantik bir renk
+                // isteniyorsa çağıran `instrumentPanelReadable(...)` ile
+                // parlatılmış hâlini geçer — ham danger AA'yı karşılamaz.
+                color: amountColor,
                 fontFeatures: const [FontFeature.tabularFigures()],
                 shadows: [
                   // Ray rengine bağlı yumuşak parıltı (statik) — enstrüman his.
