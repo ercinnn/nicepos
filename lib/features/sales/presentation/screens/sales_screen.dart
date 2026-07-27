@@ -162,31 +162,41 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
           const CustomerTabs(),
           const SizedBox(height: 12),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: const CartTable(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Sağ sütun akışkan: dar masaüstünde 420'ye kadar daralır, geniş
+                // ekranda 580'de durur. Sepet (flex: 3) kalan alanı alır.
+                final double sagSutunGenisligi =
+                    (constraints.maxWidth * 0.42).clamp(420.0, 580.0).toDouble();
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Expanded(
+                      flex: 3,
+                      child: Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(AppSizes.space12),
+                          child: CartTable(),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 580,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 320, child: PaymentPanel()),
-                      const SizedBox(height: 12),
-                      const Expanded(child: Card(child: QuickProductsPanel())),
-                    ],
-                  ),
-                ),
-              ],
+                    const SizedBox(width: AppSizes.space12),
+                    SizedBox(
+                      width: sagSutunGenisligi,
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Ödeme paneli sabit yükseklikli DEĞİL — içeriği kadar
+                          // yer alır (Parçalı seçilince büyür, taşmaz).
+                          PaymentPanel(),
+                          SizedBox(height: AppSizes.space12),
+                          Expanded(child: Card(child: QuickProductsPanel())),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -290,7 +300,9 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
         const SizedBox(height: 12),
         Row(
           children: [
-            const Icon(Icons.bolt_rounded, size: 16, color: AppColors.gold),
+            // Altın ekonomisi (§5): bu ekranda altın yalnız hero rayı + reticle
+            // köşelerde yaşar — bölüm ikonu nötr.
+            const Icon(Icons.bolt_rounded, size: 16, color: AppColors.textSecondary),
             const SizedBox(width: 4),
             Text(
               'Hızlı Ürünler',
@@ -361,10 +373,7 @@ class _ReturnModeButton extends ConsumerWidget {
                 backgroundColor: isActive ? AppColors.danger.withValues(alpha: 0.08) : null,
               ),
               onPressed: () => ref.read(salesCartProvider.notifier).toggleReturnMode(),
-              icon: Icon(
-                isActive ? Icons.undo_rounded : Icons.undo_rounded,
-                size: 18,
-              ),
+              icon: const Icon(Icons.undo_rounded, size: 18),
               label: Text(isActive ? 'İade Modu: Açık' : 'İade Modu'),
             ),
     );
@@ -398,7 +407,8 @@ class _MobilePaymentBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final barColor = isReturnMode ? AppColors.danger.withValues(alpha: 0.06) : AppColors.cardBg;
-    final borderColor = isReturnMode ? AppColors.danger.withValues(alpha: 0.5) : AppColors.goldBorder;
+    // §5 altın ekonomisi: bu çubuk artık hero DEĞİL → kenarlık nötr hairline.
+    final borderColor = isReturnMode ? AppColors.danger.withValues(alpha: 0.5) : AppColors.divider;
     final amountColor = isReturnMode ? AppColors.danger : AppColors.primary;
     final buttonColor = isReturnMode ? AppColors.danger : AppColors.primary;
     final buttonLabel = isReturnMode ? 'İade Al' : 'Ödeme Al';
@@ -446,48 +456,30 @@ class _MobilePaymentBar extends ConsumerWidget {
                     ],
                   ],
                 ),
-                const SizedBox(height: 2),
-                // Ray genişliği hero rakam genişliğine bağlanır (~%40) — sabit px yerine.
-                IntrinsicWidth(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        transitionBuilder: (child, anim) => FadeTransition(
-                          opacity: anim,
-                          child: SizeTransition(
-                            sizeFactor: anim,
-                            axis: Axis.vertical,
-                            child: child,
-                          ),
-                        ),
-                        child: Text(
-                          formatCurrency(total),
-                          key: ValueKey(total),
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: amountColor,
-                            letterSpacing: -0.5,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      // İmza öğesi — hero tutarın altın aksan rayı (design-tokens §4)
-                      FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: 0.4,
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: isReturnMode ? AppColors.danger : AppColors.gold,
-                            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-                          ),
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: AppSizes.space2),
+                // Bu çubuk hero DEĞİL (§4 tek-hero): altın ray YOK, tutar bir
+                // kademe küçük. Mobilin tek hero'su ödeme sheet'indeki
+                // `InstrumentHero`'dur. Rakam yine tabular.
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SizeTransition(
+                      sizeFactor: anim,
+                      axis: Axis.vertical,
+                      child: child,
+                    ),
+                  ),
+                  child: Text(
+                    formatCurrency(total),
+                    key: ValueKey(total),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: amountColor,
+                      letterSpacing: -0.5,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ],
