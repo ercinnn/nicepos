@@ -13,8 +13,19 @@ import '../../application/payment_input_notifier.dart';
 import '../../application/sales_cart_notifier.dart';
 import '../../data/models/sale.dart';
 
+/// Ödeme paneli — §6.8(a) "üç bölge" düzeni:
+///   1. **Üstte sabit:** `InstrumentHero` (kaydırmaz, asla kırpılmaz),
+///   2. **Ortada kayan:** ödeme türü butonları + Parçalı input'ları + özet/uyarılar,
+///   3. **Altta sabit:** ana aksiyon ("Satışı Tamamla") — her çözünürlükte görünür.
 class PaymentPanel extends ConsumerStatefulWidget {
-  const PaymentPanel({super.key});
+  /// Orta (kayan) bölgenin kaydırma denetleyicisi. Mobil ödeme sheet'i kendi
+  /// `DraggableScrollableSheet` controller'ını buraya geçirir: böylece sheet'in
+  /// sürükleme davranışı korunur **ve panelin dışında ikinci bir kaydırma
+  /// açılmaz** → iç içe kaydırma oluşmaz (sheet artık `SingleChildScrollView`
+  /// kullanmaz, tek kaydırılabilir bu panelin orta bölgesidir).
+  final ScrollController? scrollController;
+
+  const PaymentPanel({super.key, this.scrollController});
 
   @override
   ConsumerState<PaymentPanel> createState() => _PaymentPanelState();
@@ -25,10 +36,17 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
   final _cashController = TextEditingController();
   final _cardController = TextEditingController();
 
+  /// Dışarıdan controller gelmeyen (masaüstü) bağlamda orta bölgenin kendi
+  /// kaydırma denetleyicisi. `Scrollbar`'ın görünür bir tutamak çizebilmesi
+  /// için gerekir — §6.8(a): kaydırma varsa görsel ipucu ZORUNLU, "gizli
+  /// kaydırma" tekrar etmemeli.
+  final _panelScrollController = ScrollController();
+
   @override
   void dispose() {
     _cashController.dispose();
     _cardController.dispose();
+    _panelScrollController.dispose();
     super.dispose();
   }
 
@@ -51,189 +69,280 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
 
     final cartEmpty = tab.items.isEmpty;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSizes.cardPadding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          // Panel, içeriği kadar yer kaplar (sabit yükseklik YOK) — Parçalı
-          // açılınca büyür, kapanınca küçülür. Sağ sütunda kalan alanı
-          // Hızlı Ürünler paneli yutar. Sığmazsa kaydırma sarmalayıcı
-          // (sales_screen masaüstü sütunu) devreye girer; panel kendi içinde
-          // ikinci bir kaydırılabilir AÇMAZ — mobil sheet'te iç içe kaydırma olmasın.
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── İmza öğesi (§4 + §6.3): ekranın TEK hero'su = sepet GENEL TOPLAM.
-            // Koyu enstrüman paneli; ray normalde altın, iadede danger.
-            // 🇬🇧 seslendirme butonu hero panelinin İÇİNDE durur (yalnız web).
-            InstrumentHero(
-              label: isReturnMode ? 'İADE TUTARI · ₺' : 'TOPLAM · ₺',
-              amount: tab.total,
-              railColor: isReturnMode ? AppColors.danger : AppColors.gold,
-              // Kompakt trailing (§6.7(h)/1): 40×40 ikon butonu hero tutarın
-              // genişliğinden pay ALMAZ → tutar ekranın en baskın öğesi kalır.
-              trailingTight: true,
-              // Buton sabit ölçülü (Container 40/48) → ne dikeyde ne yatayda
-              // paneli şişirir; ek Align/heightFactor sarmalayıcısı GEREKMEZ.
-              trailing: kIsWeb ? _SpeakTotalButton(amount: tab.total) : null,
+    // Ana aksiyon YALNIZ mod seçimi gerektiren türlerde vardır (Nakit/POS zaten
+    // tek dokunuşta tamamlar → onların butonu orta bölgede kalır, §6.8(a)).
+    final anaAksiyonVar = !isReturnMode &&
+        (payment.type == PaymentType.parcali ||
+            payment.type == PaymentType.acikHesap);
+
+    // Orta bölgenin kaydırma denetleyicisi: mobil sheet kendi controller'ını
+    // geçer (sürükleme davranışı korunur), masaüstünde panelin kendi controller'ı.
+    final scrollController =
+        widget.scrollController ?? _panelScrollController;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // ── §6.8(a) ÜÇ BÖLGE: [1] üstte sabit hero · [2] ortada kayan içerik ·
+        // [3] altta sabit ana aksiyon. Dıştaki iki bölge kaydırma alanının
+        // DIŞINDADIR → "Satışı Tamamla" hiçbir çözünürlükte kaybolmaz.
+        //
+        // Kaydırma YALNIZCA panelin yüksekliği sınırlıysa devreye girer
+        // (masaüstü sütunu: `ConstrainedBox(maxHeight:)` · mobil sheet:
+        // `Expanded`). Sınırsız yükseklikli bir bağlamda (dışarıda bir
+        // `SingleChildScrollView` varsa) panel kendi kaydırmasını AÇMAZ →
+        // iç içe kaydırma olmaz; ayrıca sınırsız yükseklikte `Flexible`
+        // "non-zero flex + unbounded height" ile çökertirdi, bu dal onu da önler.
+        final kaydirilabilir = constraints.hasBoundedHeight;
+        final ortaBolge = _buildOrtaBolge(
+          tab: tab,
+          payment: payment,
+          paymentNotifier: paymentNotifier,
+          isReturnMode: isReturnMode,
+          cartEmpty: cartEmpty,
+        );
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSizes.cardPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── [1] Üstte sabit — imza öğesi (§4 + §6.3): ekranın TEK
+                // hero'su = sepet GENEL TOPLAM. Koyu enstrüman paneli; ray
+                // normalde altın, iadede danger. Kaydırma alanının dışında
+                // olduğu için asla kırpılmaz.
+                // 🇬🇧 seslendirme butonu hero panelinin İÇİNDE durur (yalnız web).
+                InstrumentHero(
+                  label: isReturnMode ? 'İADE TUTARI · ₺' : 'TOPLAM · ₺',
+                  amount: tab.total,
+                  railColor: isReturnMode ? AppColors.danger : AppColors.gold,
+                  // §6.8(c): iade rakamı koyu panelde AA sağlasın diye ham
+                  // `danger` değil, beyazla parlatılmış hâli basılır. Normal
+                  // modda varsayılan beyaz.
+                  amountColor: isReturnMode
+                      ? instrumentPanelReadable(AppColors.danger)
+                      : Colors.white,
+                  // Kompakt trailing (§6.7(h)/1): 40×40 ikon butonu hero tutarın
+                  // genişliğinden pay ALMAZ → tutar ekranın en baskın öğesi kalır.
+                  trailingTight: true,
+                  // Buton sabit ölçülü (Container 40/48) → ne dikeyde ne yatayda
+                  // paneli şişirir; ek Align/heightFactor sarmalayıcısı GEREKMEZ.
+                  trailing: kIsWeb ? _SpeakTotalButton(amount: tab.total) : null,
+                ),
+                const SizedBox(height: AppSizes.space16),
+                // ── [2] Ortada kayan.
+                if (kaydirilabilir)
+                  Flexible(
+                    // Tight yükseklik (mobil sheet `Expanded`) → orta bölge
+                    // kalan alanı doldurur, ana aksiyon panelin dibine yapışır.
+                    // Loose yükseklik (masaüstü `ConstrainedBox`) → panel
+                    // içeriği kadar yer kaplar, yalnız üst sınırı aşarsa orta
+                    // bölge kaydırılır.
+                    fit: constraints.hasTightHeight
+                        ? FlexFit.tight
+                        : FlexFit.loose,
+                    child: Scrollbar(
+                      controller: scrollController,
+                      // Kaydırma gerçekten devredeyse tutamak görünür olur
+                      // (içerik sığıyorsa Flutter tutamağı zaten çizmez).
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        controller: scrollController,
+                        // Mobil sheet'i içerik kısayken de sürükleyebilmek için.
+                        physics: widget.scrollController != null
+                            ? const AlwaysScrollableScrollPhysics()
+                            : null,
+                        child: ortaBolge,
+                      ),
+                    ),
+                  )
+                else
+                  ortaBolge,
+                // ── [3] Altta sabit — ana aksiyon.
+                if (anaAksiyonVar) ...[
+                  const Divider(height: AppSizes.space24),
+                  ElevatedButton(
+                    onPressed: (cartEmpty || _completing)
+                        ? null
+                        : () => _completeSale(tab, payment),
+                    child: _completing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Satışı Tamamla'),
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(height: AppSizes.space16),
-            if (isReturnMode) ...[
-              // İade modu — sadece Nakit ve POS; ikisi de tek dokunuşta tamamlar.
-              const _AksiyonGrupEtiketi('TEK DOKUNUŞTA TAMAMLAR'),
-              const SizedBox(height: AppSizes.space8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _PaymentTypeButton(
-                      label: 'Nakit İade',
-                      icon: Icons.payments_outlined,
-                      color: AppColors.danger,
-                      filled: true,
-                      onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.nakit),
-                    ),
-                  ),
-                  const SizedBox(width: AppSizes.space8),
-                  Expanded(
-                    child: _PaymentTypeButton(
-                      label: 'POS İadesi',
-                      icon: Icons.credit_card_outlined,
-                      color: AppColors.danger,
-                      filled: true,
-                      onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.pos),
-                    ),
-                  ),
-                ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// [2] Orta (kayan) bölge — §6.8(a): ödeme türü butonları + grup
+  /// mikro-etiketleri + Parçalı input'ları/özeti + açık hesap uyarıları.
+  /// Ana aksiyon burada DEĞİLDİR (altta sabit bölgededir); Nakit/POS "tek
+  /// dokunuşta tamamlar" butonları ise karar gereği burada kalır.
+  Widget _buildOrtaBolge({
+    required CustomerTabState tab,
+    required PaymentInputState payment,
+    required PaymentInput paymentNotifier,
+    required bool isReturnMode,
+    required bool cartEmpty,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isReturnMode) ...[
+          // İade modu — sadece Nakit ve POS; ikisi de tek dokunuşta tamamlar.
+          const _AksiyonGrupEtiketi('TEK DOKUNUŞTA TAMAMLAR'),
+          const SizedBox(height: AppSizes.space8),
+          Row(
+            children: [
+              Expanded(
+                child: _PaymentTypeButton(
+                  label: 'Nakit İade',
+                  icon: Icons.payments_outlined,
+                  color: AppColors.danger,
+                  filled: true,
+                  onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.nakit),
+                ),
               ),
-              if (_completing) ...[
-                const SizedBox(height: AppSizes.space16),
-                const Center(child: CircularProgressIndicator()),
-              ],
-            ] else ...[
-              // ── Ödeme aksiyonu iki sınıfa ayrılır: tek dokunuşta biten (dolu)
-              // ve önce seçim isteyen (outline). Kasiyer hangi butonun satışı
-              // hemen kapatacağını bir bakışta görür.
-              const _AksiyonGrupEtiketi('TEK DOKUNUŞTA TAMAMLAR'),
-              const SizedBox(height: AppSizes.space8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _PaymentTypeButton(
-                      label: 'Nakit',
-                      icon: Icons.payments_outlined,
-                      color: AppColors.cash,
-                      filled: true,
-                      onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.nakit),
-                    ),
-                  ),
-                  const SizedBox(width: AppSizes.space8),
-                  Expanded(
-                    child: _PaymentTypeButton(
-                      label: 'POS',
-                      icon: Icons.credit_card_outlined,
-                      color: AppColors.pos,
-                      filled: true,
-                      onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.pos),
-                    ),
-                  ),
-                ],
+              const SizedBox(width: AppSizes.space8),
+              Expanded(
+                child: _PaymentTypeButton(
+                  label: 'POS İadesi',
+                  icon: Icons.credit_card_outlined,
+                  color: AppColors.danger,
+                  filled: true,
+                  onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.pos),
+                ),
               ),
-              const SizedBox(height: AppSizes.space16),
-              const _AksiyonGrupEtiketi('ÖNCE SEÇ, SONRA TAMAMLA'),
-              const SizedBox(height: AppSizes.space8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _PaymentTypeButton(
-                      label: 'Açık Hesap',
-                      icon: Icons.account_balance_wallet_outlined,
-                      color: AppColors.openAccount,
-                      selected: payment.type == PaymentType.acikHesap,
-                      onTap: (cartEmpty || _completing)
-                          ? null
-                          : () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
-                    ),
-                  ),
-                  const SizedBox(width: AppSizes.space8),
-                  Expanded(
-                    child: _PaymentTypeButton(
-                      label: 'Parçalı',
-                      icon: Icons.call_split_outlined,
-                      color: AppColors.splitPayment,
-                      selected: payment.type == PaymentType.parcali,
-                      onTap: (cartEmpty || _completing)
-                          ? null
-                          : () => paymentNotifier.selectType(PaymentType.parcali, tab.total),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSizes.space12),
-              if (payment.type == PaymentType.parcali) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _cashController,
-                        decoration: const InputDecoration(labelText: 'Nakit'),
-                        keyboardType: TextInputType.number,
-                        onChanged: (v) => paymentNotifier.setCashSplit(num.tryParse(v.replaceAll(',', '.')) ?? 0),
-                      ),
-                    ),
-                    const SizedBox(width: AppSizes.space8),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _cardController,
-                        decoration: const InputDecoration(labelText: 'Kart'),
-                        keyboardType: TextInputType.number,
-                        onChanged: (v) => paymentNotifier.setCardSplit(num.tryParse(v.replaceAll(',', '.')) ?? 0),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSizes.space8),
-                Text('Toplam Ödenen: ${formatCurrency(payment.cashSplit + payment.cardSplit)}'),
-                const SizedBox(height: AppSizes.space16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: (cartEmpty || _completing) ? null : () => _completeSale(tab, payment),
-                        child: _completing
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Satışı Tamamla'),
-                      ),
-                    ),
-                    const SizedBox(width: AppSizes.space12),
-                    _ParcaliSummary(
-                      cashSplit: payment.cashSplit,
-                      cardSplit: payment.cardSplit,
-                      total: tab.total,
-                    ),
-                  ],
-                ),
-              ] else if (payment.type == PaymentType.acikHesap) ...[
-                Text(
-                  'Açık Hesap: ${formatCurrency(tab.total)} müşteri hesabına borç olarak işlenecek.',
-                  style: const TextStyle(color: AppColors.danger),
-                ),
-                if (tab.customerId == null)
-                  const Padding(
-                    padding: EdgeInsets.only(top: AppSizes.space4),
-                    child: Text('Lütfen müşteri seçin.', style: TextStyle(color: AppColors.danger)),
-                  ),
-                const SizedBox(height: AppSizes.space16),
-                ElevatedButton(
-                  onPressed: (cartEmpty || _completing) ? null : () => _completeSale(tab, payment),
-                  child: _completing
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Satışı Tamamla'),
-                ),
-              ],
             ],
+          ),
+          if (_completing) ...[
+            const SizedBox(height: AppSizes.space16),
+            const Center(child: CircularProgressIndicator()),
           ],
-        ),
-      ),
+        ] else ...[
+          // ── Ödeme aksiyonu iki sınıfa ayrılır: tek dokunuşta biten (dolu)
+          // ve önce seçim isteyen (outline). Kasiyer hangi butonun satışı
+          // hemen kapatacağını bir bakışta görür.
+          const _AksiyonGrupEtiketi('TEK DOKUNUŞTA TAMAMLAR'),
+          const SizedBox(height: AppSizes.space8),
+          Row(
+            children: [
+              Expanded(
+                child: _PaymentTypeButton(
+                  label: 'Nakit',
+                  icon: Icons.payments_outlined,
+                  color: AppColors.cash,
+                  filled: true,
+                  onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.nakit),
+                ),
+              ),
+              const SizedBox(width: AppSizes.space8),
+              Expanded(
+                child: _PaymentTypeButton(
+                  label: 'POS',
+                  icon: Icons.credit_card_outlined,
+                  color: AppColors.pos,
+                  filled: true,
+                  onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.pos),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.space16),
+          const _AksiyonGrupEtiketi('ÖNCE SEÇ, SONRA TAMAMLA'),
+          const SizedBox(height: AppSizes.space8),
+          Row(
+            children: [
+              Expanded(
+                child: _PaymentTypeButton(
+                  label: 'Açık Hesap',
+                  icon: Icons.account_balance_wallet_outlined,
+                  color: AppColors.openAccount,
+                  selected: payment.type == PaymentType.acikHesap,
+                  onTap: (cartEmpty || _completing)
+                      ? null
+                      : () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
+                ),
+              ),
+              const SizedBox(width: AppSizes.space8),
+              Expanded(
+                child: _PaymentTypeButton(
+                  label: 'Parçalı',
+                  icon: Icons.call_split_outlined,
+                  color: AppColors.splitPayment,
+                  selected: payment.type == PaymentType.parcali,
+                  onTap: (cartEmpty || _completing)
+                      ? null
+                      : () => paymentNotifier.selectType(PaymentType.parcali, tab.total),
+                ),
+              ),
+            ],
+          ),
+          if (payment.type == PaymentType.parcali) ...[
+            const SizedBox(height: AppSizes.space12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _cashController,
+                    decoration: const InputDecoration(labelText: 'Nakit'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) => paymentNotifier.setCashSplit(num.tryParse(v.replaceAll(',', '.')) ?? 0),
+                  ),
+                ),
+                const SizedBox(width: AppSizes.space8),
+                Expanded(
+                  child: TextFormField(
+                    controller: _cardController,
+                    decoration: const InputDecoration(labelText: 'Kart'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (v) => paymentNotifier.setCardSplit(num.tryParse(v.replaceAll(',', '.')) ?? 0),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSizes.space8),
+            // Okuma satırı + kırılım özeti yan yana: dikeyde yer kazanır,
+            // ikisi de kayan bölgede kalır (ana aksiyon aşağıda sabit).
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Toplam Ödenen: ${formatCurrency(payment.cashSplit + payment.cardSplit)}',
+                  ),
+                ),
+                const SizedBox(width: AppSizes.space12),
+                _ParcaliSummary(
+                  cashSplit: payment.cashSplit,
+                  cardSplit: payment.cardSplit,
+                  total: tab.total,
+                ),
+              ],
+            ),
+          ] else if (payment.type == PaymentType.acikHesap) ...[
+            const SizedBox(height: AppSizes.space12),
+            Text(
+              'Açık Hesap: ${formatCurrency(tab.total)} müşteri hesabına borç olarak işlenecek.',
+              style: const TextStyle(color: AppColors.danger),
+            ),
+            if (tab.customerId == null)
+              const Padding(
+                padding: EdgeInsets.only(top: AppSizes.space4),
+                child: Text('Lütfen müşteri seçin.', style: TextStyle(color: AppColors.danger)),
+              ),
+          ],
+        ],
+      ],
     );
   }
 
@@ -485,7 +594,9 @@ class _ParcaliSummary extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _SummaryLine(label: 'Nakit', amount: cashSplit, color: AppColors.cash),
-          const SizedBox(height: 2),
+          // §3: `space2` yalnız pill/rozet iç dolgusu içindir; layout aralığı
+          // olarak kullanılamaz (§6.8(d)) → ölçeğin bir alt kademesi space4.
+          const SizedBox(height: AppSizes.space4),
           _SummaryLine(label: 'Kart', amount: cardSplit, color: AppColors.pos),
           if (diff != 0) ...[
             const SizedBox(height: 2),

@@ -174,11 +174,12 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                 // ekranda 580'de durur. Sepet (flex: 3) kalan alanı alır.
                 final double sagSutunGenisligi =
                     (constraints.maxWidth * 0.42).clamp(420.0, 580.0).toDouble();
-                // ── Dikey taşma emniyeti (§6.7(h)/3). Sabit yükseklik GERİ GELMEZ;
-                // bunun yerine ödeme paneline bir ÜST SINIR verilir: sığmazsa panel
-                // KENDİ İÇİNDE kaydırılır (hero panelin en üstünde olduğu için
-                // kaydırma nedeniyle asla kırpılmaz), altındaki Hızlı Ürünler
-                // paneline de bir alt sınır kalır. Not: iki çocuğu birden
+                // ── Dikey taşma emniyeti (§6.7(h)/3 + §6.8(a)). Sabit yükseklik
+                // GERİ GELMEZ; bunun yerine ödeme paneline bir ÜST SINIR verilir:
+                // sığmazsa panel KENDİ İÇİNDE, yalnız ORTA bölgesini kaydırır —
+                // hero (üstte) ve "Satışı Tamamla" (altta) kaydırma alanının
+                // DIŞINDA kalır, hiçbir çözünürlükte kaybolmaz. Altındaki Hızlı
+                // Ürünler paneline de bir alt sınır kalır. Not: iki çocuğu birden
                 // `Flexible` yapmak alanı flex ORANINA göre bölerdi (panelin doğal
                 // yüksekliği korunmazdı) — bu yüzden üst-sınır + `Expanded` düzeni.
                 final double sutunYuksekligi = constraints.maxHeight;
@@ -207,13 +208,14 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                         children: [
                           // Ödeme paneli sabit yükseklikli DEĞİL — içeriği kadar
                           // yer alır (Parçalı seçilince büyür); yalnız üst sınırı
-                          // aşarsa kaydırılır.
+                          // aşarsa panel KENDİ orta bölgesini kaydırır. Buraya
+                          // dıştan bir `SingleChildScrollView` KONULMAZ: tüm
+                          // paneli kaydırırdı ve ana aksiyon görünmez alana
+                          // düşerdi (§6.8(a) — ölçülen 1366×768 hatası).
                           ConstrainedBox(
                             constraints:
                                 BoxConstraints(maxHeight: maxOdemeYuksekligi),
-                            child: const SingleChildScrollView(
-                              child: PaymentPanel(),
-                            ),
+                            child: const PaymentPanel(),
                           ),
                           const SizedBox(height: AppSizes.space12),
                           const Expanded(child: Card(child: QuickProductsPanel())),
@@ -583,11 +585,18 @@ class _MobilePaymentSheet extends StatelessWidget {
                 ),
               ),
               const Divider(height: 1),
+              // §6.8(a): sheet'in kendi `SingleChildScrollView`'ı KALDIRILDI —
+              // tüm paneli kaydırdığı için "Satışı Tamamla" katlanın altında
+              // kalıyordu. Artık panel bounded (tight) yükseklik alır ve ÜÇ
+              // BÖLGE düzenini kurar: hero üstte sabit, ana aksiyon altta sabit,
+              // yalnız orta bölge kayar. Sheet'in `controller`'ı panele geçilir →
+              // sürükleyerek büyütme/küçültme aynen çalışır ve ekranda TEK bir
+              // kaydırılabilir kalır (iç içe kaydırma YOK). `initialChildSize`
+              // (0.6) DEĞİŞMEDİ.
               Expanded(
-                child: SingleChildScrollView(
-                  controller: controller,
-                  padding: const EdgeInsets.all(16),
-                  child: const PaymentPanel(),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSizes.space16),
+                  child: PaymentPanel(scrollController: controller),
                 ),
               ),
             ],
