@@ -1407,6 +1407,12 @@ class _SatisLineChart extends StatelessWidget {
           ),
     ];
 
+    // Ortalama ciro referans çizgisi (KARAR v2.4): seçili aralığın (8/15/30 gün)
+    // aritmetik ortalaması. Boş veri yukarıda erken dönüşle elendi → sıfıra bölme yok.
+    final ortalamaCiro =
+        veriler.map((v) => v.amount.toDouble()).fold(0.0, (a, b) => a + b) /
+        veriler.length;
+
     return LineChart(
       LineChartData(
         minX: 0,
@@ -1553,6 +1559,35 @@ class _SatisLineChart extends StatelessWidget {
             ),
           ),
         ],
+
+        // Ortalama ciro referans çizgisi (KARAR v2.4 / design-tokens §6.9).
+        // Renk NÖTR beyaz (`panel.ink` @0.40) — bu grafikte kırmızı zaten "Pazar",
+        // altın ise "Cumartesi" bandı demek (v1.7); bir grafikte bir renk yalnız TEK
+        // anlam taşır, o yüzden referans çizgisi renkle değil FORM'la (kesik + ince)
+        // ayrışır. Ana ciro çizgisi solid ve daha kalın kalır → veri baskın.
+        // Bu grafik HERO DEĞİL: reticle/tick'li ray/ışıltı eklenmez (§6.4).
+        extraLinesData: ExtraLinesData(
+          horizontalLines: [
+            HorizontalLine(
+              y: ortalamaCiro,
+              color: Colors.white.withValues(alpha: 0.40),
+              strokeWidth: 1.2,
+              dashArray: const [6, 4],
+              label: HorizontalLineLabel(
+                show: true,
+                alignment: Alignment.topRight,
+                labelResolver: (line) => 'ORT. ${_currencyFmt.format(line.y)}',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
