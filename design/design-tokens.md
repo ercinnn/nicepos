@@ -976,3 +976,48 @@ iç dikey dolgusu** için ayırmıştır; burada layout aralığı olarak kullan
 > **mobil satış ekranı tamamen kırmızı hata ekranına düşüyor** (masaüstü ikizi `_buildFooter`
 > aynı deseni `IntrinsicWidth` ile doğru sarıyor — mobil kopyada unutulmuş). v2.2'nin mobil
 > kısmının piksel doğrulaması bu yüzden alınamadı. Ayrı bug-fix görevine verildi.
+> ✅ **KAPANDI** — düzeltme cherry-pick ile master'a alındı (`test/cart_table_render_test.dart`
+> regresyonu dahil); mobil dal artık masaüstü ikiziyle birebir aynı `IntrinsicWidth` sarmalayıcısını
+> kullanıyor.
+
+---
+
+### 6.9 Grafik referans çizgisi + **renk tekilliği kuralı** (KARAR v2.4 — ONAYLANDI)
+
+**Bağlam:** Dashboard günlük satış grafiğine (`_SatisLineChart`) seçili aralığın (8/15/30 gün)
+**ortalama cirosunu** gösteren yatay kesikli referans çizgisi eklenir. Özellik onaylandı; ilk
+taslaktaki **renk reddedildi**.
+
+#### (a) 🔴 Yeni sistemik kural — **bir grafikte bir renk = TEK anlam**
+İlk taslak referans çizgisini `danger` (kırmızı) çiziyor ve gerekçe olarak "kategorik/bilgi
+amaçlı, hafta sonu bandı emsali (v1.7)" diyordu. **Bu gerekçe reddedilir** — çünkü emsalin
+kendisi aynı grafiğin içindedir: `_SatisLineChart` zaten **Pazar gününü `danger`**, **Cumartesi'yi
+`gold`** bandıyla işaretler (v1.7, α0.09). Kırmızı bir referans çizgisi eklemek, kırmızıya **tek
+grafik içinde iki ayrı anlam** yükler ("Pazar" + "ortalama") → okuyucu ikisini ilişkilendirir.
+> **Kural:** Bir grafik yüzeyinde bir renk yalnızca **tek** bir anlam taşır. Yeni bir işaret
+> eklenirken o grafikte **hâlihazırda kullanılan renkler önce kontrol edilir**; çakışıyorsa
+> renk değil **form** (kesik/kalınlık/konum) ayırt edici olur. Bu kural §1 altın ekonomisi ve
+> §4 imza kurallarının üstüne biner, onların yerine geçmez.
+
+#### (b) Referans çizgisinin token'ları — nötr, sakin, veriden geri planda
+| Öğe | Değer | Gerekçe |
+|---|---|---|
+| Çizgi rengi | `panel.ink` (#FFFFFF) @ **alfa 0.40** | Nötr; grafikte hiçbir kategorik anlamla çakışmaz |
+| Kalınlık | **1.2** (`dashArray [6,4]`) | Ana ciro çizgisi 1.5 **solid** kalır → veri her zaman daha baskın |
+| Etiket | `ORT. ₺X` · `panel.muted` · 9px · w600 · Inter **tabular** · +0.5 tracking | §6.3(3) mikro-etiket dili; para `formatters` (Kural 3) |
+| Konum | `Alignment.topRight` | Sağ üst = enstrüman okuma köşesi; veri çizgisini kesmez |
+
+- **Hiyerarşi:** graticule (0.07) < **referans çizgisi (0.40)** < ana veri çizgisi (solid, tam renk).
+  Referans çizgisi ızgaradan ayrılır ama veriyle **yarışmaz**.
+- **`danger` ve `gold` bu çizgide YASAK** — (a) gerekçesi + `gold` zaten imza rayına ait (§4/§5).
+- Bu grafik **HERO DEĞİLDİR**: reticle köşe, tick'li ray, ışıltı **eklenmez** (§6.4).
+- Ortalama = aritmetik ortalama (toplam ÷ nokta sayısı), **seçili aralığa göre** otomatik güncellenir.
+  Boş veri erken dönüşle ele alınır → sıfıra bölme yok.
+- `ExtraLinesData` **salt-veri (declarative)** bir alandır — `Stack`/`Positioned` kullanılmaz,
+  CLAUDE.md'deki "Positioned doğrudan Stack çocuğu olmalı" tuzağı bu yolda oluşmaz.
+
+#### (c) Mevcut `_YillikOrtalamaCiroCard` ile ilişkisi
+İkisi **farklı metriklerdir, tekrar değildir**: kart = yıl-içi **kümülatif** günlük ortalama
+(yıllar arası karşılaştırma); yeni çizgi = **seçili kısa aralığın** ortalaması (bugünü bağlama
+oturtur). Yine de dashboard'da "ortalama" kelimesi iki yerde geçtiği için etiket **`ORT.`**
+kısaltmasıyla ayrışır ve kart başlığı değişmez.
