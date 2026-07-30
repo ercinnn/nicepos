@@ -1,27 +1,27 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'barcode_cache.dart';
+part of 'pending_sale_dao.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$barcodeCacheHash() => r'8238786e335477fd247a89dcc8a623e3e2f775b0';
+String _$pendingSaleDaoHash() => r'974e4ef72a63b44dd5bcbc6a34d314ad0b355bc0';
 
-/// See also [barcodeCache].
-@ProviderFor(barcodeCache)
-final barcodeCacheProvider = Provider<BarcodeCache>.internal(
-  barcodeCache,
-  name: r'barcodeCacheProvider',
+/// See also [pendingSaleDao].
+@ProviderFor(pendingSaleDao)
+final pendingSaleDaoProvider = Provider<PendingSaleDao>.internal(
+  pendingSaleDao,
+  name: r'pendingSaleDaoProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$barcodeCacheHash,
+      : _$pendingSaleDaoHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef BarcodeCacheRef = ProviderRef<BarcodeCache>;
+typedef PendingSaleDaoRef = ProviderRef<PendingSaleDao>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -162,6 +162,14 @@ class SalesRepository {
     if (deleted.isEmpty) throw Exception('Satış silinemedi.');
   }
 
+  /// `SaleSyncService` de kullanır — offline kuyruktan senkron edilen bir
+  /// satışın gerçek `sale_code`'u ancak bu RPC ile (server-only sequence)
+  /// SENKRON anında üretilebilir.
+  Future<String> generateSaleCode() async {
+    final result = await _client.rpc('generate_sale_code');
+    return result as String;
+  }
+
   Future<String> completeSale({
     required List<CartItem> items,
     required num discountPercent,
@@ -174,8 +182,7 @@ class SalesRepository {
     String? personnel,
     String? note,
   }) async {
-    final saleCodeResult = await _client.rpc('generate_sale_code');
-    final saleCode = saleCodeResult as String;
+    final saleCode = await generateSaleCode();
     final remainingDebt = (totalAmount - cashAmount - cardAmount).clamp(0, double.infinity);
     // İskontonun kesin TL tutarı: brüt (kalem toplamları) − net toplam.
     final subtotal = items.fold<num>(0, (sum, item) => sum + item.total);
@@ -232,6 +239,60 @@ class SalesRepository {
     }
 
     return saleCode;
+  }
+
+  /// Offline kuyruktan (`SaleSyncService`) senkron edilen bir Nakit/POS
+  /// satışını TEK atomik RPC ile tamamlar (bkz. 0027_complete_sale_offline.sql)
+  /// — `completeSale()`'in aksine ayrı ayrı insert/RPC adımlarına BÖLÜNMEZ:
+  /// bağlantı senkron ortasında tekrar koparsa kısmi yazım riski yoktur (tek
+  /// transaction), `id` bazlı idempotency retry'ı güvenli kılar. `saleDate`
+  /// senkron ANI DEĞİL — ürünün offline tamamlandığı ANIDIR (`PendingSale.
+  /// createdAt`), aksi halde raporlar satışı yanlış güne/aya yazar.
+  Future<void> completeSaleOffline({
+    required String id,
+    required String saleCode,
+    required List<CartItem> items,
+    required num discountPercent,
+    required num totalAmount,
+    required num paidAmount,
+    required PaymentType paymentType,
+    required num cashAmount,
+    required num cardAmount,
+    required DateTime saleDate,
+    String? customerId,
+    String? personnel,
+    String? note,
+  }) async {
+    final remainingDebt = (totalAmount - cashAmount - cardAmount).clamp(0, double.infinity);
+    final subtotal = items.fold<num>(0, (sum, item) => sum + item.total);
+    final discountAmount = (subtotal - totalAmount).clamp(0, double.infinity);
+
+    await _client.rpc('complete_sale_offline', params: {
+      'p_id': id,
+      'p_sale_code': saleCode,
+      'p_customer_id': customerId,
+      'p_total_amount': totalAmount,
+      'p_discount_percent': discountPercent,
+      'p_discount_amount': discountAmount,
+      'p_paid_amount': paidAmount,
+      'p_payment_type': paymentType.dbValue,
+      'p_cash_amount': cashAmount,
+      'p_card_amount': cardAmount,
+      'p_remaining_debt': remainingDebt,
+      'p_personnel': personnel ?? 'Yönetici',
+      'p_note': note,
+      'p_sale_date': saleDate.toUtc().toIso8601String(),
+      'p_items': items
+          .map((item) => {
+                'product_id': item.productId,
+                'product_name': item.productName,
+                'quantity': item.quantity,
+                'unit_price': item.unitPrice,
+                'discount_value': item.discountAmount,
+                'total': item.total,
+              })
+          .toList(),
+    });
   }
 
   Future<String> completeReturn({

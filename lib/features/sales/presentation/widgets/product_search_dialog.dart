@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/utils/formatters.dart';
+import '../../../../features/products/data/local/product_local_cache_dao.dart';
 import '../../../../features/products/data/models/product.dart';
 import '../../../../features/products/application/products_provider.dart';
 import '../../application/sales_cart_notifier.dart';
@@ -36,7 +38,19 @@ class _ProductSearchDialogState extends ConsumerState<ProductSearchDialog> {
 
   Future<void> _search(String query) async {
     setState(() => _loading = true);
-    final results = await ref.read(productRepositoryProvider).fetchAll(query: query);
+    List<Product> results;
+    try {
+      results = await ref.read(productRepositoryProvider).fetchAll(query: query);
+    } catch (_) {
+      // Ağ başarısız — native'de yerel önbellekten (products_cache) aynı
+      // arama fallback'i (offline'da bu dialog zaten "tam/tekil eşleşme
+      // yok" durumunda açılıyor, tamamen boş kalmasın diye).
+      try {
+        results = kIsWeb ? const [] : await ref.read(productLocalCacheDaoProvider).searchCached(query: query);
+      } catch (_) {
+        results = const [];
+      }
+    }
     if (mounted) {
       setState(() {
         _results = results;

@@ -72,6 +72,11 @@ dependencies:
   # İkisi de yalnız native/Android'de kullanılır (!kIsWeb guard).
   sqflite: ^2.4.1
   connectivity_plus: ^6.1.3
+  # Son bilinen bağlantı durumunu (phase + son prob zamanı) kalıcı tutar —
+  # soğuk açılışta bilinen bir dead-zone'da ilk prob'u beklemeden offline
+  # varsayılabilsin diye (bkz. connectivity_status_service.dart). Zaten
+  # supabase_flutter üzerinden transitive geliyordu, burada doğrudan sabitlendi.
+  shared_preferences: ^2.3.0
 
 dev_dependencies:
   flutter_test:

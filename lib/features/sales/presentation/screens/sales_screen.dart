@@ -5,12 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/connectivity/connectivity_status_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/utils/scan_sound.dart';
 import '../../../../features/products/application/products_provider.dart';
+import '../../../../features/products/data/local/product_local_cache_dao.dart';
 import '../../../../features/products/data/models/product.dart';
 import '../../application/barcode_cache.dart';
 import '../../application/barcode_focus_notifier.dart';
@@ -54,6 +57,17 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     super.dispose();
   }
 
+  // Bulunan ürünü sepete ekler + başarı bipi/haptic + alanı temizler (dört
+  // farklı bulma yolundan da — bellek/ağ/yerel önbellek — çağrılan ortak kuyruk).
+  void _addFoundProduct(BarcodeCache cache, Product product) {
+    cache.put(product);
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
+    ref.read(salesCartProvider.notifier).addProduct(product);
+    _barcodeController.clear();
+    _barcodeFocusNode.requestFocus();
+  }
+
   Future<void> _onBarcodeSubmitted(String value) async {
     final query = value.trim();
     if (query.isEmpty) return;
@@ -62,35 +76,46 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     final cache = ref.read(barcodeCacheProvider);
     final cached = cache.lookup(query);
     if (cached != null) {
-      HapticFeedback.lightImpact();
-      playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
-      ref.read(salesCartProvider.notifier).addProduct(cached);
-      _barcodeController.clear();
-      _barcodeFocusNode.requestFocus();
+      _addFoundProduct(cache, cached);
       return;
     }
 
-    // Miss → mevcut ağ fallback'i aynen korunur (yeni/bilinmeyen barkod da çalışır).
-    final product = await ref.read(productRepositoryProvider).fetchByBarcode(query);
-    if (product != null) {
-      cache.put(product); // bulunan ürünü cache'e yaz
-      HapticFeedback.lightImpact();
-      playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
-      ref.read(salesCartProvider.notifier).addProduct(product);
-      _barcodeController.clear();
-      _barcodeFocusNode.requestFocus();
-      return;
+    // Zaten "offline" biliniyorsa 6sn'lik ağ timeout'unu tekrar tekrar
+    // beklemeden direkt yerel önbelleğe düş (bkz. product_form_screen.dart
+    // `_knownOffline` deseni).
+    final knownOffline =
+        !kIsWeb && ref.read(connectivityStatusServiceProvider).phase == ConnectivityPhase.offline;
+
+    if (!knownOffline) {
+      try {
+        final product = await withNetworkTimeout(ref.read(productRepositoryProvider).fetchByBarcode(query));
+        if (product != null) {
+          _addFoundProduct(cache, product);
+          return;
+        }
+        final matches = await withNetworkTimeout(ref.read(productRepositoryProvider).fetchAll(query: query));
+        if (matches.length == 1) {
+          _addFoundProduct(cache, matches.first);
+          return;
+        }
+      } catch (_) {
+        // Ağ başarısız (timeout/soket) — aşağıda yerel önbelleğe düşülür.
+      }
     }
 
-    final matches = await ref.read(productRepositoryProvider).fetchAll(query: query);
-    if (matches.length == 1) {
-      cache.put(matches.first); // bulunan ürünü cache'e yaz
-      HapticFeedback.lightImpact();
-      playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
-      ref.read(salesCartProvider.notifier).addProduct(matches.first);
-      _barcodeController.clear();
-      _barcodeFocusNode.requestFocus();
-      return;
+    // Yerel önbellek (native only) — barkod BİREBİR eşleşme önce, yoksa
+    // isim/stok kodu üzerinde TEK eşleşme.
+    if (!kIsWeb) {
+      final localMatches = await ref.read(productLocalCacheDaoProvider).searchCached(query: query);
+      final exactBarcode = localMatches.where((p) => p.barcode == query).toList();
+      if (exactBarcode.length == 1) {
+        _addFoundProduct(cache, exactBarcode.first);
+        return;
+      }
+      if (exactBarcode.isEmpty && localMatches.length == 1) {
+        _addFoundProduct(cache, localMatches.first);
+        return;
+      }
     }
 
     // Tam/tekil eşleşme yok → danger uyarı sesi + arama diyaloğu.
@@ -677,27 +702,31 @@ class _LiveProductSearchFieldState
     setState(() => _loading = true);
     if (!_portal.isShowing) _portal.show();
     _debounce = Timer(const Duration(milliseconds: 150), () async {
+      List<Product> results;
       try {
-        final results =
-            await ref.read(productRepositoryProvider).fetchAll(query: query);
-        if (!mounted || token != _queryToken) return;
-        // Kullanıcı bu arada metni değiştirdiyse bu sonucu yok say.
-        if (widget.controller.text.trim() != query) return;
-        setState(() {
-          _results = results.take(40).toList();
-          _loading = false;
-        });
-        if (_results.isNotEmpty && widget.focusNode.hasFocus) {
-          _portal.show();
-        } else {
-          _portal.hide();
-        }
+        results = await ref.read(productRepositoryProvider).fetchAll(query: query);
       } catch (_) {
-        if (!mounted || token != _queryToken) return;
-        setState(() {
-          _results = [];
-          _loading = false;
-        });
+        // Ağ başarısız — native'de yerel önbellekten (products_cache) aynı
+        // arama fallback'i (offline'da canlı öneri listesi boş kalmasın diye).
+        try {
+          results = kIsWeb
+              ? const []
+              : await ref.read(productLocalCacheDaoProvider).searchCached(query: query);
+        } catch (_) {
+          results = const [];
+        }
+      }
+      if (!mounted || token != _queryToken) return;
+      // Kullanıcı bu arada metni değiştirdiyse bu sonucu yok say.
+      if (widget.controller.text.trim() != query) return;
+      setState(() {
+        _results = results.take(40).toList();
+        _loading = false;
+      });
+      if (_results.isNotEmpty && widget.focusNode.hasFocus) {
+        _portal.show();
+      } else {
+        _portal.hide();
       }
     });
   }

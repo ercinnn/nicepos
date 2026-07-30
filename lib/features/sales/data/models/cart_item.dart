@@ -30,6 +30,34 @@ class CartItem {
 
   num get total => lineTotal - discountAmount;
 
+  // Offline satış kuyruğu (`pending_sale.dart`) için JSON-serileştirme —
+  // tamamlama anındaki sepeti donduğu haliyle saklar.
+  Map<String, dynamic> toMap() {
+    return {
+      'product_id': productId,
+      'product_name': productName,
+      'barcode': barcode,
+      'quantity': quantity,
+      'unit_price': unitPrice,
+      'discount_value': discountValue,
+      'discount_type': discountType.name,
+      'note': note,
+    };
+  }
+
+  factory CartItem.fromMap(Map<String, dynamic> map) {
+    return CartItem(
+      productId: map['product_id'] as String?,
+      productName: map['product_name'] as String,
+      barcode: map['barcode'] as String?,
+      quantity: map['quantity'] as num? ?? 1,
+      unitPrice: map['unit_price'] as num? ?? 0,
+      discountValue: map['discount_value'] as num? ?? 0,
+      discountType: DiscountType.values.byName(map['discount_type'] as String? ?? 'tl'),
+      note: map['note'] as String?,
+    );
+  }
+
   CartItem copyWith({
     String? productId,
     String? productName,

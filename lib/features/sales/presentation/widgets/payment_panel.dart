@@ -1,16 +1,27 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../../../core/connectivity/connectivity_status_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/utils/tts_service.dart';
 import '../../../../core/widgets/instrument_hero.dart';
+import '../../../products/data/local/product_local_cache_dao.dart';
+import '../../application/barcode_cache.dart';
 import '../../application/barcode_focus_notifier.dart';
 import '../../application/payment_input_notifier.dart';
+import '../../application/sale_sync_service.dart';
 import '../../application/sales_cart_notifier.dart';
+import '../../data/local/pending_sale_dao.dart';
+import '../../data/models/pending_sale.dart';
 import '../../data/models/sale.dart';
 
 /// Ödeme paneli — §6.8(a) "üç bölge" düzeni:
@@ -69,6 +80,12 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
 
     final cartEmpty = tab.items.isEmpty;
 
+    // v1 offline satış kapsamı yalnız Nakit/POS'tur (bkz. plan notu) — Açık
+    // Hesap/Parçalı/İade müşteri arama + borç defteri gerektirdiğinden
+    // offline'da pasif kalır, Nakit/POS'a DOKUNULMAZ.
+    final offline =
+        !kIsWeb && ref.watch(connectivityStatusServiceProvider).phase == ConnectivityPhase.offline;
+
     // Ana aksiyon YALNIZ mod seçimi gerektiren türlerde vardır (Nakit/POS zaten
     // tek dokunuşta tamamlar → onların butonu orta bölgede kalır, §6.8(a)).
     final anaAksiyonVar = !isReturnMode &&
@@ -99,6 +116,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
           paymentNotifier: paymentNotifier,
           isReturnMode: isReturnMode,
           cartEmpty: cartEmpty,
+          offline: offline,
         );
 
         return Card(
@@ -163,7 +181,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                 if (anaAksiyonVar) ...[
                   const Divider(height: AppSizes.space24),
                   ElevatedButton(
-                    onPressed: (cartEmpty || _completing)
+                    onPressed: (cartEmpty || _completing || offline)
                         ? null
                         : () => _completeSale(tab, payment),
                     child: _completing
@@ -193,6 +211,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
     required PaymentInput paymentNotifier,
     required bool isReturnMode,
     required bool cartEmpty,
+    required bool offline,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -210,7 +229,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                   icon: Icons.payments_outlined,
                   color: AppColors.danger,
                   filled: true,
-                  onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.nakit),
+                  onTap: (cartEmpty || _completing || offline) ? null : () => _completeReturn(tab, PaymentType.nakit),
                 ),
               ),
               const SizedBox(width: AppSizes.space8),
@@ -220,11 +239,16 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                   icon: Icons.credit_card_outlined,
                   color: AppColors.danger,
                   filled: true,
-                  onTap: (cartEmpty || _completing) ? null : () => _completeReturn(tab, PaymentType.pos),
+                  onTap: (cartEmpty || _completing || offline) ? null : () => _completeReturn(tab, PaymentType.pos),
                 ),
               ),
             ],
           ),
+          if (offline) ...[
+            const SizedBox(height: AppSizes.space12),
+            const Text('İade çevrimdışıyken kullanılamaz — bağlantı gelince tekrar deneyin.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          ],
           if (_completing) ...[
             const SizedBox(height: AppSizes.space16),
             const Center(child: CircularProgressIndicator()),
@@ -269,7 +293,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                   icon: Icons.account_balance_wallet_outlined,
                   color: AppColors.openAccount,
                   selected: payment.type == PaymentType.acikHesap,
-                  onTap: (cartEmpty || _completing)
+                  onTap: (cartEmpty || _completing || offline)
                       ? null
                       : () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
                 ),
@@ -281,13 +305,19 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                   icon: Icons.call_split_outlined,
                   color: AppColors.splitPayment,
                   selected: payment.type == PaymentType.parcali,
-                  onTap: (cartEmpty || _completing)
+                  onTap: (cartEmpty || _completing || offline)
                       ? null
                       : () => paymentNotifier.selectType(PaymentType.parcali, tab.total),
                 ),
               ),
             ],
           ),
+          if (offline) ...[
+            const SizedBox(height: AppSizes.space8),
+            const Text(
+                'Açık Hesap/Parçalı çevrimdışıyken kullanılamaz (müşteri arama bağlantı gerektirir) — bağlantı gelince tekrar deneyin.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          ],
           if (payment.type == PaymentType.parcali) ...[
             const SizedBox(height: AppSizes.space12),
             Row(
@@ -354,17 +384,28 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
     ref.read(barcodeFocusRequestProvider.notifier).requestFocus();
   }
 
+  bool get _knownOffline =>
+      !kIsWeb && ref.read(connectivityStatusServiceProvider).phase == ConnectivityPhase.offline;
+
+  /// İade — v1'de offline kapsam dışı (bkz. plan notu), yalnız online.
+  /// Önceden hiçbir hata yakalanmıyordu (uncaught exception riski) — artık
+  /// diğer tamamlama yollarıyla aynı hata mesajı deseni uygulanıyor.
   Future<void> _completeReturn(CustomerTabState tab, PaymentType type) async {
     if (tab.items.isEmpty) return;
+    if (_knownOffline) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('İade çevrimdışıyken kullanılamaz.')));
+      return;
+    }
 
     setState(() => _completing = true);
     try {
-      final saleCode = await ref.read(salesRepositoryProvider).completeReturn(
+      final saleCode = await withNetworkTimeout(ref.read(salesRepositoryProvider).completeReturn(
             items: tab.items,
             totalAmount: tab.total,
             paymentType: type,
             customerId: tab.customerId,
-          );
+          ));
 
       ref.read(salesCartProvider.notifier).clearActiveTab();
       ref.read(paymentInputProvider.notifier).reset();
@@ -377,11 +418,27 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
           ),
         );
       }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(backgroundColor: AppColors.danger, content: Text('İade tamamlanamadı: ${e.message}')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: AppColors.danger,
+            content: Text('Bağlantı hatası — iade tamamlanamadı, tekrar deneyin.')));
+      }
     } finally {
       if (mounted) setState(() => _completing = false);
     }
   }
 
+  /// Nakit/POS — "tek dokunuşta tamamlar" yol. Offline'da (`_knownOffline`)
+  /// veya ağ denemesi timeout'la başarısız olursa `_queueOfflineSale` ile
+  /// kuyruğa düşer (`product_form_screen.dart` `_save()` ile aynı desen);
+  /// sunucunun gerçek reddettiği durum (`PostgrestException`) sert hata
+  /// olarak kalır, kuyruğa ALINMAZ.
   Future<void> _completeSaleDirectly(CustomerTabState tab, PaymentType type) async {
     if (tab.items.isEmpty) return;
 
@@ -390,33 +447,122 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
       final num cashAmount = type == PaymentType.nakit ? tab.total : 0;
       final num cardAmount = type == PaymentType.pos ? tab.total : 0;
 
-      final saleCode = await ref.read(salesRepositoryProvider).completeSale(
-            items: tab.items,
-            discountPercent: tab.discountPercent,
-            totalAmount: tab.total,
-            paidAmount: tab.total,
-            paymentType: type,
-            cashAmount: cashAmount,
-            cardAmount: cardAmount,
-            customerId: tab.customerId,
-          );
+      String saleCode;
+      var offlineQueued = false;
+      if (_knownOffline) {
+        saleCode = await _queueOfflineSale(tab,
+            paymentType: type, paidAmount: tab.total, cashAmount: cashAmount, cardAmount: cardAmount);
+        offlineQueued = true;
+      } else {
+        try {
+          saleCode = await withNetworkTimeout(ref.read(salesRepositoryProvider).completeSale(
+                items: tab.items,
+                discountPercent: tab.discountPercent,
+                totalAmount: tab.total,
+                paidAmount: tab.total,
+                paymentType: type,
+                cashAmount: cashAmount,
+                cardAmount: cardAmount,
+                customerId: tab.customerId,
+              ));
+        } on PostgrestException catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                backgroundColor: AppColors.danger, content: Text('Satış tamamlanamadı: ${e.message}')));
+          }
+          return;
+        } catch (_) {
+          if (kIsWeb) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  backgroundColor: AppColors.danger,
+                  content: Text('Bağlantı hatası — satış tamamlanamadı, tekrar deneyin.')));
+            }
+            return;
+          }
+          saleCode = await _queueOfflineSale(tab,
+              paymentType: type, paidAmount: tab.total, cashAmount: cashAmount, cardAmount: cardAmount);
+          offlineQueued = true;
+        }
+      }
 
       ref.read(salesCartProvider.notifier).clearActiveTab();
       ref.read(paymentInputProvider.notifier).reset();
       _requestBarcodeFocusIfDesktop();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Satış tamamlandı: $saleCode')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(offlineQueued
+              ? 'Satış çevrimdışı kaydedildi — $saleCode, bağlantı gelince otomatik gönderilecek.'
+              : 'Satış tamamlandı: $saleCode'),
+        ));
       }
     } finally {
       if (mounted) setState(() => _completing = false);
     }
   }
 
+  /// Ürünü senkron kuyruğuna yazar (v1 yalnız Nakit/POS — açık hesap/parçalı/
+  /// iade bu yoldan GEÇMEZ). Yerel etkiler ANINDA uygulanır: `products_cache`
+  /// stoğu düşer + `BarcodeCache` bellek indeksi tazelenir ki aynı offline
+  /// oturumda ardışık taramalar doğru stok görsün (sunucu tarafı gerçek
+  /// `sale_code`'u ve stok düşümünü SENKRON anında yapar, bkz. `SaleSyncService`).
+  Future<String> _queueOfflineSale(
+    CustomerTabState tab, {
+    required PaymentType paymentType,
+    required num paidAmount,
+    required num cashAmount,
+    required num cardAmount,
+  }) async {
+    final id = const Uuid().v4();
+    final localSaleCode = 'ÇEVRİMDIŞI-${id.substring(0, 6).toUpperCase()}';
+    final now = DateTime.now();
+
+    final payload = PendingSalePayload(
+      items: tab.items,
+      discountPercent: tab.discountPercent,
+      totalAmount: tab.total,
+      paidAmount: paidAmount,
+      paymentType: paymentType,
+      cashAmount: cashAmount,
+      cardAmount: cardAmount,
+      customerId: tab.customerId,
+    );
+    await ref.read(pendingSaleDaoProvider).insert(PendingSale(
+          id: id,
+          payloadJson: jsonEncode(payload.toMap()),
+          localSaleCode: localSaleCode,
+          createdAt: now,
+          updatedAt: now,
+        ));
+
+    final cacheDao = ref.read(productLocalCacheDaoProvider);
+    final barcodeCache = ref.read(barcodeCacheProvider);
+    for (final item in tab.items) {
+      final productId = item.productId;
+      if (productId == null) continue;
+      await cacheDao.decrementStockLocally(productId, item.quantity);
+      final updated = await cacheDao.fetchById(productId);
+      if (updated != null) barcodeCache.put(updated);
+    }
+
+    await ref.read(saleSyncServiceProvider.notifier).notifyLocalQueueChanged();
+    return localSaleCode;
+  }
+
+  /// Açık Hesap/Parçalı — v1'de offline kapsam dışı (müşteri arama + borç
+  /// defteri ağ-bağlı, bkz. plan notu); `offline` bayrağı butonları zaten
+  /// pasifleştirir, burası yalnız savunma amaçlı ikinci bir kapı (ör. mod
+  /// online iken seçilip "Satışı Tamamla"ya basmadan önce bağlantı koptuysa).
   Future<void> _completeSale(CustomerTabState tab, PaymentInputState payment) async {
     if (tab.items.isEmpty) return;
+
+    if (_knownOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Açık Hesap/Parçalı çevrimdışıyken kullanılamaz.')),
+      );
+      return;
+    }
 
     if (payment.type == PaymentType.acikHesap && tab.customerId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -437,7 +583,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
 
     setState(() => _completing = true);
     try {
-      final saleCode = await ref.read(salesRepositoryProvider).completeSale(
+      final saleCode = await withNetworkTimeout(ref.read(salesRepositoryProvider).completeSale(
             items: tab.items,
             discountPercent: tab.discountPercent,
             totalAmount: tab.total,
@@ -446,7 +592,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
             cashAmount: cashAmount,
             cardAmount: cardAmount,
             customerId: tab.customerId,
-          );
+          ));
 
       ref.read(salesCartProvider.notifier).clearActiveTab();
       ref.read(paymentInputProvider.notifier).reset();
@@ -456,6 +602,17 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Satış tamamlandı: $saleCode')),
         );
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(backgroundColor: AppColors.danger, content: Text('Satış tamamlanamadı: ${e.message}')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            backgroundColor: AppColors.danger,
+            content: Text('Bağlantı hatası — satış tamamlanamadı, tekrar deneyin.')));
       }
     } finally {
       if (mounted) setState(() => _completing = false);

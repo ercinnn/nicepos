@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../data/local/product_local_cache_dao.dart';
 import '../data/local/reference_cache_dao.dart';
 import '../data/models/product.dart';
 import '../data/models/product_group.dart';
@@ -53,9 +54,16 @@ Future<Product?> productById(ProductByIdRef ref, String id) {
   return ref.watch(productRepositoryProvider).fetchById(id);
 }
 
+// Hızlı Ürünler paneli besler — offline'da (Ürün Grubu/Firma ile aynı
+// desen) canlı sorgu başarısız olursa (!kIsWeb) yerel önbelleğe düşer.
 @riverpod
-Future<List<Product>> productsByGroup(ProductsByGroupRef ref, String groupId) {
-  return ref.watch(productRepositoryProvider).fetchByGroup(groupId);
+Future<List<Product>> productsByGroup(ProductsByGroupRef ref, String groupId) async {
+  try {
+    return await ref.watch(productRepositoryProvider).fetchByGroup(groupId);
+  } catch (e) {
+    if (kIsWeb) rethrow;
+    return ref.watch(productLocalCacheDaoProvider).searchCached(groupId: groupId);
+  }
 }
 
 class ProductsQuery {

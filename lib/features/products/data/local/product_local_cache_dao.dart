@@ -105,6 +105,20 @@ class ProductLocalCacheDao {
     return products;
   }
 
+  /// Offline satış tamamlanınca sepetteki her kalem için çağrılır — sunucuya
+  /// ulaşılamadığından `decrement_product_stock` RPC'si yerine doğrudan
+  /// yerel satır güncellenir (satır yoksa no-op: ürün hiç cache'e düşmemiş
+  /// olabilir, senkron sırasında `replaceAll` zaten sunucudan doğrusunu çeker).
+  /// `sync_state`'e DOKUNULMAZ — bu bir ürün düzenlemesi değil, yalnız stok
+  /// yansıması (ürün hâlâ `synced` kalır, tekrar push edilmez).
+  Future<void> decrementStockLocally(String productId, num quantity) async {
+    final db = await _appDb.database;
+    await db.rawUpdate(
+      'UPDATE products_cache SET stock_quantity = stock_quantity - ? WHERE id = ?',
+      [quantity, productId],
+    );
+  }
+
   Future<Product?> fetchById(String id) async {
     final db = await _appDb.database;
     final rows = await db.query('products_cache', where: 'id = ?', whereArgs: [id], limit: 1);

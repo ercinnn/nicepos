@@ -30,20 +30,17 @@ final pendingChangesListProvider =
 typedef PendingChangesListRef =
     AutoDisposeFutureProviderRef<List<PendingChange>>;
 String _$productSyncServiceHash() =>
-    r'c7b557d9d24ce85efcf75f0fc6d2667c3eadcc44';
+    r'7ebc88a3a208f5999d63c324661ffcca668e23b6';
 
 /// Mobil çevrimdışı ürün ekleme/düzenleme — senkron motoru. Yalnız native/
 /// Android'de anlamlıdır (çağıran taraflar `!kIsWeb` ile korur); web'de bu
 /// servis hiç tetiklenmez.
 ///
-/// `connectivity_plus` TEK BAŞINA yeterli değildir — cihaz Wi-Fi'ye "bağlı"
-/// görünüp gerçek internete ulaşamayabilir (dükkanın dead-zone sorunu tam
-/// olarak bu). Bu yüzden her tetikleyici gerçek bir Supabase round-trip
-/// ("reachability probe") ile doğrulanır; `connectivity_plus` yalnızca
-/// "ne zaman tekrar dene" sinyali olarak kullanılır. Aynı ağda sinyal gücü
-/// değişimiyle dead-zone'dan normale geçişte arayüz durumu HİÇ değişmediği
-/// için (`connectivity_plus` event üretmez), bekleyen kayıt varken periyodik
-/// bir prob da çalışır — gerçek kurtarma mekanizması budur.
+/// Reachability probe/periyodik timer/connectivity dinleyicisi ARTIK burada
+/// DEĞİL — paylaşılan `ConnectivityStatusService`'te (bkz. o dosyanın
+/// açıklaması). Bu servis yalnız `registerDependent` ile kaydolur; `syncNow()`
+/// SADECE bağlantı doğrulandıktan SONRA (`ConnectivityStatusService.
+/// probeAndNotify()` tarafından) çağrılır — kendi prob'unu AÇMAZ.
 ///
 /// Copied from [ProductSyncService].
 @ProviderFor(ProductSyncService)

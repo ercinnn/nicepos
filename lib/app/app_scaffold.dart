@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/link.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/connectivity/connectivity_status_service.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_sizes.dart';
 import '../core/utils/formatters.dart';
@@ -17,6 +18,7 @@ import '../features/auth/application/auth_provider.dart';
 import '../features/products/application/product_sync_service.dart';
 import '../features/products/application/sync_status.dart';
 import '../features/products/presentation/widgets/sync_status_badge.dart';
+import '../features/sales/application/sale_sync_service.dart';
 
 class _NavItem {
   final String label;
@@ -64,14 +66,18 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
   @override
   void initState() {
     super.initState();
-    // Mobil çevrimdışı ürün senkronu — uygulama açılışında bir kez, önceki
-    // oturumdan kalan bekleyen kayıt varsa hemen göndermeyi dener. `AppScaffold`
-    // `ShellRoute` içinde tüm ekranları sardığından bu State bir oturumda
-    // yalnız bir kez kurulur (rota değişimlerinde yeniden çalışmaz). Yalnız
-    // native — web'de sqflite/connectivity_plus hiç kullanılmaz.
+    // Mobil çevrimdışı ürün+satış senkronu — uygulama açılışında bir kez,
+    // önceki oturumdan kalan bekleyen kayıt varsa hemen göndermeyi dener.
+    // Paylaşılan `ConnectivityStatusService.probeAndNotify()` TEK bir prob
+    // yapar ve online ise KAYITLI tüm bağımlıları (ürün+satış) birlikte
+    // tetikler — `ProductSyncService`/`SaleSyncService.syncNow()` artık
+    // doğrudan çağrılmaz (kendi prob'ları yok). `AppScaffold` `ShellRoute`
+    // içinde tüm ekranları sardığından bu State bir oturumda yalnız bir kez
+    // kurulur (rota değişimlerinde yeniden çalışmaz). Yalnız native — web'de
+    // sqflite/connectivity_plus hiç kullanılmaz.
     if (!kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(productSyncServiceProvider.notifier).syncNow();
+        ref.read(connectivityStatusServiceProvider.notifier).probeAndNotify();
       });
     }
   }
@@ -91,6 +97,12 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
         if (next.lastSyncedCount > 0) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text('${next.lastSyncedCount} ürün kaydı senkronize edildi')));
+        }
+      });
+      ref.listen<SyncStatus>(saleSyncServiceProvider, (prev, next) {
+        if (next.lastSyncedCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('${next.lastSyncedCount} satış senkronize edildi')));
         }
       });
     }

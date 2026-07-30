@@ -234,7 +234,7 @@ class _ProductByIdProviderElement
   String get id => (origin as ProductByIdProvider).id;
 }
 
-String _$productsByGroupHash() => r'28e48f2e72332adbb0aff17ff8e3d0407983665f';
+String _$productsByGroupHash() => r'e6383c8114fdef6b0b25f484022274a57d2b4730';
 
 /// See also [productsByGroup].
 @ProviderFor(productsByGroup)

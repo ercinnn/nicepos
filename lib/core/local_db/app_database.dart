@@ -13,14 +13,32 @@ part 'app_database.g.dart';
 /// - `pending_changes`: senkronu bekleyen ekleme/güncelleme kuyruğu
 ///   (`product_id` PRIMARY KEY — aynı ürüne art arda offline düzenleme ayrı
 ///   log satırları değil, TEK satırın üzerine yazılır).
+/// - `pending_sales` (v2): senkronu bekleyen Nakit/POS satış kuyruğu — `id`
+///   PRIMARY KEY (istemcide üretilen uuid), APPEND-ONLY (`pending_changes`'in
+///   aksine bir satış offline'da tekrar "düzenlenmez").
 /// - `product_groups_cache` / `companies_cache`: Ürün Grubu dropdown'ı ve
 ///   Firma otomatik tamamlama listesi offline boş kalmasın diye.
 /// - `sync_meta`: basit key/value (ör. `last_catalog_sync_at`).
 class AppDatabase {
   static const _dbName = 'nice_pos_offline.db';
-  static const _dbVersion = 1;
+  static const _dbVersion = 2;
 
   Database? _db;
+
+  Future<void> _createPendingSalesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE pending_sales (
+        id TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        local_sale_code TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+  }
 
   Future<Database> get database async {
     final existing = _db;
@@ -32,6 +50,13 @@ class AppDatabase {
     final db = await openDatabase(
       path,
       version: _dbVersion,
+      // v1'den v2'ye: mevcut kurulumlardaki `pending_changes`/`products_cache`
+      // verisi KORUNARAK yalnız yeni `pending_sales` tablosu eklenir.
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createPendingSalesTable(db);
+        }
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE products_cache (
@@ -79,6 +104,8 @@ class AppDatabase {
             updated_at TEXT NOT NULL
           )
         ''');
+
+        await _createPendingSalesTable(db);
 
         await db.execute('''
           CREATE TABLE product_groups_cache (

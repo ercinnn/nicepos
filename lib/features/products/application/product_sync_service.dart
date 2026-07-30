@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/connectivity/connectivity_status_service.dart';
 import '../data/local/pending_change_dao.dart';
 import '../data/local/product_local_cache_dao.dart';
 import '../data/local/reference_cache_dao.dart';
@@ -19,47 +19,39 @@ part 'product_sync_service.g.dart';
 /// Android'de anlamlıdır (çağıran taraflar `!kIsWeb` ile korur); web'de bu
 /// servis hiç tetiklenmez.
 ///
-/// `connectivity_plus` TEK BAŞINA yeterli değildir — cihaz Wi-Fi'ye "bağlı"
-/// görünüp gerçek internete ulaşamayabilir (dükkanın dead-zone sorunu tam
-/// olarak bu). Bu yüzden her tetikleyici gerçek bir Supabase round-trip
-/// ("reachability probe") ile doğrulanır; `connectivity_plus` yalnızca
-/// "ne zaman tekrar dene" sinyali olarak kullanılır. Aynı ağda sinyal gücü
-/// değişimiyle dead-zone'dan normale geçişte arayüz durumu HİÇ değişmediği
-/// için (`connectivity_plus` event üretmez), bekleyen kayıt varken periyodik
-/// bir prob da çalışır — gerçek kurtarma mekanizması budur.
+/// Reachability probe/periyodik timer/connectivity dinleyicisi ARTIK burada
+/// DEĞİL — paylaşılan `ConnectivityStatusService`'te (bkz. o dosyanın
+/// açıklaması). Bu servis yalnız `registerDependent` ile kaydolur; `syncNow()`
+/// SADECE bağlantı doğrulandıktan SONRA (`ConnectivityStatusService.
+/// probeAndNotify()` tarafından) çağrılır — kendi prob'unu AÇMAZ.
 @Riverpod(keepAlive: true)
 class ProductSyncService extends _$ProductSyncService {
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
-  Timer? _periodicTimer;
-  Timer? _debounceTimer;
+  static const _depKey = 'products';
   bool _isSyncing = false;
 
   @override
   SyncStatus build() {
-    _connectivitySub = Connectivity().onConnectivityChanged.listen((_) => _onConnectivityChanged());
-    ref.onDispose(() {
-      _connectivitySub?.cancel();
-      _periodicTimer?.cancel();
-      _debounceTimer?.cancel();
-    });
+    final connectivity = ref.read(connectivityStatusServiceProvider.notifier);
+    connectivity.registerDependent(_depKey, syncNow);
+    ref.onDispose(() => connectivity.unregisterDependent(_depKey));
+
+    // Paylaşılan servis offline'a düşerse rozet hemen yansıtsın (syncing
+    // ortasında değilsek) — `syncNow()` zaten kendi phase'ini yönetir,
+    // burada yalnız "henüz hiç syncNow çağrılmadan" durumunu yakalarız.
+    // `fireImmediately: true` ŞART: `ConnectivityStatusService`in soğuk
+    // açılışta SharedPreferences'tan geri yüklediği "offline" ipucu bu
+    // servis kaydolmadan ÖNCE zaten uygulanmış olabilir — yalnız gelecekteki
+    // değişiklikleri dinlemek bu durumda kaçırır.
+    ref.listen(connectivityStatusServiceProvider, (prev, next) {
+      if (next.phase == ConnectivityPhase.offline && state.phase != SyncPhase.syncing) {
+        state = state.copyWith(phase: SyncPhase.offline);
+      }
+    }, fireImmediately: true);
+
     // Önceki oturumdan kalan bekleyen kayıtlar varsa rozet açılışta doğru
     // sayıyı göstersin diye (henüz sync denemeden).
     _refreshCounts();
     return const SyncStatus();
-  }
-
-  void _onConnectivityChanged() {
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(seconds: 2), syncNow);
-  }
-
-  void _ensurePeriodicTimer() {
-    _periodicTimer ??= Timer.periodic(const Duration(seconds: 25), (_) => syncNow());
-  }
-
-  void _cancelPeriodicTimer() {
-    _periodicTimer?.cancel();
-    _periodicTimer = null;
   }
 
   Future<void> _refreshCounts() async {
@@ -67,32 +59,15 @@ class ProductSyncService extends _$ProductSyncService {
     final pendingCount = all.where((c) => c.status != PendingChangeStatus.failed).length;
     final failedCount = all.where((c) => c.status == PendingChangeStatus.failed).length;
     state = state.copyWith(pendingCount: pendingCount, failedCount: failedCount);
-    if (pendingCount + failedCount > 0) {
-      _ensurePeriodicTimer();
-    } else {
-      _cancelPeriodicTimer();
-    }
+    ref.read(connectivityStatusServiceProvider.notifier).setInterested(_depKey, pendingCount + failedCount > 0);
   }
 
   /// `product_form_screen.dart` bir ürünü offline kuyruğa aldığında çağırır —
-  /// rozeti hemen günceller, periyodik prob'u başlatır ve (belki bağlantı
-  /// aslında vardır diye) bir deneme daha yapar.
+  /// rozeti hemen günceller, sonra paylaşılan servisten TEK bir prob ister
+  /// (online ise ürün+satış kuyrukları BİRLİKTE tetiklenir).
   Future<void> notifyLocalQueueChanged() async {
     await _refreshCounts();
-    unawaited(syncNow());
-  }
-
-  Future<bool> _probeReachable() async {
-    try {
-      await Supabase.instance.client
-          .from('products')
-          .select('id')
-          .limit(1)
-          .timeout(const Duration(seconds: 4));
-      return true;
-    } catch (_) {
-      return false;
-    }
+    unawaited(ref.read(connectivityStatusServiceProvider.notifier).probeAndNotify());
   }
 
   String _friendlyError(PostgrestException e) {
@@ -100,16 +75,14 @@ class ProductSyncService extends _$ProductSyncService {
     return e.message;
   }
 
-  /// Elle "Şimdi Senkronize Et" ve tüm otomatik tetikleyiciler buraya akar.
+  /// YALNIZ `ConnectivityStatusService.probeAndNotify()` (bağlantı zaten
+  /// doğrulanmış) tarafından çağrılır. "Şimdi Senkronize Et" butonu da artık
+  /// doğrudan bunu değil, paylaşılan servisin `probeAndNotify()`'ını çağırır
+  /// (bkz. `sync_status_badge.dart`/`pending_changes_sheet.dart`).
   Future<void> syncNow() async {
     if (_isSyncing) return;
     _isSyncing = true;
     try {
-      final reachable = await _probeReachable();
-      if (!reachable) {
-        state = state.copyWith(phase: SyncPhase.offline);
-        return;
-      }
       state = state.copyWith(phase: SyncPhase.syncing);
 
       final pendingDao = ref.read(pendingChangeDaoProvider);
@@ -119,12 +92,18 @@ class ProductSyncService extends _$ProductSyncService {
       final pending = await pendingDao.fetchPending();
       var connectionLostMidCycle = false;
       var syncedCount = 0;
-      for (final change in pending) {
-        final outcome = await _processOne(change, repo: repo, pendingDao: pendingDao, cacheDao: cacheDao);
-        if (outcome == _ItemOutcome.synced) syncedCount++;
-        if (outcome == _ItemOutcome.connectionLost) {
-          connectionLostMidCycle = true;
-          break;
+      // Sınırlı eşzamanlılık: tek tek değil küçük gruplar halinde işlenir —
+      // her satır bağımsız (farklı product_id PK), sunucu yazımları arasında
+      // çakışma yok, bağlantı dönüşünde çok sayıda bekleyen varken toplam
+      // senkron süresi belirgin kısalır.
+      const chunkSize = 4;
+      for (var i = 0; i < pending.length && !connectionLostMidCycle; i += chunkSize) {
+        final chunk = pending.skip(i).take(chunkSize);
+        final outcomes = await Future.wait(chunk.map(
+            (change) => _processOne(change, repo: repo, pendingDao: pendingDao, cacheDao: cacheDao)));
+        for (final outcome in outcomes) {
+          if (outcome == _ItemOutcome.synced) syncedCount++;
+          if (outcome == _ItemOutcome.connectionLost) connectionLostMidCycle = true;
         }
       }
 
@@ -210,10 +189,6 @@ class ProductSyncService extends _$ProductSyncService {
   }
 }
 
-/// `synced` = satır tamamen bitti (kuyruktan silindi); `retryLater` = kalıcı
-/// red (PostgrestException) VEYA yalnız görsel adımı başarısız olup satır
-/// bir sonraki döngü için kuyrukta kaldı; `connectionLost` = bağlantı
-/// ortasında koptu, döngü hemen durur.
 enum _ItemOutcome { synced, retryLater, connectionLost }
 
 /// "Bekleyen Senkronizasyonlar" sheet'i için — `productSyncServiceProvider`'ı
