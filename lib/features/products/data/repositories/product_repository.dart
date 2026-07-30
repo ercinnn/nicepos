@@ -363,6 +363,15 @@ class ProductRepository {
     return row['id'] as String;
   }
 
+  // Çevrimdışı oluşturulan ürünler için: id istemcide (UUID v4) üretilmiştir,
+  // sunucuya AÇIKÇA gönderilir (normal `create()` DB varsayılanına bırakır).
+  // `products.id uuid primary key default gen_random_uuid()` — açık id insert'i
+  // migration gerektirmeden kabul eder. Yalnız product_sync_service.dart'taki
+  // senkron kuyruğu tarafından çağrılır.
+  Future<void> createWithId(Product product) async {
+    await _client.from('products').insert({'id': product.id, ...product.toInsertMap()});
+  }
+
   Future<void> update(String id, Product product) async {
     await _client.from('products').update(product.toInsertMap()).eq('id', id);
   }

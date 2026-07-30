@@ -42,7 +42,7 @@ final productGroupRepositoryProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ProductGroupRepositoryRef = ProviderRef<ProductGroupRepository>;
-String _$productGroupsHash() => r'df46c68379172513479caa7fdabfd6dfb4fd3683';
+String _$productGroupsHash() => r'2f2501cc5384cd98b28e53717e29a69334866411';
 
 /// See also [productGroups].
 @ProviderFor(productGroups)
@@ -77,7 +77,7 @@ final companyRepositoryProvider = Provider<CompanyRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CompanyRepositoryRef = ProviderRef<CompanyRepository>;
-String _$companiesHash() => r'47b2e5180a43ecaf382a0b9def80a7a840d1c8eb';
+String _$companiesHash() => r'fef4e13007dd21e0c49e2664af0866e41f8f5aa9';
 
 /// See also [companies].
 @ProviderFor(companies)

@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../data/local/reference_cache_dao.dart';
 import '../data/models/product.dart';
 import '../data/models/product_group.dart';
 import '../data/models/company.dart';
@@ -16,18 +18,34 @@ ProductRepository productRepository(ProductRepositoryRef ref) => ProductReposito
 @Riverpod(keepAlive: true)
 ProductGroupRepository productGroupRepository(ProductGroupRepositoryRef ref) => ProductGroupRepository();
 
+// Mobil çevrimdışı destek: Ürün Grubu dropdown'ı offline'da boş kalmasın diye
+// canlı sorgu başarısız olursa (!kIsWeb) yerel önbelleğe düşer — cihaz hiç
+// senkron olmadıysa cache de boş döner, bu durumda dropdown zaten mevcut
+// "grup yok" davranışına (SizedBox) düşer, yeni bir hata durumu eklemez.
 @riverpod
-Future<List<ProductGroup>> productGroups(ProductGroupsRef ref) {
-  return ref.watch(productGroupRepositoryProvider).fetchAll();
+Future<List<ProductGroup>> productGroups(ProductGroupsRef ref) async {
+  try {
+    return await ref.watch(productGroupRepositoryProvider).fetchAll();
+  } catch (e) {
+    if (kIsWeb) rethrow;
+    return ref.watch(referenceCacheDaoProvider).fetchGroups();
+  }
 }
 
 @Riverpod(keepAlive: true)
 CompanyRepository companyRepository(CompanyRepositoryRef ref) =>
     CompanyRepository();
 
+// Firma serbest-metin alanı olduğu için offline'da otomatik tamamlama
+// önerisi olmasa da yazılabilir kalır — yine de mümkünse cache'ten doldurulur.
 @riverpod
-Future<List<Company>> companies(CompaniesRef ref) {
-  return ref.watch(companyRepositoryProvider).fetchAll();
+Future<List<Company>> companies(CompaniesRef ref) async {
+  try {
+    return await ref.watch(companyRepositoryProvider).fetchAll();
+  } catch (e) {
+    if (kIsWeb) rethrow;
+    return ref.watch(referenceCacheDaoProvider).fetchCompanies();
+  }
 }
 
 @riverpod

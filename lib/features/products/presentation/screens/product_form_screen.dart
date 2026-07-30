@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,14 +9,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
+import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
-import '../../data/models/product.dart';
-import '../../data/models/company.dart';
+import '../../application/product_sync_service.dart';
 import '../../application/products_provider.dart';
+import '../../application/sync_status.dart';
+import '../../data/local/pending_change_dao.dart';
+import '../../data/local/product_local_cache_dao.dart';
+import '../../data/models/company.dart';
+import '../../data/models/pending_change.dart';
+import '../../data/models/product.dart';
 import '../widgets/equivalent_barcode_section.dart';
 
 class ProductFormScreen extends ConsumerStatefulWidget {
@@ -65,8 +78,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   bool _saving = false;
   bool _deleting = false;
 
+  /// Bu ürünün yerel kaydı sunucuyla henüz senkron olmadı (offline
+  /// oluşturuldu/düzenlendi ve kuyrukta bekliyor) — `EquivalentBarcodeSection`
+  /// bu bayrak `true` iken devre dışı kalır (bkz. o dosyanın `pendingSync` notu).
+  bool _pendingSync = false;
+
   /// Senkron metotlarında karşılıklı tetiklenmeyi önleyen yeniden-giriş kilidi.
   bool _syncing = false;
+
+  /// `ProductSyncService`'in son prob sonucu zaten "offline" diyorsa `true` —
+  /// bu durumda `_loadProduct`/`_fetchByBarcode`/`_save` her seferinde 6sn'lik
+  /// ağ timeout'unu tekrar tekrar beklemez, doğrudan yerel yola düşer. Bir
+  /// dead-zone oturumunda bu bekleme yalnız BİR KEZ (offline durumu ilk
+  /// tespit edilene kadar) ödenir. Bayrak bayat olabilir (bağlantı az önce
+  /// geri gelmiş olabilir) — ama her offline kuyruğa düşüşte tetiklenen
+  /// `notifyLocalQueueChanged()` arka planda hemen yeniden problar, bu yüzden
+  /// bayatlık uzun sürmez.
+  bool get _knownOffline =>
+      !kIsWeb && ref.read(productSyncServiceProvider).phase == SyncPhase.offline;
 
   /// Ondalık alanlar için ortak girdi filtresi:
   /// yalnızca rakam ve TEK ondalık ayraç (virgül ya da nokta) kabul edilir.
@@ -106,11 +135,44 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
   }
 
+  /// Önce ağdan (timeout'lu) dener; başarısız olursa (`!kIsWeb`) yerel
+  /// önbelleğe düşer — dead-zone'da askıda kalmak yerine cihazda daha önce
+  /// görülmüş ürünü açar. Ağdan başarıyla gelirse fırsatçı olarak önbelleğe
+  /// yazılır (bir sonraki offline erişim için).
   Future<void> _loadProduct(String id) async {
-    final product = await ref.read(productRepositoryProvider).fetchById(id);
+    Product? product;
+    var fromCache = false;
+    if (_knownOffline) {
+      product = await ref.read(productLocalCacheDaoProvider).fetchById(id);
+      fromCache = product != null;
+    } else {
+      try {
+        product = await withNetworkTimeout(ref.read(productRepositoryProvider).fetchById(id));
+      } catch (_) {
+        if (!kIsWeb) {
+          product = await ref.read(productLocalCacheDaoProvider).fetchById(id);
+          fromCache = product != null;
+        }
+      }
+    }
     if (!mounted) return;
+
+    var pendingSync = false;
+    if (product != null && !kIsWeb) {
+      final cacheDao = ref.read(productLocalCacheDaoProvider);
+      if (fromCache) {
+        pendingSync = await cacheDao.isPendingSync(id);
+      } else {
+        unawaited(cacheDao.markSynced(product));
+      }
+    }
+    if (!mounted) return;
+
     if (product != null) _applyProduct(product);
-    setState(() => _loaded = true);
+    setState(() {
+      _loaded = true;
+      _pendingSync = pendingSync;
+    });
   }
 
   void _applyProduct(Product p) {
@@ -270,6 +332,83 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (picked != null) setState(() => _detailDate = picked);
   }
 
+  /// Firma / Tarih / Durum / Kâr Oranı 2 / Ürün Grubu — hem masaüstü "Diğer
+  /// Detaylar" hem mobil "Ürün Bilgisi" (Firma/Tarih/Durum mobilde buraya
+  /// taşındı) sekmelerinden paylaşılan alt-widget'lar.
+  Widget _buildFirmaField() {
+    return _CompanyAutocompleteField(controller: _companyCtrl, focusNode: _companyFocus);
+  }
+
+  Widget _buildTarihField() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSizes.inputRadius),
+      onTap: _pickDetailDate,
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Tarih',
+          suffixIcon: Icon(Icons.calendar_today, size: 18),
+        ),
+        child: Text(
+          DateFormat('dd/MM/yy', 'tr_TR').format(_detailDate),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDurumField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: Text('Durum',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        ),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'Y', label: Text('Yeni Eklendi')),
+            ButtonSegment(value: 'G', label: Text('Güncellendi')),
+          ],
+          selected: {_statusLetter},
+          onSelectionChanged: (s) => setState(() => _statusLetter = s.first),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildKarOrani2Field() {
+    return InputDecorator(
+      decoration: const InputDecoration(labelText: 'Kâr Oranı 2'),
+      child: Text('%${_profitMargin2.toStringAsFixed(2)}'),
+    );
+  }
+
+  Widget _buildUrunGrubuField(List groups) {
+    return groups.isEmpty
+        ? const SizedBox()
+        : DropdownButtonFormField<String?>(
+            initialValue: _groupId,
+            decoration: const InputDecoration(labelText: 'Ürün Grubu'),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('GRUPSUZ ÜRÜN'),
+              ),
+              ...groups.map(
+                (g) => DropdownMenuItem<String?>(
+                  value: g.id,
+                  child: Text(
+                    g.name,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+            onChanged: (v) => setState(() => _groupId = v),
+          );
+  }
+
   /// Kamerayı açar; okunan barkodu alana yazar ve varsa mevcut ürünü getirir
   /// (yeni ürün ekliyorsanız barkod alanda kalır). Sadece mobil/native.
   Future<void> _scanBarcode() async {
@@ -282,16 +421,66 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Future<void> _fetchByBarcode() async {
     final barcode = _barcodeCtrl.text.trim();
     if (barcode.isEmpty) return;
-    final product = await ref.read(productRepositoryProvider).fetchByBarcode(barcode);
-    if (product == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bu barkoda ait ürün bulunamadı, yeni ürün oluşturabilirsiniz.')),
-        );
+
+    Product? product;
+    var fromCache = false;
+    var networkFailed = false;
+    if (_knownOffline) {
+      networkFailed = true;
+      product = await ref.read(productLocalCacheDaoProvider).fetchByBarcode(barcode);
+      fromCache = product != null;
+    } else {
+      try {
+        product = await withNetworkTimeout(ref.read(productRepositoryProvider).fetchByBarcode(barcode));
+      } catch (_) {
+        networkFailed = true;
+        if (!kIsWeb) {
+          product = await ref.read(productLocalCacheDaoProvider).fetchByBarcode(barcode);
+          fromCache = product != null;
+        }
       }
+    }
+    if (!mounted) return;
+
+    if (product == null) {
+      final String message;
+      if (!networkFailed) {
+        message = 'Bu barkoda ait ürün bulunamadı, yeni ürün oluşturabilirsiniz.';
+      } else if (kIsWeb) {
+        message = 'Bağlantı hatası — barkod sorgulanamadı, tekrar deneyin.';
+      } else {
+        // Cache'te de yoksa bu KESİN "sunucuda yok" anlamına gelmez — başka
+        // bir cihazdan eklenmiş olabilir (v1'de kabul edilen sınır).
+        message =
+            'Bu barkod cihazda bulunamadı (çevrimdışı). Bağlantı gelince tekrar kontrol edin, veya yeni ürün olarak devam edin.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       return;
     }
-    setState(() => _applyProduct(product));
+
+    var pendingSync = false;
+    if (!kIsWeb) {
+      final cacheDao = ref.read(productLocalCacheDaoProvider);
+      if (fromCache) {
+        pendingSync = await cacheDao.isPendingSync(product.id);
+      } else {
+        unawaited(cacheDao.markSynced(product));
+      }
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _applyProduct(product!);
+      _pendingSync = pendingSync;
+    });
+
+    if (fromCache && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('Çevrimdışı kayıttan yüklendi — veriler son senkronizasyondan bu yana değişmiş olabilir.')),
+      );
+    }
   }
 
   Future<void> _pickImage() async {
@@ -311,54 +500,154 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
+    final product = Product(
+      id: _currentId ?? '',
+      barcode: _barcodeCtrl.text.trim().isEmpty ? null : _barcodeCtrl.text.trim(),
+      name: _nameCtrl.text.trim(),
+      stockCode: _stockCodeCtrl.text.trim().isEmpty ? null : _stockCodeCtrl.text.trim(),
+      groupId: _groupId,
+      unit: _unitCtrl.text.trim().isEmpty ? 'Adet' : _unitCtrl.text.trim(),
+      originCountry: _originCtrl.text.trim().isEmpty ? null : _originCtrl.text.trim(),
+      stockQuantity: _num(_stockCtrl),
+      criticalStock: _num(_criticalStockCtrl),
+      purchasePrice: _num(_purchasePriceCtrl),
+      // Mobilde KDV Dahil onay kutuları kaldırıldı — mobil her zaman KDV
+      // dahil kabul eder (davranış sabit); masaüstünde kullanıcı seçimi geçerli.
+      purchasePriceVatIncluded: context.isMobile ? true : _purchaseVatIncluded,
+      price1: _num(_price1Ctrl),
+      price1VatIncluded: context.isMobile ? true : _price1VatIncluded,
+      price2: _num(_price2Ctrl),
+      price2VatIncluded: _price2VatIncluded,
+      vatRate: _num(_vatRateCtrl),
+      weight: _weightCtrl.text.trim().isEmpty ? null : _num(_weightCtrl),
+      description: _composeDescription(),
+      imageUrl: _imageUrl,
+      quickListOrder: int.tryParse(_quickOrderCtrl.text.trim()),
+      isOnlineActive: _isOnlineActive,
+    );
+    final isNew = _currentId == null || _currentId!.isEmpty;
+
     try {
-      final product = Product(
-        id: _currentId ?? '',
-        barcode: _barcodeCtrl.text.trim().isEmpty ? null : _barcodeCtrl.text.trim(),
-        name: _nameCtrl.text.trim(),
-        stockCode: _stockCodeCtrl.text.trim().isEmpty ? null : _stockCodeCtrl.text.trim(),
-        groupId: _groupId,
-        unit: _unitCtrl.text.trim().isEmpty ? 'Adet' : _unitCtrl.text.trim(),
-        originCountry: _originCtrl.text.trim().isEmpty ? null : _originCtrl.text.trim(),
-        stockQuantity: _num(_stockCtrl),
-        criticalStock: _num(_criticalStockCtrl),
-        purchasePrice: _num(_purchasePriceCtrl),
-        purchasePriceVatIncluded: _purchaseVatIncluded,
-        price1: _num(_price1Ctrl),
-        price1VatIncluded: _price1VatIncluded,
-        price2: _num(_price2Ctrl),
-        price2VatIncluded: _price2VatIncluded,
-        vatRate: _num(_vatRateCtrl),
-        weight: _weightCtrl.text.trim().isEmpty ? null : _num(_weightCtrl),
-        description: _composeDescription(),
-        imageUrl: _imageUrl,
-        quickListOrder: int.tryParse(_quickOrderCtrl.text.trim()),
-        isOnlineActive: _isOnlineActive,
-      );
+      // Zaten "offline" olduğu biliniyorsa (son senkron probu başarısız
+      // oldu), her kayıtta 6sn'lik ağ timeout'unu tekrar tekrar beklemek
+      // yerine doğrudan kuyruğa düş — bekleme yalnız BİR KEZ (dead-zone'a
+      // girildiğinde) ödenir, aynı oturumdaki sonraki kayıtlar anında olur.
+      if (_knownOffline) {
+        await _completeOfflineSave(product, isNew: isNew);
+        return;
+      }
 
       final repo = ref.read(productRepositoryProvider);
       String id;
-      if (_currentId == null || _currentId!.isEmpty) {
-        id = await repo.create(product);
+      if (isNew) {
+        id = await withNetworkTimeout(repo.create(product));
       } else {
         id = _currentId!;
-        await repo.update(id, product);
+        await withNetworkTimeout(repo.update(id, product));
       }
 
       if (_pickedImageBytes != null) {
-        final url = await repo.uploadImage(id, _pickedImageBytes!, _pickedImageExt);
-        await repo.update(id, product.copyWith(imageUrl: url));
+        try {
+          final url = await withNetworkTimeout(repo.uploadImage(id, _pickedImageBytes!, _pickedImageExt));
+          await withNetworkTimeout(repo.update(id, product.copyWith(imageUrl: url)));
+        } on PostgrestException {
+          rethrow;
+        } catch (_) {
+          // Çekirdek kayıt sunucuya gitti; yalnız görsel adımı ağ hatasıyla
+          // başarısız oldu — yalnız görsel için offline kuyruğa düş (core
+          // kısım zaten senkron, `update` idempotent olduğundan yeniden
+          // gönderilmesi zararsız).
+          if (!kIsWeb) {
+            await _queueOffline(product.copyWith(id: id), operation: PendingChangeOperation.update);
+          }
+          if (mounted) {
+            ref.invalidate(productGroupsProvider);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content:
+                    Text('Ürün kaydedildi, ancak resim yüklenemedi — bağlantı gelince otomatik yüklenecek.')));
+            context.go('/products');
+          }
+          return;
+        }
       }
 
       ref.invalidate(productGroupsProvider);
+      if (!kIsWeb) {
+        unawaited(ref.read(productLocalCacheDaoProvider).markSynced(product.copyWith(id: id)));
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ürün kaydedildi')));
         context.go('/products');
       }
+    } on PostgrestException catch (e) {
+      // Sunucu YANIT VERDİ — gerçek red (ör. barkod çakışması ONLINE iken).
+      // Bağlantı sorunu değil; formda kal, kuyruğa ALMA.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(backgroundColor: AppColors.danger, content: Text(_friendlyPostgrestError(e))));
+      }
+    } catch (_) {
+      // Sunucu hiç yanıt vermedi (timeout/soket) — dead-zone senaryosu.
+      if (kIsWeb) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              backgroundColor: AppColors.danger,
+              content: Text('Bağlantı hatası — ürün kaydedilemedi, tekrar deneyin.')));
+        }
+        return;
+      }
+      await _completeOfflineSave(product, isNew: isNew);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Ürünü senkron kuyruğuna yazar ve kullanıcıyı bilgilendirip ekrandan
+  /// çıkar — hem "zaten offline olduğu biliniyordu" kısayolundan hem de
+  /// "ağ denemesi timeout'la başarısız oldu" dalından çağrılır.
+  Future<void> _completeOfflineSave(Product product, {required bool isNew}) async {
+    final id = _currentId ?? const Uuid().v4();
+    final operation = isNew ? PendingChangeOperation.create : PendingChangeOperation.update;
+    await _queueOffline(product.copyWith(id: id), operation: operation);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Bağlantı yok — ürün çevrimdışı kaydedildi, bağlantı gelince otomatik gönderilecek.')));
+      context.go('/products');
+    }
+  }
+
+  String _friendlyPostgrestError(PostgrestException e) {
+    if (e.code == '23505') return 'Bu barkod başka bir üründe kayıtlı.';
+    return 'Ürün kaydedilemedi: ${e.message}';
+  }
+
+  /// Ürünü senkron kuyruğuna yazar (offline oluşturma/düzenleme VEYA çekirdek
+  /// kayıt gitmiş ama görseli kalmış durum — ikisi de aynı yoldan gider,
+  /// `update` idempotent olduğundan tekrarı zararsızdır). Yalnız native.
+  Future<void> _queueOffline(Product product, {required PendingChangeOperation operation}) async {
+    String? imagePath;
+    if (_pickedImageBytes != null) {
+      final dir = await getApplicationSupportDirectory();
+      imagePath = '${dir.path}/pending_${product.id}.$_pickedImageExt';
+      await File(imagePath).writeAsBytes(_pickedImageBytes!);
+    }
+
+    final now = DateTime.now();
+    final payload = jsonEncode({'id': product.id, ...product.toInsertMap()});
+    await ref.read(pendingChangeDaoProvider).upsert(PendingChange(
+          productId: product.id,
+          operation: operation,
+          payloadJson: payload,
+          pendingImagePath: imagePath,
+          createdAt: now,
+          updatedAt: now,
+        ));
+    await ref.read(productLocalCacheDaoProvider).upsert(
+          product,
+          syncState: operation == PendingChangeOperation.create ? 'pending_create' : 'pending_update',
+        );
+    await ref.read(productSyncServiceProvider.notifier).notifyLocalQueueChanged();
   }
 
   /// Mevcut ürünü siler (yalnız düzenleme modunda, `_currentId` doluyken
@@ -486,7 +775,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     child: TabBarView(
                       children: [
                         _buildProductInfoTab(groupsAsync.value ?? []),
-                        _buildOtherDetailsTab(),
+                        _buildOtherDetailsTab(groupsAsync.value ?? []),
                       ],
                     ),
                   ),
@@ -543,19 +832,28 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   }
 
   Widget _buildProductInfoTab(List groups) {
-    final isMobile = context.isMobile;
+    // Mobil "Ürün Bilgisi" masaüstünden tamamen farklı bir alan seti/sırası
+    // kullanır (KARAR: bkz. design/plan notu — kompakt fiyat/kâr/stok ızgarası
+    // + Firma/Tarih/Durum bu sekmeye taşındı, Ürün Grubu/Birim/Kritik Stok/
+    // Menşe Ülke "Diğer Detaylar"a taşındı). Masaüstü aşağıdaki eski davranışla
+    // BİREBİR aynı kalır.
+    if (context.isMobile) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: _buildMobileProductInfoFields(),
+      );
+    }
 
-    // Resim bölümü: hem mobil hem masaüstünde paylaşılan widget
+    // Resim bölümü: yalnız masaüstünde gösterilir
     Widget imageSection = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Ürün resmi ekle (.jpg / .jpeg)'),
         const SizedBox(height: 8),
-        // Mobilde tam genişlik, masaüstünde sabit 160px
         ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: isMobile ? double.infinity : 160,
-            maxHeight: isMobile ? 200 : 160,
+          constraints: const BoxConstraints(
+            maxWidth: 160,
+            maxHeight: 160,
           ),
           child: AspectRatio(
             aspectRatio: 1,
@@ -591,7 +889,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       ],
     );
 
-    // Form alanları bölümü: her iki layout için ortak
+    // Form alanları bölümü: masaüstü (değişmedi)
     Widget formFields = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -769,150 +1067,316 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(vertical: 16),
-      child: isMobile
-          // Mobil: resim alanı gösterilmiyor, sadece form alanları
-          ? formFields
-          // Masaüstü: sol = form alanları (2/3), sağ = resim (1/3)
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 2, child: formFields),
-                const SizedBox(width: 24),
-                Expanded(child: imageSection),
-              ],
-            ),
+      // Masaüstü: sol = form alanları (2/3), sağ = resim (1/3)
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 2, child: formFields),
+          const SizedBox(width: 24),
+          Expanded(child: imageSection),
+        ],
+      ),
     );
   }
 
-  Widget _buildOtherDetailsTab() {
+  /// Alış/Satış alanları için renkli çerçeve+başlık üreten ortak yardımcı
+  /// (KARAR: Alış=kırmızı, Satış=yeşil — semantik renk, tema altın kenarlığının
+  /// bilinçli istisnası, yalnız bu iki mobil alanda).
+  InputDecoration _colorCodedDecoration(String label, Color color) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppSizes.inputRadius),
+      borderSide: BorderSide(color: color),
+    );
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: color, fontWeight: FontWeight.w700),
+      enabledBorder: border,
+      border: border,
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppSizes.inputRadius),
+        borderSide: BorderSide(color: color, width: 1.5),
+      ),
+    );
+  }
+
+  /// Mobil "Ürün Bilgisi" sekmesi — kompakt sıra: Ürün Adı → Alış|Kar% →
+  /// Satış|Stok → Firma|Tarih → Durum. KDV % "Diğer Detaylar"a taşındı.
+  /// KDV Dahil onay kutuları burada YOK — mobil her zaman KDV dahil kabul
+  /// eder (bkz. `_save()`).
+  Widget _buildMobileProductInfoFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _nameCtrl,
+          decoration: const InputDecoration(labelText: 'Ürün Adı *'),
+          validator: (v) =>
+              (v == null || v.trim().isEmpty) ? 'Ürün adı giriniz' : null,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _purchasePriceCtrl,
+                decoration: _colorCodedDecoration('Alış', AppColors.danger),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+                onChanged: (_) {
+                  _recalcMarginFromPrice1();
+                  setState(() {});
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _profitMargin1Ctrl,
+                decoration:
+                    const InputDecoration(labelText: 'Kar %', suffixText: '%'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+                onChanged: (_) {
+                  _recalcPrice1FromMargin();
+                  setState(() {});
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _price1Ctrl,
+                decoration: _colorCodedDecoration('Satış', AppColors.success),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+                onChanged: (_) {
+                  _recalcMarginFromPrice1();
+                  setState(() {});
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _stockCtrl,
+                decoration: const InputDecoration(labelText: 'Stok'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _buildFirmaField()),
+            const SizedBox(width: 12),
+            Expanded(child: _buildTarihField()),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildDurumField(),
+      ],
+    );
+  }
+
+  Widget _buildOtherDetailsTab(List groups) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Eşlenik Barkod — `_currentId` değişince (kaydedilmiş üründen
-          // yüklenince / barkodla getirilince) `key` widget'ı yeniden kurar,
-          // güncel ürünün grubunu yeniden yükler (bkz. `_applyProduct`).
-          EquivalentBarcodeSection(key: ValueKey(_currentId), productId: _currentId),
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _price2Ctrl,
-                  decoration: const InputDecoration(labelText: 'Fiyat 2 (Satış Fiyatı 2)'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: _decimalInputFormatters,
-                  onChanged: (_) => setState(() {}),
+      child: context.isMobile
+          ? _buildMobileOtherDetailsFields(groups)
+          : _buildDesktopOtherDetailsFields(),
+    );
+  }
+
+  /// Masaüstü "Diğer Detaylar" — değişmedi.
+  Widget _buildDesktopOtherDetailsFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Eşlenik Barkod — `_currentId` değişince (kaydedilmiş üründen
+        // yüklenince / barkodla getirilince) `key` widget'ı yeniden kurar,
+        // güncel ürünün grubunu yeniden yükler (bkz. `_applyProduct`).
+        EquivalentBarcodeSection(
+            key: ValueKey(_currentId), productId: _currentId, pendingSync: _pendingSync),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _price2Ctrl,
+                decoration: const InputDecoration(labelText: 'Fiyat 2 (Satış Fiyatı 2)'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              children: [
+                const Text('KDV Dahil', style: TextStyle(fontSize: 11)),
+                Checkbox(
+                  value: _price2VatIncluded,
+                  onChanged: (v) => setState(() => _price2VatIncluded = v ?? true),
                 ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: _buildKarOrani2Field()),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _stockCodeCtrl,
+                decoration: const InputDecoration(labelText: 'Stok Kodu'),
               ),
-              const SizedBox(width: 8),
-              Column(
-                children: [
-                  const Text('KDV Dahil', style: TextStyle(fontSize: 11)),
-                  Checkbox(
-                    value: _price2VatIncluded,
-                    onChanged: (v) => setState(() => _price2VatIncluded = v ?? true),
-                  ),
-                ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _weightCtrl,
+                decoration: const InputDecoration(labelText: 'Ürün Ağırlığı'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Kâr Oranı 2'),
-                  child: Text('%${_profitMargin2.toStringAsFixed(2)}'),
-                ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _quickOrderCtrl,
+                decoration: const InputDecoration(labelText: 'Hızlı Ürün Sırası'),
+                keyboardType: TextInputType.number,
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _stockCodeCtrl,
-                  decoration: const InputDecoration(labelText: 'Stok Kodu'),
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // FIRMA (otomatik tamamlama) — satış ekranındaki canlı arama diliyle aynı overlay.
+        _buildFirmaField(),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildTarihField()),
+            const SizedBox(width: 12),
+            Expanded(child: _buildDurumField()),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _isOnlineActive,
+          title: const Text('Online Aç'),
+          onChanged: (v) => setState(() => _isOnlineActive = v),
+        ),
+      ],
+    );
+  }
+
+  /// Mobil "Diğer Detaylar" — Eşlenik Barkod üstte kalır; Firma/Tarih/Durum
+  /// "Ürün Bilgisi"ne taşındığı için burada YOK; Fiyat 2 girişi kaldırıldı
+  /// (Kâr Oranı 2 salt-okunur göstergesi kalır); Ürün Grubu/Birim/Kritik
+  /// Stok/Menşe Ülke "Ürün Bilgisi"nden buraya taşındı.
+  Widget _buildMobileOtherDetailsFields(List groups) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        EquivalentBarcodeSection(
+            key: ValueKey(_currentId), productId: _currentId, pendingSync: _pendingSync),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _vatRateCtrl,
+                decoration: const InputDecoration(labelText: 'KDV %'),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _weightCtrl,
-                  decoration: const InputDecoration(labelText: 'Ürün Ağırlığı'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: _decimalInputFormatters,
-                ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: _buildKarOrani2Field()),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _stockCodeCtrl,
+                decoration: const InputDecoration(labelText: 'Stok Kodu'),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _quickOrderCtrl,
-                  decoration: const InputDecoration(labelText: 'Hızlı Ürün Sırası'),
-                  keyboardType: TextInputType.number,
-                ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _weightCtrl,
+                decoration: const InputDecoration(labelText: 'Ürün Ağırlığı'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // FIRMA (otomatik tamamlama) — satış ekranındaki canlı arama diliyle aynı overlay.
-          _CompanyAutocompleteField(
-            controller: _companyCtrl,
-            focusNode: _companyFocus,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              // TARİH — salt-okunur görünüm; dokununca tarih seçici açılır.
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(AppSizes.inputRadius),
-                  onTap: _pickDetailDate,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Tarih',
-                      suffixIcon: Icon(Icons.calendar_today, size: 18),
-                    ),
-                    child: Text(
-                      DateFormat('dd/MM/yy', 'tr_TR').format(_detailDate),
-                    ),
-                  ),
-                ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _quickOrderCtrl,
+                decoration: const InputDecoration(labelText: 'Hızlı Ürün Sırası'),
+                keyboardType: TextInputType.number,
               ),
-              const SizedBox(width: 12),
-              // DURUM — Yeni Eklendi (Y) / Güncellendi (G).
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: Text('Durum',
-                          style: TextStyle(
-                              fontSize: 12, color: AppColors.textSecondary)),
-                    ),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'Y', label: Text('Yeni Eklendi')),
-                        ButtonSegment(value: 'G', label: Text('Güncellendi')),
-                      ],
-                      selected: {_statusLetter},
-                      onSelectionChanged: (s) =>
-                          setState(() => _statusLetter = s.first),
-                    ),
-                  ],
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildUrunGrubuField(groups)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _unitCtrl,
+                decoration: const InputDecoration(labelText: 'Ürün Birimi'),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _isOnlineActive,
-            title: const Text('Online Aç'),
-            onChanged: (v) => setState(() => _isOnlineActive = v),
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _criticalStockCtrl,
+                decoration: const InputDecoration(labelText: 'Kritik Stok Miktarı'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: _decimalInputFormatters,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _originCtrl,
+                decoration: const InputDecoration(labelText: 'Menşe Ülke'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _isOnlineActive,
+          title: const Text('Online Aç'),
+          onChanged: (v) => setState(() => _isOnlineActive = v),
+        ),
+      ],
     );
   }
 }

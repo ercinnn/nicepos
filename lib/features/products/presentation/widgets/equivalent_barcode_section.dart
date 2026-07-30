@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/utils/responsive.dart';
+import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../data/models/product.dart';
 import '../../application/products_provider.dart';
 
@@ -20,7 +23,15 @@ class EquivalentBarcodeSection extends ConsumerStatefulWidget {
   /// null/boş ise ürün henüz kaydedilmemiş — bölüm devre dışı gösterilir.
   final String? productId;
 
-  const EquivalentBarcodeSection({super.key, required this.productId});
+  /// Çevrimdışı senkron bekleyen bir ürün için `true` — bu bölüm canlı arama
+  /// + anlık yazma gerektirdiğinden (bkz. sınıf dokümanı) offline TAMAMEN
+  /// desteklenmez. Offline oluşturulan bir ürün gerçek id'yi HEMEN aldığından
+  /// (bkz. product_sync_service.dart id üretimi), yalnız `productId` kontrolü
+  /// bu bölümü yanlışlıkla "aktif" gösterip timeout'suz bir ağ çağrısı
+  /// tetikleyebilirdi — bu yüzden ayrı bir bayrakla kapatılır.
+  final bool pendingSync;
+
+  const EquivalentBarcodeSection({super.key, required this.productId, this.pendingSync = false});
 
   @override
   ConsumerState<EquivalentBarcodeSection> createState() => _EquivalentBarcodeSectionState();
@@ -30,7 +41,8 @@ class _EquivalentBarcodeSectionState extends ConsumerState<EquivalentBarcodeSect
   bool _loading = true;
   List<Product> _members = [];
 
-  bool get _enabled => widget.productId != null && widget.productId!.isNotEmpty;
+  bool get _enabled =>
+      widget.productId != null && widget.productId!.isNotEmpty && !widget.pendingSync;
 
   @override
   void initState() {
@@ -111,9 +123,11 @@ class _EquivalentBarcodeSectionState extends ConsumerState<EquivalentBarcodeSect
           ),
           const SizedBox(height: AppSizes.space4),
           if (!_enabled)
-            const Text(
-              'Eşlenik barkod eklemek için önce ürünü kaydedin.',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            Text(
+              widget.pendingSync
+                  ? 'Bu ürün çevrimdışı kaydedildi — eşlenik barkod bağlantısı, sunucuyla senkronize olduktan sonra eklenebilir.'
+                  : 'Eşlenik barkod eklemek için önce ürünü kaydedin.',
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
             )
           else ...[
             const Text(
@@ -192,6 +206,15 @@ class _EquivalentProductPickerDialogState extends ConsumerState<_EquivalentProdu
     _debounce = Timer(const Duration(milliseconds: 250), () => _search(q));
   }
 
+  /// Kamerayı açar; okunan barkodu arama kutusuna yazar ve hemen arar
+  /// (debounce beklenmez). Sadece mobil/native (bkz. `openBarcodeScanner`).
+  Future<void> _scanBarcode() async {
+    await openBarcodeScanner(context, (value) {
+      _controller.text = value.trim();
+      _search(value.trim());
+    });
+  }
+
   Future<void> _search(String q) async {
     if (q.trim().isEmpty) {
       setState(() => _results = []);
@@ -220,14 +243,38 @@ class _EquivalentProductPickerDialogState extends ConsumerState<_EquivalentProdu
         height: 420,
         child: Column(
           children: [
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'Ürün adı veya barkod ara...',
-                prefixIcon: Icon(Icons.search, size: 18),
-              ),
-              onChanged: _onChanged,
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Ürün adı veya barkod ara...',
+                      prefixIcon: Icon(Icons.search, size: 18),
+                    ),
+                    onChanged: _onChanged,
+                  ),
+                ),
+                // Kamera ile barkod okut — sadece mobil/native
+                if (!kIsWeb && context.isMobile) ...[
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 48,
+                    width: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: _scanBarcode,
+                      child: const Icon(Icons.camera_alt_outlined, size: 22),
+                    ),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: AppSizes.space8),
             Expanded(

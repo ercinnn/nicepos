@@ -65,6 +65,13 @@ dependencies:
   # Tek codepath ile hem web hem Android'de çalışır.
   audioplayers: ^6.1.0
   flutter_tts: ^4.2.5
+  # Mobil çevrimdışı ürün ekleme/düzenleme (offline sync): yerel ürün kataloğu
+  # aynası + bekleyen kayıt kuyruğu (sqflite), bağlantı değişikliği tetikleyicisi
+  # (connectivity_plus — TEK BAŞINA yeterli değil, gerçek erişilebilirlik ayrıca
+  # bir Supabase round-trip ile doğrulanır, bkz. product_sync_service.dart).
+  # İkisi de yalnız native/Android'de kullanılır (!kIsWeb guard).
+  sqflite: ^2.4.1
+  connectivity_plus: ^6.1.3
 
 dev_dependencies:
   flutter_test:

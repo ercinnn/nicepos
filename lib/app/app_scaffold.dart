@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,9 @@ import '../core/constants/app_sizes.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/responsive.dart';
 import '../features/auth/application/auth_provider.dart';
+import '../features/products/application/product_sync_service.dart';
+import '../features/products/application/sync_status.dart';
+import '../features/products/presentation/widgets/sync_status_badge.dart';
 
 class _NavItem {
   final String label;
@@ -58,8 +62,38 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
   void _toggleSidebar() => setState(() => _expanded = !_expanded);
 
   @override
+  void initState() {
+    super.initState();
+    // Mobil çevrimdışı ürün senkronu — uygulama açılışında bir kez, önceki
+    // oturumdan kalan bekleyen kayıt varsa hemen göndermeyi dener. `AppScaffold`
+    // `ShellRoute` içinde tüm ekranları sardığından bu State bir oturumda
+    // yalnız bir kez kurulur (rota değişimlerinde yeniden çalışmaz). Yalnız
+    // native — web'de sqflite/connectivity_plus hiç kullanılmaz.
+    if (!kIsWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(productSyncServiceProvider.notifier).syncNow();
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final email = ref.watch(currentUserEmailProvider);
+
+    // Mobil çevrimdışı ürün senkronu — arka planda (kullanıcı hiç dokunmadan,
+    // ör. periyodik prob veya connectivity geri gelince) sessizce tamamlanan
+    // bir senkron döngüsünü bildirir. `AppScaffold` tüm rotaları sardığından
+    // kullanıcı hangi ekranda olursa olsun görür. Yalnız native — web'de
+    // `ProductSyncService` hiç tetiklenmez (bkz. plan notu, sync_status.dart
+    // `lastSyncedCount`).
+    if (!kIsWeb) {
+      ref.listen<SyncStatus>(productSyncServiceProvider, (prev, next) {
+        if (next.lastSyncedCount > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('${next.lastSyncedCount} ürün kaydı senkronize edildi')));
+        }
+      });
+    }
 
     if (context.isMobile) {
       return _MobileScaffold(
@@ -144,6 +178,10 @@ class _MobileScaffold extends ConsumerWidget {
           ],
         ),
         actions: [
+          // Mobil çevrimdışı ürün senkronu — yalnız native (bkz. plan notu:
+          // `!kIsWeb` guard, `context.isMobile` DEĞİL, çünkü bir Android
+          // tablet yatayda "masaüstü" `_TopBar`'ı render edebilir).
+          if (!kIsWeb) const SyncStatusBadge(),
           IconButton(
             icon: const Icon(Icons.logout, color: AppColors.textSecondary, size: 20),
             onPressed: () => Supabase.instance.client.auth.signOut(),
@@ -713,6 +751,13 @@ class _TopBar extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
+          ],
+          // Mobil çevrimdışı ürün senkronu — bir Android tablet yatayda bu
+          // "masaüstü" `_TopBar`'ı render edebileceğinden `!kIsWeb` guard'ı
+          // burada da geçerli (bkz. `initState` notu).
+          if (!kIsWeb) ...[
+            const SyncStatusBadge(),
+            const SizedBox(width: 4),
           ],
           TextButton.icon(
             onPressed: () => Supabase.instance.client.auth.signOut(),

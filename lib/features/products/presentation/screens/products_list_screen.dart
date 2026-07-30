@@ -9,14 +9,18 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/skeleton.dart';
+import '../../data/local/product_local_cache_dao.dart';
 import '../../data/models/product.dart';
 import '../../data/models/product_filters.dart';
 import '../../data/models/equivalent_aggregate.dart';
 import '../../application/product_columns_provider.dart';
+import '../../application/product_sync_service.dart';
 import '../../application/products_provider.dart';
+import '../../application/sync_status.dart';
 import '../widgets/excel_import_dialog.dart';
 import '../widgets/excel_export.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
@@ -91,6 +95,14 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   List<Product> _products = [];
   bool _loading = true;
   String? _error;
+
+  /// Liste şu an yerel önbellekten (`products_cache`) mi geliyor — bkz.
+  /// `_loadProductsOffline`. `true` iken sunucu gerektiren özellikler
+  /// (Durum filtresi, sunucu-taraflı sıralama, Excel, Ürün Özet, satır içi
+  /// düzenleme/silme) UI'da pasif/gizli kalır; yalnız isim/barkod/stok kodu
+  /// arama + grup filtresi + ürüne dokunup düzenleme (zaten offline'a hazır
+  /// `ProductFormScreen`) çalışır.
+  bool _offline = false;
 
   final Set<String> _selectedIds = {};
 
@@ -179,8 +191,16 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       _error = null;
       _selectedIds.clear();
     });
+    // Zaten "offline" olduğu biliniyorsa (son senkron probu başarısız oldu —
+    // bkz. product_form_screen.dart `_knownOffline` deseni), 6sn'lik ağ
+    // timeout'unu tekrar tekrar beklemeden direkt yerel önbelleğe düş.
+    final knownOffline = !kIsWeb && ref.read(productSyncServiceProvider).phase == SyncPhase.offline;
+    if (knownOffline) {
+      await _loadProductsOffline();
+      return;
+    }
     try {
-      final rows = await ref.read(productRepositoryProvider).fetchPaged(
+      final rows = await withNetworkTimeout(ref.read(productRepositoryProvider).fetchPaged(
             query: _query,
             groupId: _selectedGroupId,
             filters: _filters,
@@ -188,21 +208,55 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             sortAscending: _sortAscending,
             page: _page,
             pageSize: kProductPageSize,
-          );
+          ));
       if (!mounted) return;
       setState(() {
         _products = rows;
         _loading = false;
+        _offline = false;
       });
       _loadStatuses();
       _loadEquivalents();
     } catch (e) {
       if (!mounted) return;
+      // Sunucu hiç yanıt vermedi (timeout/soket) — dead-zone senaryosu,
+      // yerel önbelleğe düş (yalnız native, web'de sqflite yok). Sunucunun
+      // GERÇEK bir hata döndürdüğü durumda (ör. RPC hatası) da aynı yola
+      // düşmek zararsız — önbellek boşsa zaten "Ürün bulunamadı" görünür.
+      if (!kIsWeb) {
+        await _loadProductsOffline();
+        return;
+      }
       setState(() {
         _error = e.toString();
         _loading = false;
       });
     }
+  }
+
+  // Ürünler listesi offline fallback — yalnız native. Sunucu gerektiren
+  // özellikler (Durum, sunucu-taraflı sıralama/filtreler, Excel, Ürün Özet)
+  // bu modda pasif kalır (bkz. _offline bayrağının UI'daki kullanımı);
+  // yalnız isim/barkod/stok kodu arama + grup filtresi + isim sıralı liste +
+  // istemci taraflı sayfalama (mevcut `kProductPageSize`/`_hasMore`
+  // deseniyle birebir — bkz. `_ProductRepository.fetchPaged`'in RPC dalı)
+  // çalışır.
+  Future<void> _loadProductsOffline() async {
+    final all = await ref.read(productLocalCacheDaoProvider).searchCached(
+          query: _query,
+          groupId: _selectedGroupId,
+        );
+    final start = _page * kProductPageSize;
+    final pageRows = all.skip(start).take(kProductPageSize + 1).toList();
+    if (!mounted) return;
+    setState(() {
+      _products = pageRows;
+      _loading = false;
+      _offline = true;
+      // Durum/Eşlenik Barkod agregatı sunucu-only — offline'da veri yok.
+      _statuses = {};
+      _equivalents = {};
+    });
   }
 
   // "Durum" bilgisini o an listelenen ürünler için ayrıca çeker (ana ürün
@@ -413,6 +467,13 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
     return _buildDesktop(context);
   }
 
+  // Çevrimdışı görünürken tıklanınca hiçbir şey olmayan sunucu-only
+  // kontroller için kısa bir bilgilendirme (sessizce no-op yerine).
+  void _offlineUnavailable(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Bu özellik çevrimdışıyken kullanılamaz.')));
+  }
+
   // ─── Mobil layout ────────────────────────────────────────────────────────
 
   Widget _buildMobile(BuildContext context) {
@@ -426,9 +487,9 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           children: [
             Text('Ürünler', style: Theme.of(context).textTheme.titleLarge),
             const Spacer(),
-            // Ürün Özet butonu — masaüstüyle aynı işlevi mobilde de sunar
+            // Ürün Özet butonu — sunucu-only, offline'da pasif.
             IconButton(
-              onPressed: _showSummary,
+              onPressed: _offline ? null : _showSummary,
               icon: const Icon(Icons.summarize_outlined),
               tooltip: 'Ürün Özet',
               color: AppColors.primary,
@@ -441,6 +502,10 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           ],
         ),
         const SizedBox(height: AppSizes.space12),
+        if (_offline) ...[
+          const _OfflineBanner(),
+          const SizedBox(height: AppSizes.space8),
+        ],
         // Arama
         TextField(
           controller: _searchController,
@@ -533,29 +598,33 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             Text('Ürünler', style: Theme.of(context).textTheme.titleLarge),
             const Spacer(),
             OutlinedButton.icon(
-              onPressed: () async {
-                final all = await ref.read(productRepositoryProvider).fetchAll(
-                      query: _query, groupId: _selectedGroupId, filters: _filters,
-                      sortColumn: _sortColumn, sortAscending: _sortAscending);
-                final result = await exportProductsToExcel(all);
-                if (result != null && mounted) {
-                  // ignore: use_build_context_synchronously
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Excel kaydedildi: $result')));
-                }
-              },
+              onPressed: _offline
+                  ? () => _offlineUnavailable(context)
+                  : () async {
+                      final all = await ref.read(productRepositoryProvider).fetchAll(
+                            query: _query, groupId: _selectedGroupId, filters: _filters,
+                            sortColumn: _sortColumn, sortAscending: _sortAscending);
+                      final result = await exportProductsToExcel(all);
+                      if (result != null && mounted) {
+                        // ignore: use_build_context_synchronously
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Excel kaydedildi: $result')));
+                      }
+                    },
               icon: const Icon(Icons.file_download_outlined),
               label: const Text('Excel Aktar'),
             ),
             const SizedBox(width: AppSizes.space8),
             OutlinedButton.icon(
-              onPressed: () async {
-                await showDialog(
-                    context: context, builder: (_) => const ExcelImportDialog());
-                if (!mounted) return;
-                ref.invalidate(productGroupsProvider);
-                await _loadProducts();
-              },
+              onPressed: _offline
+                  ? () => _offlineUnavailable(context)
+                  : () async {
+                      await showDialog(
+                          context: context, builder: (_) => const ExcelImportDialog());
+                      if (!mounted) return;
+                      ref.invalidate(productGroupsProvider);
+                      await _loadProducts();
+                    },
               icon: const Icon(Icons.file_upload_outlined),
               label: const Text('Excel İçe Aktar'),
             ),
@@ -568,6 +637,10 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
           ],
         ),
         const SizedBox(height: AppSizes.space12),
+        if (_offline) ...[
+          const _OfflineBanner(),
+          const SizedBox(height: AppSizes.space8),
+        ],
         Row(
           children: [
             SizedBox(
@@ -609,7 +682,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             ),
             const SizedBox(width: AppSizes.space12),
             OutlinedButton.icon(
-              onPressed: _showSummary,
+              onPressed: _offline ? () => _offlineUnavailable(context) : _showSummary,
               icon: const Icon(Icons.summarize_outlined, size: 18),
               label: const Text('Ürün Özet'),
             ),
@@ -704,6 +777,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                             onUpdate: _updateProduct,
                             onToggleSelect: _toggleSelect,
                             onToggleSelectAll: _toggleSelectAll,
+                            readOnly: _offline,
                           ),
           ),
         ),
@@ -1001,6 +1075,40 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
+// ── Çevrimdışı bant ────────────────────────────────────────────────────────
+// `_offline == true` iken listenin üstünde gösterilir — mevcut "Sütun
+// filtresi aktif" pill'iyle aynı görsel dilde, yalnız nötr (danger değil,
+// bu bir hata değil bilinçli bir mod).
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space12, vertical: AppSizes.space8),
+      decoration: BoxDecoration(
+        color: AppColors.textMuted.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        border: Border.all(color: AppColors.textMuted.withValues(alpha: 0.3)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.textSecondary),
+          SizedBox(width: AppSizes.space8),
+          Expanded(
+            child: Text(
+              'Çevrimdışı görünüm — yerel önbellekten listeleniyor. Arama ve grup filtresi çalışır; '
+              'düzenlemek için bir ürüne dokunun.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // Durum filtre dialogunda "Tümü" (value=null) seçimini "dialog kapatıldı,
 // hiçbir şey seçilmedi" (showDialog'un doğal null dönüşü) durumundan ayırt
 // etmek için ince bir sarmalayıcı.
@@ -1029,6 +1137,12 @@ class _ProductsTable extends StatefulWidget {
   final void Function(String id) onToggleSelect;
   final VoidCallback onToggleSelectAll;
 
+  /// Çevrimdışı önbellekten geliniyorsa `true` — sunucu gerektiren tüm
+  /// etkileşimler (toplu seçim/silme, satır Sil, hücre içi düzenleme, sütun
+  /// sıralama/filtreleri) pasif kalır; yalnız satıra dokunup düzenleme
+  /// (ürün formuna gider, zaten offline'a hazır) çalışır.
+  final bool readOnly;
+
   const _ProductsTable({
     required this.products,
     required this.visibleColumns,
@@ -1046,6 +1160,7 @@ class _ProductsTable extends StatefulWidget {
     required this.onUpdate,
     required this.onToggleSelect,
     required this.onToggleSelectAll,
+    this.readOnly = false,
   });
 
   @override
@@ -1214,34 +1329,42 @@ class _ProductsTableState extends State<_ProductsTable> {
 
   List<DataColumn> _buildColumns() {
     return [
-      // Sabit: Checkbox
+      // Sabit: Checkbox — offline'da toplu işlem (silme) yok, boş bırakılır
+      // (kolon index'lerini _sortColumnIndex ile hizalı tutmak için kolon
+      // TAMAMEN kaldırılmaz, yalnız içeriği boşaltılır).
       DataColumn(
-        label: Checkbox(
-          value: widget.allSelected,
-          tristate: widget.selectedIds.isNotEmpty && !widget.allSelected,
-          onChanged: (_) => widget.onToggleSelectAll(),
-          activeColor: AppColors.primary,
-        ),
+        label: widget.readOnly
+            ? const SizedBox.shrink()
+            : Checkbox(
+                value: widget.allSelected,
+                tristate: widget.selectedIds.isNotEmpty && !widget.allSelected,
+                onChanged: (_) => widget.onToggleSelectAll(),
+                activeColor: AppColors.primary,
+              ),
       ),
-      // Sabit: Durum (Çok Satan / Tükendi / Pasif) — filtrelenebilir (dropdown).
+      // Sabit: Durum (Çok Satan / Tükendi / Pasif) — filtrelenebilir (dropdown),
+      // offline'da veri de filtre de yok (bkz. _ProductsListScreenState._loadProductsOffline).
       DataColumn(
         label: _headerWithFilter(
           context,
           'Durum',
           active: widget.filters.status != null,
-          onTap: () => _showStatusFilterDialog(context),
+          onTap: widget.readOnly ? () {} : () => _showStatusFilterDialog(context),
         ),
       ),
       // Sabit: Sıra
       const DataColumn(label: Text('#')),
-      // Sabit: Ürün Adı — alfabetik sıralanabilir (A-Z / Z-A).
+      // Sabit: Ürün Adı — alfabetik sıralanabilir (A-Z / Z-A), offline'da
+      // liste zaten yerelde isme göre sıralı geldiğinden sunucu-taraflı
+      // sıralama pasif.
       DataColumn(
         label: const Text('Ürün Adı'),
-        onSort: (columnIndex, ascending) => widget.onSortChanged('name', ascending),
+        onSort: widget.readOnly ? null : (columnIndex, ascending) => widget.onSortChanged('name', ascending),
       ),
       // Dinamik kolonlar — sayısal olanlar sağa dayalı (tarama kolaylığı),
       // her biri (Görsel hariç) sütun başlığında filtre ikonu taşır; sayısal
-      // olanlar + Barkod ayrıca sıralanabilir (bkz. _dbColumnFor).
+      // olanlar + Barkod ayrıca sıralanabilir (bkz. _dbColumnFor). Offline'da
+      // ikisi de sunucu gerektirdiğinden pasif.
       ...ProductColumn.values
           .where((c) => widget.visibleColumns.contains(c))
           .map((c) => DataColumn(
@@ -1251,10 +1374,10 @@ class _ProductsTableState extends State<_ProductsTable> {
                         context,
                         c.label,
                         active: _isColumnFilterActive(c),
-                        onTap: () => _showColumnFilterDialog(context, c),
+                        onTap: widget.readOnly ? () {} : () => _showColumnFilterDialog(context, c),
                       ),
                 numeric: _isNumericColumn(c),
-                onSort: _dbColumnFor(c) == null
+                onSort: (widget.readOnly || _dbColumnFor(c) == null)
                     ? null
                     : (columnIndex, ascending) => widget.onSortChanged(_dbColumnFor(c)!, ascending),
               )),
@@ -1547,12 +1670,14 @@ class _ProductsTableState extends State<_ProductsTable> {
     final saving = _savingIds.contains(p.id);
     final editing = _editingIds.contains(p.id);
     return [
-      // Sabit: Checkbox
-      DataCell(Checkbox(
-        value: selected,
-        onChanged: (_) => widget.onToggleSelect(p.id),
-        activeColor: AppColors.primary,
-      )),
+      // Sabit: Checkbox — offline'da toplu seçim yok (bkz. _buildColumns).
+      DataCell(widget.readOnly
+          ? const SizedBox.shrink()
+          : Checkbox(
+              value: selected,
+              onChanged: (_) => widget.onToggleSelect(p.id),
+              activeColor: AppColors.primary,
+            )),
       // Sabit: Durum (Çok Satan / Tükendi / Pasif)
       DataCell(_StatusBadge(status: widget.statuses[p.id])),
       // Sabit: Sıra
@@ -1633,12 +1758,14 @@ class _ProductsTableState extends State<_ProductsTable> {
                 ],
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline,
-                size: 18, color: AppColors.danger),
-            tooltip: 'Sil',
-            onPressed: () => widget.onDelete(p),
-          ),
+          // Sil — offline'da kuyruğa alınmıyor (kapsam dışı, bkz. plan notu), gizli.
+          if (!widget.readOnly)
+            IconButton(
+              icon: const Icon(Icons.delete_outline,
+                  size: 18, color: AppColors.danger),
+              tooltip: 'Sil',
+              onPressed: () => widget.onDelete(p),
+            ),
         ],
       )),
     ];
@@ -1655,7 +1782,9 @@ class _ProductsTableState extends State<_ProductsTable> {
     bool bold = false,
     bool numeric = false,
   }) {
-    if (_editingIds.contains(p.id)) {
+    // Offline'da hücre içi düzenleme yok (repo.update doğrudan çağırır,
+    // offline kuyruğa almaz) — dokunma her zaman salt-okunur kalır.
+    if (!widget.readOnly && _editingIds.contains(p.id)) {
       // Aynı satırın tüm haneleri (+ Güncelle/Vazgeç butonları, bkz.
       // _buildCells) AYNI groupId ile TapRegion'a sarılır — Enter'a basmak
       // VEYA bu grubun DIŞINDA bir yere (başka bir ürünün hanesi, boş alan)
@@ -1674,7 +1803,7 @@ class _ProductsTableState extends State<_ProductsTable> {
     return SizedBox(
       width: width,
       child: InkWell(
-        onTap: () => _enterEdit(p),
+        onTap: widget.readOnly ? null : () => _enterEdit(p),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: AppSizes.space6),
           child: Text(
