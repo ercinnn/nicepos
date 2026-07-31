@@ -85,6 +85,12 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   riverpod_generator: ^2.6.4
   build_runner: ^2.4.14
+  # App icon (Android + web) + splash screen üretimi — kaynak: pos.png (NiCE
+  # tente logosu). `dart run flutter_launcher_icons` / `dart run
+  # flutter_native_splash:create` ile yeniden üretilir; ikisi de yalnız build
+  # zamanı araçları, uygulamaya derlenmez.
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -130,3 +136,22 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "pos.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "pos.png"
+    background_color: "#ffffff"
+    theme_color: "#1B2A4A"
+
+flutter_native_splash:
+  color: "#ffffff"
+  image: "pos.png"
+  android_12:
+    image: "pos.png"
+    color: "#ffffff"
+  web: false
