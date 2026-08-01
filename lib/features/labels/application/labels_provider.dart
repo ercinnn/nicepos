@@ -16,12 +16,6 @@ const int kWideCols = 2;
 const int kWideRows = 5;
 const int kWideCount = kWideCols * kWideRows; // 10
 
-/// Büyük Etiket sabitleri (KARAR v1.19): A4 dikey, merkez haç ile 2 sütun × 2
-/// satır = 4 A5 etiket/A4. Her çeyrek tam yarım sayfa (105×148.5mm), dış margin
-/// YOK; merkez haç (dikey x=105mm / yatay y=148.5mm) = hücre ayraçları.
-const int kQuadCols = 2;
-const int kQuadRows = 2;
-const int kQuadCount = kQuadCols * kQuadRows; // 4
 
 /// Etiket sayfasının durumu: 24 hanelik liste (`null` = boş hane) + mağaza logosu
 /// (data URL / base64; hem önizleme hem baskıda kullanılır).
@@ -137,53 +131,60 @@ class LabelWideSheet extends _$LabelWideSheet {
   }
 }
 
-// ─── Büyük Etiket sayfası (KARAR v1.19) ──────────────────────────────────────
+// ─── Poster sayfası (KARAR v1.23) ─────────────────────────────────────────────
 
-/// Büyük Etiket sayfasının durumu: 4 hanelik liste (`null` = boş hane). Mağaza
-/// logosu ayrı tutulmaz — dar-logo `LabelSheet`'in kalıcı store logosu
-/// (`logoDataUrl`) paylaşılır. dar 24-hane / geniş 10-hane provider'larıyla
-/// KARIŞMAZ (bağımsız `keepAlive` state).
-class LabelQuadSheetState {
-  final List<LabelSlot?> slots;
+/// Poster sayfasının durumu: barkod okutulan ürünlerin (ad + fiyat) büyümesi
+/// serbest bir liste. Sabit hane sayısı YOK (Yeni/Geniş etiketlerin aksine) —
+/// 1 ürün de, 10+ ürün de olabilir; A4 sayfa doldukça `paginatePosterItems`
+/// ile çok-sayfalıya böler. Aynı barkod tekrar okutulursa (fiyat/ad
+/// güncellenmiş olabilir) mevcut satır YERİNDE güncellenir, yeni satır
+/// EKLENMEZ.
+class LabelPosterSheetState {
+  final List<LabelSlot> items;
 
-  const LabelQuadSheetState({required this.slots});
+  const LabelPosterSheetState({required this.items});
 
-  factory LabelQuadSheetState.initial() => LabelQuadSheetState(
-        slots: List<LabelSlot?>.filled(kQuadCount, null),
-      );
+  factory LabelPosterSheetState.initial() =>
+      const LabelPosterSheetState(items: []);
 
-  int get filledCount => slots.where((s) => s != null).length;
+  int get itemCount => items.length;
 
-  LabelQuadSheetState copyWith({List<LabelSlot?>? slots}) {
-    return LabelQuadSheetState(slots: slots ?? this.slots);
+  LabelPosterSheetState copyWith({List<LabelSlot>? items}) {
+    return LabelPosterSheetState(items: items ?? this.items);
   }
 }
 
-/// Büyük Etiket sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4 hane
-/// korunur (dar-logo `LabelSheet` deseninin logosuz 4-haneli kopyası; dar
-/// 24-hane / geniş 10-hane provider'larıyla KARIŞMAZ).
+/// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste
+/// korunur (diğer etiket provider'larıyla KARIŞMAZ). Mağaza logosu dar-logo
+/// `LabelSheet`'in kalıcı store logosundan paylaşılır (bu sekmede ayrı logo
+/// yükleme YOK).
 @Riverpod(keepAlive: true)
-class LabelQuadSheet extends _$LabelQuadSheet {
+class LabelPosterSheet extends _$LabelPosterSheet {
   @override
-  LabelQuadSheetState build() => LabelQuadSheetState.initial();
+  LabelPosterSheetState build() => LabelPosterSheetState.initial();
 
-  void setSlot(int index, LabelSlot slot) {
-    if (index < 0 || index >= kQuadCount) return;
-    final next = List<LabelSlot?>.from(state.slots);
-    next[index] = slot;
-    state = state.copyWith(slots: next);
+  /// Barkodu zaten listede olan bir ürün tekrar okutulursa satırı yerinde
+  /// günceller (fiyat/ad tazelenir); yoksa listenin sonuna ekler.
+  void addOrUpdateItem(LabelSlot slot) {
+    final idx = state.items.indexWhere((it) => it.barcode == slot.barcode);
+    if (idx >= 0) {
+      final next = [...state.items];
+      next[idx] = slot;
+      state = state.copyWith(items: next);
+    } else {
+      state = state.copyWith(items: [...state.items, slot]);
+    }
   }
 
-  void clearSlot(int index) {
-    if (index < 0 || index >= kQuadCount) return;
-    final next = List<LabelSlot?>.from(state.slots);
-    next[index] = null;
-    state = state.copyWith(slots: next);
+  /// [index] kalemini listeden çıkarır.
+  void removeItem(int index) {
+    if (index < 0 || index >= state.items.length) return;
+    final next = [...state.items]..removeAt(index);
+    state = state.copyWith(items: next);
   }
 
-  void clearAll() {
-    state = state.copyWith(slots: List<LabelSlot?>.filled(kQuadCount, null));
-  }
+  /// Tüm kalemleri temizler.
+  void clearAll() => state = LabelPosterSheetState.initial();
 }
 
 // ─── Ürün Etiketi sayfası (KARAR v1.21) ──────────────────────────────────────
@@ -191,7 +192,7 @@ class LabelQuadSheet extends _$LabelQuadSheet {
 /// Ürün Etiketi sayfasının durumu: adet-tabanlı kalem listesi (ürün adı ·
 /// barkod · adet). Fiyat/logo YOK. Kalemler adet kadar çoğaltılıp 72'lik
 /// ızgaraya dizilir; toplam > 72 ise 2., 3. sayfaya taşar. Diğer etiket
-/// provider'larına (`LabelSheet`/`LabelWideSheet`/`LabelQuadSheet`) KARIŞMAZ.
+/// provider'larına (`LabelSheet`/`LabelWideSheet`/`LabelPosterSheet`) KARIŞMAZ.
 class LabelProductSheetState {
   final List<ProductLabelItem> items;
 

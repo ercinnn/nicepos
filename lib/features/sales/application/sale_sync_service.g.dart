@@ -27,7 +27,7 @@ final pendingSalesListProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PendingSalesListRef = AutoDisposeFutureProviderRef<List<PendingSale>>;
-String _$saleSyncServiceHash() => r'51af05963b85108966cdcfc9dedeedbfe9c47a87';
+String _$saleSyncServiceHash() => r'7cb3ca9afff9517b6c86d4c64cf042872be6d92e';
 
 /// Mobil çevrimdışı Nakit/POS satış — senkron motoru. `ProductSyncService`
 /// ile birebir aynı iskelet (`SyncStatus` tipini AYNEN paylaşır); reachability

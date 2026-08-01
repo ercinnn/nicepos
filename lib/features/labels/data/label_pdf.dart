@@ -29,14 +29,6 @@ const String _storeIconSvg =
     '<path fill="#1B2A4A" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
     '</svg>';
 
-// Büyük Etiket kırmızı başlık bandı fallback ikonu (KARAR v1.20) — bu bantta
-// istisnai olarak BEYAZ (kırmızı zemin üstünde okunurluk için), diğer
-// sekmelerin ink-lacivert fallback'inden farklı.
-const String _storeIconSvgWhite =
-    '<svg viewBox="0 0 24 24" width="100%" height="100%">'
-    '<path fill="#FFFFFF" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
-    '</svg>';
-
 const PdfColor _hairline = PdfColor.fromInt(0xFFB8B8B8);
 const PdfColor _hairlineEmpty = PdfColor.fromInt(0xFFE0E0E0);
 const PdfColor _dateGrey = PdfColor.fromInt(0xFF555555);
@@ -446,33 +438,26 @@ pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? figurImage) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Büyük Etiket PDF üretimi (KARAR v1.19) — A4 dikey, merkez haç ile 2 sütun ×
-// 2 satır = 4 A5 etiket. Kesin baskı geometrisi (önizleme = HTML = PDF, üçü
-// BİREBİR): hücre 105×148.5mm, dış margin YOK (merkez haç = bitişik hücre
-// kenarlıkları), iç güvenli boşluk 6mm. Etiket-içi düzen dar-logo (Yeni Etiket)
-// ile aynı öğe seti, A5'e oranlanmış (~1.8× büyük). Çıktı SİYAH/BEYAZ + RENKLİ
-// mağaza logosu (yoksa mağaza ikonu fallback).
+// Poster PDF üretimi (KARAR v1.23) — A4 dikey, tek sütunlu profesyonel ürün
+// listesi (ürün adı solda · fiyat sağda). Sabit ızgara YOK: satır sayısı 1'den
+// 20'ye (bkz. `kPosterItemsPerPage`) kadar değişebilir; sayfa BOŞ kalmasın diye
+// satır yüksekliği/fontu kalem sayısına göre ORANLANIR (az kalem → iri "poster"
+// satırları, çok kalem → kompakt tablo). Toplam > 20 ise 2., 3. sayfaya taşar.
+// Çıktı SİYAH/BEYAZ + isteğe bağlı RENKLİ mağaza logosu (Yeni Etiket'in kalıcı
+// logosu paylaşılır). Önizleme = HTML = PDF birebir.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const int _kQuadCols = 2;
-const int _kQuadRows = 2;
+const PdfColor _posterInk = PdfColor.fromInt(0xFF1B2A4A); // AppColors.primary
+const PdfColor _posterMuted = PdfColor.fromInt(0xFF6B7280);
+const PdfColor _posterZebra = PdfColor.fromInt(0xFFF4F5F7);
 
-// KARAR v1.20.1 — üst bant (kırmızı) SABİT yükseklik (Flutter
-// `_kQuadTopBandHeightMm` ile birebir aynı mm değeri; üç çıktı BİREBİR): v1.20
-// bandı "içerik kadar esniyordu", 2 satırlık ürün adında büyüyen bant + fiyat
-// kutusunun sabit bütçesi birleşince barkod alanı sıfır/negatif yüksekliğe
-// düşüp `barcode` paketinin `assert(height > 0)` çökmesine yol açıyordu. Bant
-// artık 2 satırlık ürün adı DAHİL en kötü durum baştan hesaplanıp SABİTLENİR.
-const double _kQuadTopBandHeightMm = 23.3;
+double _posterClamp(double v, double lo, double hi) =>
+    v < lo ? lo : (v > hi ? hi : v);
 
-// Savunma katmanı (madde 3): barkod alanına ayrılan gerçek yükseklik bu
-// eşiğin altına düşerse `pw.BarcodeWidget` HİÇ render edilmez — `assert`
-// asla fırlatılmaz. Normal koşulda (madde 1 ile) bu dala girilmesi beklenmez.
-const double _kQuadBarcodeMinHeightMm = 2;
-
-/// Dolu/boş 4 haneyi A4 dikey 2×2 Büyük Etiket PDF'ine dönüştürür.
-Future<Uint8List> buildQuadLabelsPdf({
-  required List<LabelSlot?> slots,
+/// Poster kalemlerini (çok-sayfalı, [paginatePosterItems]) A4 dikey profesyonel
+/// ürün listesi PDF'ine dönüştürür.
+Future<Uint8List> buildPosterPdf({
+  required List<LabelSlot> items,
   String? logoDataUrl,
 }) async {
   pw.ThemeData theme;
@@ -496,232 +481,159 @@ Future<Uint8List> buildQuadLabelsPdf({
     }
   }
 
+  final pages = paginatePosterItems(items);
+  final now = DateTime.now();
   final doc = pw.Document(theme: theme);
-  doc.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      margin: pw.EdgeInsets.zero, // dış margin YOK; merkez haç = hücre ayraçları
-      build: (context) {
-        return pw.Column(
-          children: List.generate(_kQuadRows, (r) {
-            return pw.Expanded(
-              child: pw.Row(
-                children: List.generate(_kQuadCols, (c) {
-                  final idx = r * _kQuadCols + c;
-                  final slot = idx < slots.length ? slots[idx] : null;
-                  return pw.Expanded(child: _quadCell(slot, logoImage));
-                }),
-              ),
-            );
-          }),
-        );
-      },
-    ),
-  );
-
-  return doc.save();
-}
-
-// Kırmızı başlık bandı zemini (KARAR v1.20) — `AppColors.danger` #C0392B,
-// bu bir baskı-çıktısı rengi (§4 iki-kavram ayrımı), app "hata" semantiği YOK.
-const PdfColor _quadRed = PdfColor.fromInt(0xFFC0392B);
-
-// Tek Büyük Etiket hücresi (KARAR v1.20 — kırmızı başlık bandı + renkli fiyat
-// kutusu, rozetler kaldırıldı). Boş hane → yalnız ince kesim kılavuzu.
-pw.Widget _quadCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
-  if (slot == null) {
-    return pw.Container(
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: _hairlineEmpty, width: 0.5),
+  for (var p = 0; p < pages.length; p++) {
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.symmetric(
+          vertical: 18 * PdfPageFormat.mm,
+          horizontal: 16 * PdfPageFormat.mm,
+        ),
+        build: (context) => _posterPage(
+          page: pages[p],
+          logoImage: logoImage,
+          generatedAt: now,
+          pageLabel: pages.length > 1 ? '${p + 1} / ${pages.length}' : null,
+        ),
       ),
     );
   }
 
-  final logo = logoImage != null
-      ? pw.Image(logoImage, fit: pw.BoxFit.contain)
-      : pw.SvgImage(svg: _storeIconSvgWhite);
+  return doc.save();
+}
 
-  return pw.Container(
-    decoration: pw.BoxDecoration(
-      border: pw.Border.all(color: _hairline, width: 0.5),
-    ),
-    padding: pw.EdgeInsets.all(6 * PdfPageFormat.mm),
-    child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-      mainAxisAlignment: pw.MainAxisAlignment.start,
-      children: [
-        // 1. Üst bant: KIRMIZI zemin, tam genişlik, köşe radius YOK. SOL logo
-        //    (renkli; yoksa BEYAZ storefront fallback) + "ÖZEL FİYAT" + ürün
-        //    adı (UPPERCASE, beyaz ~%90 alfa).
-        pw.Container(
-          width: double.infinity,
-          height: _kQuadTopBandHeightMm * PdfPageFormat.mm,
-          color: _quadRed,
-          padding: const pw.EdgeInsets.symmetric(
-            horizontal: 3 * PdfPageFormat.mm,
-            vertical: 2.4 * PdfPageFormat.mm,
-          ),
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.SizedBox(width: 45, height: 39, child: logo),
-              pw.SizedBox(width: 6),
-              pw.Expanded(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  mainAxisSize: pw.MainAxisSize.min,
-                  children: [
-                    pw.Text(
-                      'ÖZEL FİYAT',
-                      maxLines: 1,
-                      style: pw.TextStyle(
-                        fontSize: 16,
-                        fontWeight: pw.FontWeight.bold,
-                        letterSpacing: 0.5,
-                        color: PdfColors.white,
-                      ),
-                    ),
-                    pw.SizedBox(height: 2),
-                    pw.Text(
-                      slot.productName.toUpperCase(),
-                      maxLines: 2,
-                      overflow: pw.TextOverflow.clip,
-                      style: pw.TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: pw.FontWeight.bold,
-                        lineSpacing: 1,
-                        color: PdfColors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        pw.SizedBox(height: 3 * PdfPageFormat.mm),
-        // 3. Fiyat kutusu: beyaz zemin + kırmızı ince kenarlık.
-        pw.Container(
-          width: double.infinity,
-          // KARAR v1.20.1 madde 2: dikey iç boşluk ~25% daraltıldı (3mm →
-          // 2.25mm) — ek güvenlik payı için; renk/sıra/hiyerarşi DEĞİŞMEDİ.
-          padding: const pw.EdgeInsets.symmetric(
-            horizontal: 4 * PdfPageFormat.mm,
-            vertical: 2.25 * PdfPageFormat.mm,
-          ),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.white,
-            border: pw.Border.all(color: _quadRed, width: 1.4),
-            borderRadius: pw.BorderRadius.circular(3 * PdfPageFormat.mm),
-          ),
-          child: pw.Column(
-            mainAxisSize: pw.MainAxisSize.min,
-            children: [
-              pw.Text(
-                'SATIŞ FİYATI',
-                style: pw.TextStyle(
-                  fontSize: 9,
-                  fontWeight: pw.FontWeight.bold,
-                  letterSpacing: 1,
-                  color: _quadRed,
-                ),
-              ),
-              pw.SizedBox(height: 2),
-              pw.FittedBox(
-                fit: pw.BoxFit.scaleDown,
-                alignment: pw.Alignment.center,
-                child: pw.Text(
-                  '${formatNumber(slot.price)} TL',
-                  style: pw.TextStyle(
-                    fontSize: 58,
-                    fontWeight: pw.FontWeight.bold,
-                    letterSpacing: -0.5,
-                    color: _quadRed,
-                  ),
-                ),
-              ),
-              pw.SizedBox(height: 2),
-              pw.Text(
-                'KDV DAHİLDİR',
-                style: pw.TextStyle(
-                  fontSize: 7.5,
-                  color: PdfColor.fromInt(0xFFCB6156), // muted kırmızı
-                ),
-              ),
-            ],
-          ),
-        ),
-        pw.SizedBox(height: 2 * PdfPageFormat.mm),
-        // 4. Kesikli ayraç — nötr `#B8B8B8` (mevcut kesim-kılavuzu grisi);
-        //    pdf paketinde native dashed-border yok, eşit segment döngüsüyle
-        //    aynı görsel dil (HTML tarafı native `border-top:dashed` kullanır).
-        pw.Row(
-          children: List.generate(24, (i) {
-            return pw.Expanded(
-              child: pw.Container(
-                height: 0.5 * PdfPageFormat.mm,
-                color: i.isEven ? _hairline : PdfColors.white,
-              ),
-            );
-          }),
-        ),
-        pw.SizedBox(height: 2 * PdfPageFormat.mm),
-        // 5. Barkod çizgileri (Code128) — esnek öğe; %80'e ortalı (1:8:1 flex).
-        // Savunma katmanı (KARAR v1.20.1 madde 3): gerçek yükseklik eşiğin
-        // altındaysa barkodu HİÇ render etme — `assert(height > 0)` çökmesi
-        // asla tetiklenmez.
-        pw.Expanded(
-          child: pw.LayoutBuilder(
-            builder: (context, constraints) {
-              final maxHeight = constraints?.maxHeight ?? double.infinity;
-              if (maxHeight < _kQuadBarcodeMinHeightMm * PdfPageFormat.mm) {
-                return pw.SizedBox();
-              }
-              return pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Spacer(flex: 1),
-                  pw.Expanded(
-                    flex: 8,
-                    child: bc.Barcode.code128().isValid(slot.barcode)
-                        ? pw.BarcodeWidget(
-                            barcode: bc.Barcode.code128(),
-                            data: slot.barcode,
-                            drawText: false,
-                            color: PdfColors.black,
-                          )
-                        : pw.SizedBox(),
-                  ),
-                  pw.Spacer(flex: 1),
-                ],
-              );
-            },
-          ),
-        ),
-        // 6. En alt: barkod no (sol) + oluşturma tarihi (sağ) — DEĞİŞMEDİ.
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
-          children: [
-            pw.Expanded(
-              child: pw.Text(
-                slot.barcode,
-                maxLines: 1,
-                overflow: pw.TextOverflow.clip,
-                style: pw.TextStyle(
-                  fontSize: 22,
-                  letterSpacing: 0.5,
-                  color: PdfColors.black,
-                ),
+pw.Widget _posterPage({
+  required List<LabelSlot> page,
+  required pw.MemoryImage? logoImage,
+  required DateTime generatedAt,
+  required String? pageLabel,
+}) {
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+    children: [
+      // Başlık: logo (varsa) + "ÜRÜN LİSTESİ" + lacivert ayraç.
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          if (logoImage != null)
+            pw.SizedBox(
+              width: 30 * PdfPageFormat.mm,
+              height: 16 * PdfPageFormat.mm,
+              child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+            ),
+          if (logoImage != null) pw.SizedBox(width: 8 * PdfPageFormat.mm),
+          pw.Expanded(
+            child: pw.Text(
+              'ÜRÜN LİSTESİ',
+              style: pw.TextStyle(
+                fontSize: 22,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: 0.5,
+                color: _posterInk,
               ),
             ),
+          ),
+          if (pageLabel != null)
             pw.Text(
-              formatShortDate(slot.createdAt),
-              style: const pw.TextStyle(fontSize: 9, color: _dateGrey),
+              'Sayfa $pageLabel',
+              style: pw.TextStyle(fontSize: 9, color: _posterMuted),
             ),
-          ],
-        ),
-      ],
-    ),
+        ],
+      ),
+      pw.SizedBox(height: 3 * PdfPageFormat.mm),
+      pw.Container(height: 1.2, color: _posterInk),
+      pw.SizedBox(height: 4 * PdfPageFormat.mm),
+      // Liste — kalan alanı doldurur; satır yüksekliği kalem sayısına göre
+      // oranlanır (az kalem → iri poster satırı, çok kalem → kompakt tablo).
+      pw.Expanded(
+        child: page.isEmpty
+            ? pw.Center(
+                child: pw.Text(
+                  'Henüz ürün okutulmadı.',
+                  style: pw.TextStyle(fontSize: 12, color: _posterMuted),
+                ),
+              )
+            : pw.LayoutBuilder(
+                builder: (context, constraints) {
+                  final maxH = constraints?.maxHeight ?? 400;
+                  final rowH = _posterClamp(
+                      maxH / page.length, 11 * PdfPageFormat.mm, 50 * PdfPageFormat.mm);
+                  final nameSize =
+                      _posterClamp(rowH / PdfPageFormat.mm * 0.72, 11, 30);
+                  final priceSize =
+                      _posterClamp(rowH / PdfPageFormat.mm * 0.8, 13, 34);
+                  final numSize =
+                      _posterClamp(rowH / PdfPageFormat.mm * 0.4, 8, 16);
+                  return pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.start,
+                    children: List.generate(page.length, (i) {
+                      final it = page[i];
+                      return pw.Container(
+                        height: rowH,
+                        color: i.isEven ? PdfColors.white : _posterZebra,
+                        padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 4 * PdfPageFormat.mm),
+                        child: pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.center,
+                          children: [
+                            pw.SizedBox(
+                              width: 9 * PdfPageFormat.mm,
+                              child: pw.Text(
+                                '${i + 1}.',
+                                style: pw.TextStyle(
+                                    fontSize: numSize, color: _posterMuted),
+                              ),
+                            ),
+                            pw.Expanded(
+                              child: pw.Text(
+                                it.productName,
+                                maxLines: 2,
+                                overflow: pw.TextOverflow.clip,
+                                style: pw.TextStyle(
+                                  fontSize: nameSize,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColors.black,
+                                ),
+                              ),
+                            ),
+                            pw.SizedBox(width: 6 * PdfPageFormat.mm),
+                            pw.Text(
+                              '${formatNumber(it.price)} TL',
+                              style: pw.TextStyle(
+                                fontSize: priceSize,
+                                fontWeight: pw.FontWeight.bold,
+                                color: _posterInk,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  );
+                },
+              ),
+      ),
+      pw.SizedBox(height: 3 * PdfPageFormat.mm),
+      pw.Container(height: 0.6, color: _hairline),
+      pw.SizedBox(height: 1.5 * PdfPageFormat.mm),
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            'Toplam ${page.length} ürün',
+            style: pw.TextStyle(fontSize: 8, color: _posterMuted),
+          ),
+          pw.Text(
+            formatShortDate(generatedAt),
+            style: pw.TextStyle(fontSize: 8, color: _posterMuted),
+          ),
+        ],
+      ),
+    ],
   );
 }
 

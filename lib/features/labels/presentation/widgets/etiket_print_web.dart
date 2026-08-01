@@ -44,16 +44,15 @@ void printWideLabelsA4({
   web.window.open(url, '_blank');
 }
 
-/// Dolu Büyük Etiketleri A4 dikey (2 sütun × 2 satır = 4 A5 etiket) olarak yeni
-/// bir tarayıcı penceresinde açar ve otomatik yazdırır (KARAR v1.19). Merkez haç
-/// (dikey x=105mm / yatay y=148.5mm) hücre ayraçlarından oluşur; dış margin YOK.
-/// Etiket-içi düzen dar-logo (Yeni Etiket) ile aynı öğe seti, A5'e oranlanmış.
-/// Çıktı SİYAH/BEYAZ + mağaza logosu (RENKLİ); barkod = Code128 SVG.
-void printQuadLabelsA4({
-  required List<LabelSlot?> slots,
+/// Poster listesini (barkod okutulan ürünlerin ad+fiyatı, çok-sayfalı) A4 dikey
+/// profesyonel ürün listesi olarak yeni bir tarayıcı penceresinde açar ve
+/// otomatik yazdırır (KARAR v1.23). `logoDataUrl` = Yeni Etiket'in kalıcı mağaza
+/// logosu (opsiyonel). Çıktı SİYAH/BEYAZ + isteğe bağlı RENKLİ logo.
+void printPosterA4({
+  required List<LabelSlot> items,
   String? logoDataUrl,
 }) {
-  final html = _buildQuadHtml(slots: slots, logoDataUrl: logoDataUrl);
+  final html = _buildPosterHtml(items: items, logoDataUrl: logoDataUrl);
 
   final blob = web.Blob(
     [html.toJS].toJS,
@@ -111,14 +110,6 @@ String _barcodeSvg(String data) {
 const String _storeIconSvg =
     '<svg viewBox="0 0 24 24" width="100%" height="100%">'
     '<path fill="#1B2A4A" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
-    '</svg>';
-
-// Büyük Etiket kırmızı başlık bandı fallback ikonu (KARAR v1.20) — bu bantta
-// istisnai olarak BEYAZ (kırmızı zemin üstünde okunurluk için), diğer
-// sekmelerin ink-lacivert fallback'inden farklı.
-const String _storeIconSvgWhite =
-    '<svg viewBox="0 0 24 24" width="100%" height="100%">'
-    '<path fill="#FFFFFF" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
     '</svg>';
 
 String _cellHtml(LabelSlot? slot, String? logoDataUrl) {
@@ -417,69 +408,94 @@ String _buildWideHtml({
 </html>''';
 }
 
-// ─── Büyük Etiket (KARAR v1.19) — 2 sütun × 2 satır = 4 A5 etiket ─────────────
-// Merkez haç (dikey x=105mm / yatay y=148.5mm) hücre ayraçlarından oluşur; dış
-// margin YOK. Hücre 105×148.5mm, iç güvenli boşluk 6mm. Etiket-içi düzen
-// dar-logo (Yeni Etiket) ile BİREBİR aynı öğe seti, A5'e oranlanmış (fontlar
-// ~1.8× büyütüldü). Çıktı SİYAH/BEYAZ + RENKLİ mağaza logosu.
+// ─── Poster (KARAR v1.23) — tek sütunlu profesyonel ürün listesi ─────────────
+// A4 dikey; sabit ızgara YOK, satır sayısı 1..20 (bkz. `kPosterItemsPerPage`)
+// arasında değişir. Sayfa BOŞ kalmasın diye satır yüksekliği/fontu JS ile değil
+// (üç çıktı BİREBİR kalsın diye) inline `style` ile satır sayısına göre
+// ORANLANARAK hesaplanır — Flutter/PDF tarafıyla aynı formül. Toplam > 20 ise
+// 2., 3. sayfaya taşar (`page-break-after`). Çıktı SİYAH/BEYAZ + isteğe bağlı
+// RENKLİ mağaza logosu (Yeni Etiket'in kalıcı store logosu paylaşılır).
 
-String _quadCellHtml(LabelSlot? slot, String? logoDataUrl) {
-  if (slot == null) {
-    return '<div class="qcell empty"></div>';
+double _posterClampWeb(double v, double lo, double hi) =>
+    v < lo ? lo : (v > hi ? hi : v);
+
+String _posterPageHtml(
+  List<LabelSlot> page,
+  String? logoDataUrl,
+  DateTime generatedAt,
+  String? pageLabel,
+) {
+  final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
+      ? '<img class="plogo-img" src="${_esc(logoDataUrl)}" alt="logo">'
+      : '';
+
+  final rows = StringBuffer();
+  if (page.isEmpty) {
+    rows.write('<div class="pempty">Henüz ürün okutulmadı.</div>');
+  } else {
+    // Satır yüksekliği (mm): kalan yükseklik ≈ 297 − 36 (dış margin) − ~34
+    // (başlık) − ~10 (alt bilgi) ≈ 217mm; kalem sayısına oranlı, min/max ile
+    // sınırlı (az kalem → iri "poster" satırı, çok kalem → kompakt tablo).
+    final rowH = _posterClampWeb(217 / page.length, 11, 50);
+    final nameSize = _posterClampWeb(rowH * 0.72, 11, 30);
+    final priceSize = _posterClampWeb(rowH * 0.8, 13, 34);
+    final numSize = _posterClampWeb(rowH * 0.4, 8, 16);
+    for (var i = 0; i < page.length; i++) {
+      final it = page[i];
+      rows.write('''
+        <div class="prow" style="height:${rowH}mm;background:${i.isEven ? '#fff' : '#f4f5f7'}">
+          <span class="pnum" style="font-size:${numSize}pt">${i + 1}.</span>
+          <span class="pname" style="font-size:${nameSize}pt">${_esc(it.productName)}</span>
+          <span class="pprice" style="font-size:${priceSize}pt">${_esc(formatNumber(it.price))} TL</span>
+        </div>''');
+    }
   }
 
-  final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
-      ? '<img class="qlogo-img" src="${_esc(logoDataUrl)}" alt="logo">'
-      : _storeIconSvgWhite;
+  final pageLabelHtml =
+      pageLabel == null ? '' : '<span class="ppage">Sayfa $pageLabel</span>';
 
-  final bc = _barcodeSvg(slot.barcode);
-  final bcHtml = bc.isEmpty ? '' : '<div class="qbc">$bc</div>';
-
-  // KARAR v1.20: üst bant KIRMIZI zemin (logo + "ÖZEL FİYAT" + ürün adı) →
-  // beyaz+kırmızı-kenarlıklı fiyat kutusu ("SATIŞ FİYATI"/fiyat hero/"KDV
-  // DAHİLDİR") → kesikli nötr ayraç → barkod + alt satır (DEĞİŞMEDİ).
   return '''
-    <div class="qcell">
-      <div class="qtop">
-        <div class="qlogo">$logoHtml</div>
-        <div class="qtoptext">
-          <div class="qlabel">ÖZEL FİYAT</div>
-          <div class="qpname">${_esc(slot.productName)}</div>
-        </div>
+    <div class="psheet">
+      <div class="phead">
+        $logoHtml
+        <span class="ptitle">ÜRÜN LİSTESİ</span>
+        $pageLabelHtml
       </div>
-      <div class="qpricebox">
-        <div class="qsflabel">SATIŞ FİYATI</div>
-        <div class="qprice">${_esc(formatNumber(slot.price))} TL</div>
-        <div class="qkdv">KDV DAHİLDİR</div>
-      </div>
-      <div class="qdash"></div>
-      $bcHtml
-      <div class="qbottom">
-        <span class="qbcno">${_esc(slot.barcode)}</span>
-        <span class="qdate">${_esc(formatShortDate(slot.createdAt))}</span>
+      <div class="prule"></div>
+      <div class="plist">$rows</div>
+      <div class="pfootrule"></div>
+      <div class="pfoot">
+        <span>Toplam ${page.length} ürün</span>
+        <span>${_esc(formatShortDate(generatedAt))}</span>
       </div>
     </div>''';
 }
 
-String _buildQuadHtml({
-  required List<LabelSlot?> slots,
+String _buildPosterHtml({
+  required List<LabelSlot> items,
   String? logoDataUrl,
 }) {
-  final cells = StringBuffer();
-  for (final slot in slots) {
-    cells.writeln(_quadCellHtml(slot, logoDataUrl));
+  final pages = paginatePosterItems(items);
+  final now = DateTime.now();
+  final sheets = StringBuffer();
+  for (var p = 0; p < pages.length; p++) {
+    sheets.writeln(_posterPageHtml(
+      pages[p],
+      logoDataUrl,
+      now,
+      pages.length > 1 ? '${p + 1} / ${pages.length}' : null,
+    ));
   }
 
-  // A4 portrait 210×297mm, dış margin 0. 2 sütun → 105mm, 2 satır → 148.5mm.
-  // Merkez haç = hücrelerin bitişik hairline kenarlıkları (nötr, altın YOK).
+  // A4 portrait 210×297mm; kenar üst/alt 18mm, sol/sağ 16mm.
   return '''
 <!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<title>Büyük Etiketler</title>
+<title>Ürün Listesi</title>
 <style>
-  @page { size: A4 portrait; margin: 0; }
+  @page { size: A4 portrait; margin: 18mm 16mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -488,139 +504,65 @@ String _buildQuadHtml({
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .sheet {
-    width: 210mm;
-    display: grid;
-    grid-template-columns: repeat(2, 105mm);
-    grid-auto-rows: 148.5mm;
-    gap: 0;
-  }
-  .qcell {
-    /* İnce nötr hairline (merkez haç + kesim kılavuzu; altın YOK). */
-    border: 0.2mm solid #b8b8b8;
-    padding: 6mm;
-    overflow: hidden;
+  .psheet {
+    width: 178mm;
+    min-height: 261mm;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
+    page-break-after: always;
   }
-  .qcell.empty { border-color: #e0e0e0; }
-  /* 1. Üst bant — KIRMIZI zemin, tam genişlik, köşe radius YOK (KARAR v1.20).
-     SABİT yükseklik (KARAR v1.20.1) — Flutter/PDF ile birebir aynı 23.3mm;
-     2 satırlık ürün adı dahil en kötü durum baştan hesaba katılır, bant
-     ürün adı uzunluğuna göre ASLA büyümez (barkod alanının payı deterministik
-     kalır). box-sizing:border-box sayesinde padding bu yüksekliğe dahildir. */
-  .qtop {
-    background: #C0392B;
-    width: 100%;
-    height: 23.3mm;
+  .psheet:last-child { page-break-after: auto; }
+  .phead {
     display: flex;
     align-items: center;
-    gap: 4mm;
-    flex: 0 0 23.3mm;
-    padding: 3mm 4mm;
-    overflow: hidden;
+    gap: 8mm;
   }
-  .qlogo {
-    width: 20mm;
-    height: 16mm;
-    flex: 0 0 auto;
+  .plogo-img { max-width: 30mm; max-height: 16mm; object-fit: contain; }
+  .ptitle {
+    flex: 1 1 auto;
+    font-size: 22pt;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: #1B2A4A;
+  }
+  .ppage { font-size: 9pt; color: #6b7280; }
+  .prule { height: 1.2mm; background: #1B2A4A; margin: 3mm 0 4mm; }
+  .plist { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .pempty {
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 12pt;
+    color: #6b7280;
   }
-  .qlogo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .qtoptext {
-    flex: 1 1 auto;
+  .prow {
     display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .qlabel {
-    font-size: 20pt;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    color: #fff;
-  }
-  .qpname {
-    font-size: 11pt;
-    font-weight: 600;
-    line-height: 1.15;
-    text-transform: uppercase;
-    text-align: left;
-    color: rgba(255, 255, 255, 0.9);
-    margin-top: 1mm;
-    /* En fazla 2 satır, taşarsa kısalt. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  /* 3. Fiyat kutusu — beyaz zemin + kırmızı ince kenarlık (KARAR v1.20).
-     Dikey iç boşluk ~25% daraltıldı (KARAR v1.20.1 madde 2: 3mm → 2.25mm,
-     ek güvenlik payı için) — renk/sıra/hiyerarşi DEĞİŞMEDİ. */
-  .qpricebox {
-    background: #fff;
-    border: 0.6mm solid #C0392B;
-    border-radius: 3mm;
-    margin: 3mm 0;
-    padding: 2.25mm 4mm;
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    flex: 0 0 auto;
+    padding: 0 4mm;
+    font-variant-numeric: tabular-nums;
   }
-  .qsflabel {
-    font-size: 9pt;
+  .pnum { flex: 0 0 9mm; color: #6b7280; }
+  .pname { flex: 1 1 auto; font-weight: 700; }
+  .pprice {
+    flex: 0 0 auto;
     font-weight: 700;
-    letter-spacing: 1px;
-    color: #C0392B;
-  }
-  .qprice {
-    font-weight: 800;
-    font-size: 70pt;
-    line-height: 1;
-    letter-spacing: -0.5px;
-    text-align: center;
+    color: #1B2A4A;
+    letter-spacing: -0.3px;
+    margin-left: 6mm;
     white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-    color: #C0392B;
   }
-  .qkdv { font-size: 7.5pt; color: #cb6156; }
-  /* 4. Kesikli ayraç — nötr `#b8b8b8` (mevcut kesim-kılavuzu grisi), altın YOK. */
-  .qdash {
-    border-top: 0.35mm dashed #b8b8b8;
-    margin: 2mm 0;
-    flex: 0 0 auto;
-  }
-  .qbc {
-    /* Esnek: sabit öğeler (üst bant, fiyat kutusu, alt satır) yerini korur;
-       taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı.
-       min-height (KARAR v1.20.1 madde 3, orantılı minimum — Flutter/PDF'teki
-       savunma eşiğinin HTML eşdeğeri): barkod SVG'si sabit 260×60 viewBox ile
-       üretilir (bkz. `_barcodeSvg`), bu yüzden HTML'de gerçek bir `assert`
-       çökmesi riski YOK; bu yalnız görsel bir güvenlik payıdır. */
-    flex: 1 1 auto;
-    min-height: 2mm;
-    width: 80%;
-    margin: 0 auto;
-  }
-  .qbc svg { width: 100%; height: 100%; display: block; }
-  .qbottom {
+  .pfootrule { height: 0.6mm; background: #b8b8b8; margin: 3mm 0 1.5mm; }
+  .pfoot {
     display: flex;
-    align-items: flex-end;
     justify-content: space-between;
-    flex: 0 0 auto;
-    font-variant-numeric: tabular-nums;
+    font-size: 8pt;
+    color: #6b7280;
   }
-  .qbcno { font-size: 25pt; letter-spacing: 0.5px; }
-  .qdate { font-size: 10pt; color: #444; }
 </style>
 </head>
 <body onload="window.focus(); window.print();">
-  <div class="sheet">
-    $cells
-  </div>
+  $sheets
 </body>
 </html>''';
 }

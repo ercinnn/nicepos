@@ -701,6 +701,18 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
        → üst/alt ~2.5mm eşit nefes payı (v1.20.1 crash savunması korunur; taşma olursa alt satır itilmez).
     4. **Barkod numarası bir font kademesi büyür:** HTML 6pt → **7pt**, PDF 6 → **7**, önizleme 7.5 → **8.5**px
        (Inter tabular, ortalı, siyah). Ürün adı fontu + 2-satır sabit alanı (4.4mm) DEĞİŞMEZ.
+  - **"Büyük Etiket" (2×2 A5) sekmesi KALDIRILDI, yerine "Poster" sekmesi (KARAR v1.23 — kullanıcı isteği):**
+    v1.19/v1.20/v1.20.1'in kırmızı-bantlı A5 etiket akışı tamamen çıkarıldı (state, PDF/HTML üretici,
+    önizleme, sekme). Yerine A4 dikey **tek sütunlu profesyonel ürün listesi**: barkod okutulan her ürün
+    (ad + fiyat) sıraya eklenir — sabit hane sayısı YOK, 1 üründen `kPosterItemsPerPage`=20'ye kadar aynı
+    sayfada serbestçe büyür/küçülür (aynı barkod tekrar okutulursa satır yerinde güncellenir, çoğalmaz).
+    **Sayfa hiçbir zaman boş görünmesin diye satır yüksekliği + fontu kalem sayısına ORANLANIR** (az ürün →
+    iri "poster" satırı, çok ürün → kompakt tablo; önizleme = HTML = PDF birebir aynı formül). Düzen: başlık
+    (mağaza logosu varsa + "ÜRÜN LİSTESİ" + lacivert ayraç) → zebra-şeritli liste (sıra no · ad · fiyat) →
+    alt bilgi (toplam ürün + tarih). Yeni renk/altın YOK — ink lacivert (`AppColors.primary`) başlık/fiyat
+    rengi, nötr zebra gri; baskı siyah/beyaz + isteğe bağlı renkli logo (dar-logo'nun kalıcı store logosu
+    paylaşılır). Toplam > 20 ise 2., 3. sayfaya taşar (Ürün Etiketi'nin çok-sayfalı desenindeki
+    `page-break-after` deseniyle aynı).
 
 ---
 

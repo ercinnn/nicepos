@@ -27,10 +27,10 @@ import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
 import '../widgets/label_scan_sheet.dart';
 
-// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.19 / v1.21): dar 24-hane akışı +
-// Geniş Logo 10-hane akışı + Büyük Etiket 4-hane akışı + Ürün Etiketi (adet-
-// tabanlı 6×12) + kayıtlı PDF'ler.
-enum _LabelTab { yeni, genis, buyuk, urun, kayitli }
+// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.21 / v1.23): dar 24-hane akışı +
+// Geniş Logo 10-hane akışı + Poster (barkod okutulan ürünlerin profesyonel
+// A4 listesi) + Ürün Etiketi (adet-tabanlı 6×12) + kayıtlı PDF'ler.
+enum _LabelTab { yeni, genis, poster, urun, kayitli }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Etiket (raf etiketi A4 yazdırma) ekranı — KARAR v1.10
@@ -68,11 +68,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   int _wideActiveIndex = 0;
   Uint8List? _figurBytes; // marka figürü (yazdırma için bir kez okunur)
 
-  // Büyük Etiket sekmesi (KARAR v1.19) — 4 haneli ayrı giriş durumu.
-  late final List<TextEditingController> _quadControllers;
-  late final List<FocusNode> _quadFocusNodes;
-  final Set<int> _quadErrors = {};
-  int _quadActiveIndex = 0;
+  // Poster sekmesi (KARAR v1.23) — barkod-tabanlı serbest liste; sabit hane
+  // sayısı YOK, tek giriş satırı (satış ekranı _onBarcodeSubmitted deseni).
+  late final TextEditingController _posterBarcodeController;
+  late final FocusNode _posterBarcodeFocus;
+  bool _posterError = false; // son barkod çözülemedi (danger uyarı)
+  bool _posterBarcodeActive = false; // barkod hanesi odaklı mı (aktif altını)
 
   // Ürün Etiketi sekmesi (KARAR v1.21) — adet-tabanlı tek giriş satırı (barkod +
   // adet). Çözülen ürün "bekleyen kalem" olarak tutulur; adet onaylanınca listeye
@@ -108,14 +109,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       });
       return node;
     });
-    _quadControllers =
-        List.generate(kQuadCount, (_) => TextEditingController());
-    _quadFocusNodes = List.generate(kQuadCount, (i) {
-      final node = FocusNode();
-      node.addListener(() {
-        if (node.hasFocus && mounted) setState(() => _quadActiveIndex = i);
-      });
-      return node;
+    _posterBarcodeController = TextEditingController();
+    _posterBarcodeFocus = FocusNode();
+    _posterBarcodeFocus.addListener(() {
+      if (mounted) {
+        setState(() => _posterBarcodeActive = _posterBarcodeFocus.hasFocus);
+      }
     });
     // Ürün Etiketi sekmesi (KARAR v1.21) — barkod + adet giriş kontrolleri.
     _prodBarcodeController = TextEditingController();
@@ -158,12 +157,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     for (final n in _wideFocusNodes) {
       n.dispose();
     }
-    for (final c in _quadControllers) {
-      c.dispose();
-    }
-    for (final n in _quadFocusNodes) {
-      n.dispose();
-    }
+    _posterBarcodeController.dispose();
+    _posterBarcodeFocus.dispose();
     _prodBarcodeController.dispose();
     _prodQtyController.dispose();
     _prodBarcodeFocus.dispose();
@@ -646,34 +641,21 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // Büyük Etiket sekmesi (KARAR v1.19) — 4 haneli akış (dar-logo 24-hane
-  // akışının A5 2×2 uyarlaması). Barkod çözme mantığı ortak (_resolveBarcode);
-  // hedef state (labelQuadSheetProvider) + mağaza logosu (dar-logo'nun kalıcı
-  // store logosu paylaşılır) farklı.
+  // Poster sekmesi (KARAR v1.23) — barkod-tabanlı serbest liste (sabit hane
+  // sayısı YOK). Barkod çözme mantığı ortak (_resolveBarcode); aynı barkod
+  // tekrar okutulursa satır YERİNDE güncellenir (bkz. addOrUpdateItem).
+  // Mağaza logosu dar-logo'nun kalıcı store logosu paylaşılır. Fiyat/barkod
+  // çizgisi YOK — yalnız ad + fiyat (profesyonel liste).
   // ═════════════════════════════════════════════════════════════════════════
 
-  int _nextQuadEmptyIndex() {
-    final slots = ref.read(labelQuadSheetProvider).slots;
-    for (var i = 0; i < kQuadCount; i++) {
-      if (slots[i] == null) return i;
-    }
-    return -1;
-  }
-
-  Future<void> _onQuadSubmitted(int index, String raw) async {
+  Future<void> _onPosterBarcodeSubmitted(String raw) async {
     final query = raw.trim();
-    final notifier = ref.read(labelQuadSheetProvider.notifier);
-    if (query.isEmpty) {
-      notifier.clearSlot(index);
-      setState(() => _quadErrors.remove(index));
-      return;
-    }
+    if (query.isEmpty) return;
 
     final product = await _resolveBarcode(query);
     if (!mounted) return;
     if (product == null) {
-      notifier.clearSlot(index);
-      setState(() => _quadErrors.add(index));
+      setState(() => _posterError = true);
       playScanBeep(success: false); // danger uyarı sesi (KARAR v1.14.1)
       return;
     }
@@ -681,40 +663,27 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     final code = (product.barcode != null && product.barcode!.isNotEmpty)
         ? product.barcode!
         : query;
-    notifier.setSlot(
-      index,
-      LabelSlot(
-        barcode: code,
-        productName: product.name,
-        price: product.price1,
-        createdAt: DateTime.now(),
-      ),
-    );
-    _quadControllers[index].text = code;
+    ref.read(labelPosterSheetProvider.notifier).addOrUpdateItem(
+          LabelSlot(
+            barcode: code,
+            productName: product.name,
+            price: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
     HapticFeedback.lightImpact();
     playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
-    setState(() => _quadErrors.remove(index));
-
-    if (index + 1 < kQuadCount) {
-      _quadFocusNodes[index + 1].requestFocus();
-      _quadControllers[index + 1].selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: _quadControllers[index + 1].text.length,
-      );
-    }
+    setState(() => _posterError = false);
+    _posterBarcodeController.clear();
+    _posterBarcodeFocus.requestFocus();
   }
 
-  Future<LabelScanFeedback> _handleQuadCameraScan(String raw) async {
+  Future<LabelScanFeedback> _handlePosterCameraScan(String raw) async {
     final query = raw.trim();
-    int filled() => ref.read(labelQuadSheetProvider).filledCount;
+    int filled() => ref.read(labelPosterSheetProvider).itemCount;
     if (query.isEmpty) {
       return LabelScanFeedback(
           status: LabelScanStatus.notFound, filledCount: filled());
-    }
-    final index = _nextQuadEmptyIndex();
-    if (index < 0) {
-      return LabelScanFeedback(
-          status: LabelScanStatus.full, filledCount: filled());
     }
     final product = await _resolveBarcode(query);
     if (!mounted || product == null) {
@@ -724,8 +693,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     final code = (product.barcode != null && product.barcode!.isNotEmpty)
         ? product.barcode!
         : query;
-    ref.read(labelQuadSheetProvider.notifier).setSlot(
-          index,
+    ref.read(labelPosterSheetProvider.notifier).addOrUpdateItem(
           LabelSlot(
             barcode: code,
             productName: product.name,
@@ -733,8 +701,6 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
             createdAt: DateTime.now(),
           ),
         );
-    _quadControllers[index].text = code;
-    setState(() => _quadErrors.remove(index));
     return LabelScanFeedback(
       status: LabelScanStatus.placed,
       productName: product.name,
@@ -743,57 +709,52 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     );
   }
 
-  Future<void> _startQuadCameraScan() async {
+  Future<void> _startPosterCameraScan() async {
     if (kIsWeb) return;
     await ref.read(barcodeCacheProvider).ensureLoaded();
     if (!mounted) return;
     await openLabelScanSheet(
       context,
-      onScan: _handleQuadCameraScan,
-      totalCount: kQuadCount,
-      initialFilled: ref.read(labelQuadSheetProvider).filledCount,
+      onScan: _handlePosterCameraScan,
+      totalCount: kPosterItemsPerPage,
+      initialFilled: ref.read(labelPosterSheetProvider).itemCount,
     );
   }
 
-  void _clearQuadSlot(int index) {
-    _quadControllers[index].clear();
-    ref.read(labelQuadSheetProvider.notifier).clearSlot(index);
-    setState(() => _quadErrors.remove(index));
-    _quadFocusNodes[index].requestFocus();
+  void _removePosterItem(int index) {
+    ref.read(labelPosterSheetProvider.notifier).removeItem(index);
   }
 
-  void _clearQuadAll() {
-    for (final c in _quadControllers) {
-      c.clear();
-    }
-    ref.read(labelQuadSheetProvider.notifier).clearAll();
-    setState(() => _quadErrors.clear());
+  void _clearPosterAll() {
+    ref.read(labelPosterSheetProvider.notifier).clearAll();
+    setState(() => _posterError = false);
+    _posterBarcodeController.clear();
   }
 
-  void _printQuad() {
-    final state = ref.read(labelQuadSheetProvider);
-    if (state.filledCount == 0) {
+  void _printPoster() {
+    final state = ref.read(labelPosterSheetProvider);
+    if (state.itemCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+        const SnackBar(content: Text('Önce en az bir ürün okutun.')),
       );
       return;
     }
     // Mağaza logosu dar-logo sekmesinin kalıcı store logosundan paylaşılır.
-    printQuadLabelsA4(
-      slots: state.slots,
+    printPosterA4(
+      items: state.items,
       logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
     );
   }
 
-  Future<void> _saveQuadPdf() async {
-    final state = ref.read(labelQuadSheetProvider);
-    if (state.filledCount == 0) {
+  Future<void> _savePosterPdf() async {
+    final state = ref.read(labelPosterSheetProvider);
+    if (state.itemCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+        const SnackBar(content: Text('Önce en az bir ürün okutun.')),
       );
       return;
     }
-    final name = await _askFileName(prefix: 'buyuk-etiket');
+    final name = await _askFileName(prefix: 'poster');
     if (name == null || !mounted) return;
 
     showDialog<void>(
@@ -802,8 +763,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final bytes = await buildQuadLabelsPdf(
-        slots: state.slots,
+      final bytes = await buildPosterPdf(
+        items: state.items,
         logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
       );
       final saved =
@@ -1000,9 +961,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return mobile ? _buildWideMobile(selector) : _buildWideDesktop(selector);
     }
 
-    // ── Sekme 3: Büyük Etiket (KARAR v1.19) ────────────────────────────────
-    if (_tab == _LabelTab.buyuk) {
-      return mobile ? _buildQuadMobile(selector) : _buildQuadDesktop(selector);
+    // ── Sekme 3: Poster (KARAR v1.23) ──────────────────────────────────────
+    if (_tab == _LabelTab.poster) {
+      return mobile
+          ? _buildPosterMobile(selector)
+          : _buildPosterDesktop(selector);
     }
 
     // ── Sekme 4: Ürün Etiketi (KARAR v1.21) ────────────────────────────────
@@ -1213,8 +1176,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     );
   }
 
-  // ─── Büyük Etiket — masaüstü (sol 4-hane giriş · sağ A4 önizleme) ──────────
-  Widget _buildQuadDesktop(Widget selector) {
+  // ─── Poster — masaüstü (sol barkod girişi/kalem listesi · sağ A4 önizleme) ──
+  Widget _buildPosterDesktop(Widget selector) {
+    final state = ref.watch(labelPosterSheetProvider);
     final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1222,18 +1186,18 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         selector,
         const SizedBox(height: AppSizes.space16),
         _Header(
-          filledCount: ref.watch(labelQuadSheetProvider).filledCount,
-          totalCount: kQuadCount,
+          filledCount: state.itemCount,
           hasLogo: logoDataUrl != null,
           onPickLogo: _pickLogo,
           onRemoveLogo: _removeLogo,
-          onClearAll: _clearQuadAll,
-          onPrint: _printQuad,
-          onSavePdf: _saveQuadPdf,
-          onCameraScan: kIsWeb ? null : _startQuadCameraScan,
+          badgeOverride: '${state.itemCount} ürün',
+          onClearAll: _clearPosterAll,
+          onPrint: _printPoster,
+          onSavePdf: _savePosterPdf,
+          onCameraScan: kIsWeb ? null : _startPosterCameraScan,
           subtitle:
-              'Barkod okutun; her hane A4 sayfayı çeyreğe bölen büyük (A5) '
-              'etikete dönüşür — logo + fiyat + ürün adı + barkod.',
+              'Barkod okutun; her ürün A4 dikey profesyonel bir listeye (ad + '
+              'fiyat) eklenir — 1 üründen 10+ ürüne kadar sayfayı doldurur.',
         ),
         const SizedBox(height: AppSizes.space16),
         Expanded(
@@ -1242,21 +1206,20 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
             children: [
               Expanded(
                 flex: 5,
-                child: _InputColumn(
-                  controllers: _quadControllers,
-                  focusNodes: _quadFocusNodes,
-                  errors: _quadErrors,
-                  activeIndex: _quadActiveIndex,
-                  itemCount: kQuadCount,
-                  quad: true,
-                  onSubmitted: _onQuadSubmitted,
-                  onClear: _clearQuadSlot,
+                child: _PosterInputColumn(
+                  barcodeController: _posterBarcodeController,
+                  barcodeFocus: _posterBarcodeFocus,
+                  barcodeActive: _posterBarcodeActive,
+                  isError: _posterError,
+                  items: state.items,
+                  onBarcodeSubmitted: _onPosterBarcodeSubmitted,
+                  onRemoveItem: _removePosterItem,
                 ),
               ),
               const SizedBox(width: AppSizes.space16),
               Expanded(
                 flex: 6,
-                child: _QuadPreviewPane(),
+                child: _PosterPreviewPane(),
               ),
             ],
           ),
@@ -1265,9 +1228,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     );
   }
 
-  // ─── Büyük Etiket — mobil (tek kolon) ──────────────────────────────────────
-  Widget _buildQuadMobile(Widget selector) {
-    final state = ref.watch(labelQuadSheetProvider);
+  // ─── Poster — mobil (tek kolon) ─────────────────────────────────────────────
+  Widget _buildPosterMobile(Widget selector) {
+    final state = ref.watch(labelPosterSheetProvider);
     final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
     return SingleChildScrollView(
       child: Column(
@@ -1276,43 +1239,37 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           selector,
           const SizedBox(height: AppSizes.space16),
           _Header(
-            filledCount: state.filledCount,
-            totalCount: kQuadCount,
+            filledCount: state.itemCount,
             hasLogo: logoDataUrl != null,
             onPickLogo: _pickLogo,
             onRemoveLogo: _removeLogo,
-            onClearAll: _clearQuadAll,
-            onPrint: _printQuad,
-            onSavePdf: _saveQuadPdf,
-            onCameraScan: kIsWeb ? null : _startQuadCameraScan,
+            badgeOverride: '${state.itemCount} ürün',
+            onClearAll: _clearPosterAll,
+            onPrint: _printPoster,
+            onSavePdf: _savePosterPdf,
+            onCameraScan: kIsWeb ? null : _startPosterCameraScan,
             subtitle:
-                'Barkod okutun; her hane A4 sayfayı çeyreğe bölen büyük (A5) '
-                'etikete dönüşür — logo + fiyat + ürün adı + barkod.',
+                'Barkod okutun; her ürün A4 dikey profesyonel bir listeye '
+                '(ad + fiyat) eklenir — 1 üründen 10+ ürüne kadar sayfayı '
+                'doldurur.',
             compact: true,
           ),
           const SizedBox(height: AppSizes.space16),
-          ...List.generate(kQuadCount, (i) {
-            return _SlotInputRow(
-              index: i,
-              controller: _quadControllers[i],
-              focusNode: _quadFocusNodes[i],
-              isActive: _quadActiveIndex == i,
-              isError: _quadErrors.contains(i),
-              quad: true,
-              onSubmitted: (v) => _onQuadSubmitted(i, v),
-              onClear: () => _clearQuadSlot(i),
-            );
-          }),
+          _PosterInputColumn(
+            barcodeController: _posterBarcodeController,
+            barcodeFocus: _posterBarcodeFocus,
+            barcodeActive: _posterBarcodeActive,
+            isError: _posterError,
+            items: state.items,
+            shrinkWrap: true,
+            onBarcodeSubmitted: _onPosterBarcodeSubmitted,
+            onRemoveItem: _removePosterItem,
+          ),
           const SizedBox(height: AppSizes.space20),
           const _SectionLabel('A4 Önizleme'),
           const SizedBox(height: AppSizes.space8),
-          LayoutBuilder(
-            builder: (ctx, c) => SizedBox(
-              width: c.maxWidth,
-              height: c.maxWidth * (_kA4Height / _kA4Width),
-              child: _QuadPreviewPane(),
-            ),
-          ),
+          // Çok-sayfalı önizleme dış sayfa scroll'una gömülü (kendi scroll'u yok).
+          _PosterPreviewPane(scrollable: false),
           const SizedBox(height: AppSizes.space20),
         ],
       ),
@@ -1597,7 +1554,6 @@ class _InputColumn extends StatelessWidget {
   final int activeIndex;
   final int itemCount;
   final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
-  final bool quad; // true → Büyük Etiket state'i (labelQuadSheetProvider)
   final Future<void> Function(int, String) onSubmitted;
   final void Function(int) onClear;
 
@@ -1610,7 +1566,6 @@ class _InputColumn extends StatelessWidget {
     required this.onClear,
     this.itemCount = kLabelCount,
     this.wide = false,
-    this.quad = false,
   });
 
   @override
@@ -1637,7 +1592,6 @@ class _InputColumn extends StatelessWidget {
                   isActive: activeIndex == i,
                   isError: errors.contains(i),
                   wide: wide,
-                  quad: quad,
                   onSubmitted: (v) => onSubmitted(i, v),
                   onClear: () => onClear(i),
                 );
@@ -1677,7 +1631,6 @@ class _SlotInputRow extends ConsumerWidget {
   final bool isActive;
   final bool isError;
   final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
-  final bool quad; // true → Büyük Etiket state'i (labelQuadSheetProvider)
   final Future<void> Function(String) onSubmitted;
   final VoidCallback onClear;
 
@@ -1690,16 +1643,13 @@ class _SlotInputRow extends ConsumerWidget {
     required this.onSubmitted,
     required this.onClear,
     this.wide = false,
-    this.quad = false,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final slot = quad
-        ? ref.watch(labelQuadSheetProvider.select((s) => s.slots[index]))
-        : wide
-            ? ref.watch(labelWideSheetProvider.select((s) => s.slots[index]))
-            : ref.watch(labelSheetProvider.select((s) => s.slots[index]));
+    final slot = wide
+        ? ref.watch(labelWideSheetProvider.select((s) => s.slots[index]))
+        : ref.watch(labelSheetProvider.select((s) => s.slots[index]));
 
     // Aktif hane = aktif durum altını (izinli: ince sol altın şerit + ink
     // kenarlık, §5). Hata → danger kenarlık.
@@ -2022,42 +1972,32 @@ class _LabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Büyük Etiket — canlı A4 önizleme (KARAR v1.19): merkez haç ile 2 sütun × 2
-// satır = 4 A5 etiket. Hücre 105×148.5mm, dış margin YOK (merkez haç = bitişik
-// hücre kenarlıkları), iç güvenli boşluk 6mm. Etiket-içi düzen dar-logo (Yeni
-// Etiket) _LabelCell ile aynı öğe seti, A5'e oranlanmış (~1.8× büyük). Önizleme
-// = HTML = PDF BİREBİR. Mağaza logosu dar-logo'nun kalıcı store logosundan gelir.
+// Poster — canlı A4 önizleme (KARAR v1.23): tek sütunlu profesyonel ürün
+// listesi (ürün adı solda · fiyat sağda). Sabit ızgara YOK; satır sayısı
+// kalem sayısına göre değişir, satır yüksekliği/fontu ORANLANIR (az kalem →
+// iri "poster" satırı, çok kalem → kompakt tablo) — PDF/HTML ile aynı formül.
+// Toplam > kPosterItemsPerPage ise 2., 3. sayfa alt alta gösterilir. Mağaza
+// logosu dar-logo'nun kalıcı store logosundan gelir.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// İç güvenli boşluk 6mm @96dpi ≈ 22.7px (kırpılma önleme; dış margin YOK).
-const double _kQuadPad = 6 * 3.7795;
+const double _kPosterMarginV = 18 * 3.7795; // sayfa üst/alt boşluğu ≈68px
+const double _kPosterMarginH = 16 * 3.7795; // sayfa sol/sağ boşluğu ≈60.5px
 
-// KARAR v1.20.1 — üst bant (kırmızı) SABİT yükseklik: v1.20'de bant "içerik
-// kadar esniyordu" (1 satırlık ürün adıyla 2 satırlık arasında toplam bant
-// yüksekliği değişiyordu); bu + fiyat kutusunun sabit bütçesi birleşince barkod
-// `Expanded` alanı sıfır/negatif yüksekliğe düşüp `barcode` paketinin
-// `assert(height > 0)` kontrolüyle GERÇEK bir çökmeye yol açıyordu. Bant artık
-// 2 satırlık ürün adı DAHİL en kötü durum baştan hesaplanıp SABİTLENİR — 1
-// satırlık kısa adlarda bandın altında boşluk kalması sorun değil, önemli olan
-// TOPLAM yüksekliğin ürün adı uzunluğuna göre ASLA değişmemesi (barkod alanının
-// payı böylece deterministik kalır). mm cinsinden (PDF/HTML aynı değeri
-// paylaşır, üç çıktı BİREBİR); @96dpi px karşılığı türetilir.
-const double _kQuadTopBandHeightMm = 23.3;
-const double _kQuadTopBandHeight = _kQuadTopBandHeightMm * 3.7795; // ≈88px
+double _posterClampUi(double v, double lo, double hi) =>
+    v < lo ? lo : (v > hi ? hi : v);
 
-// Savunma katmanı (KARAR v1.20.1 madde 3): barkod alanına ayrılan gerçek
-// yükseklik bu eşiğin altına düşerse `BarcodeWidget` HİÇ render edilmez (boş
-// bırakılır) — `assert`/exception asla fırlatılmaz. Normal koşulda (madde 1
-// ile) bu dala hiç girilmemesi beklenir, saf bir güvenlik ağıdır.
-const double _kQuadBarcodeMinHeight = 8;
+class _PosterPreviewPane extends ConsumerWidget {
+  // Masaüstü: kendi dikey scroll'u (bounded Expanded içinde). Mobil: false →
+  // shrink; dış sayfa scroll'u tüm sayfaları taşır (nested scroll yok).
+  final bool scrollable;
 
-class _QuadPreviewPane extends ConsumerWidget {
-  const _QuadPreviewPane();
+  const _PosterPreviewPane({this.scrollable = true});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final slots = ref.watch(labelQuadSheetProvider).slots;
+    final items = ref.watch(labelPosterSheetProvider).items;
     final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    final pages = paginatePosterItems(items);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.pageBg,
@@ -2065,25 +2005,59 @@ class _QuadPreviewPane extends ConsumerWidget {
         border: Border.all(color: AppColors.divider),
       ),
       padding: const EdgeInsets.all(AppSizes.space12),
-      child: Center(
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: _QuadA4Canvas(slots: slots, logoDataUrl: logoDataUrl),
-        ),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final pageW = c.maxWidth;
+          final pageH = pageW * (_kA4Height / _kA4Width);
+          final content = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < pages.length; i++) ...[
+                if (pages.length > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSizes.space6),
+                    child: _SectionLabel('Sayfa ${i + 1} / ${pages.length}'),
+                  ),
+                SizedBox(
+                  width: pageW,
+                  height: pageH,
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: _PosterA4Canvas(
+                      items: pages[i],
+                      logoDataUrl: logoDataUrl,
+                      pageLabel:
+                          pages.length > 1 ? '${i + 1} / ${pages.length}' : null,
+                    ),
+                  ),
+                ),
+                if (i < pages.length - 1)
+                  const SizedBox(height: AppSizes.space16),
+              ],
+            ],
+          );
+          return scrollable
+              ? SingleChildScrollView(child: content)
+              : content;
+        },
       ),
     );
   }
 }
 
-class _QuadA4Canvas extends StatelessWidget {
-  final List<LabelSlot?> slots;
+class _PosterA4Canvas extends StatelessWidget {
+  final List<LabelSlot> items;
   final String? logoDataUrl;
+  final String? pageLabel;
 
-  const _QuadA4Canvas({required this.slots, required this.logoDataUrl});
+  const _PosterA4Canvas({
+    required this.items,
+    required this.logoDataUrl,
+    this.pageLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Logo bytes'ı tuval başına bir kez çöz (her hücrede tekrar decode etme).
     Uint8List? logoBytes;
     if (logoDataUrl != null) {
       final i = logoDataUrl!.indexOf(',');
@@ -2100,263 +2074,141 @@ class _QuadA4Canvas extends StatelessWidget {
       width: _kA4Width,
       height: _kA4Height,
       color: Colors.white,
-      // Dış margin YOK — çeyrekler tam yarım sayfa; merkez haç hücre
-      // kenarlıklarından oluşur.
+      padding: const EdgeInsets.symmetric(
+        vertical: _kPosterMarginV,
+        horizontal: _kPosterMarginH,
+      ),
       child: Column(
-        children: List.generate(kQuadRows, (r) {
-          return Expanded(
-            child: Row(
-              children: List.generate(kQuadCols, (c) {
-                final idx = r * kQuadCols + c;
-                return Expanded(
-                  child: _QuadLabelCell(
-                    slot: slots[idx],
-                    logoBytes: logoBytes,
-                  ),
-                );
-              }),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-// Büyük Etiket A4 önizleme tuvalini (2×2) golden/görsel doğrulama için üretir.
-@visibleForTesting
-Widget buildQuadCanvasForGolden(List<LabelSlot?> slots, {String? logoDataUrl}) =>
-    _QuadA4Canvas(slots: slots, logoDataUrl: logoDataUrl);
-
-// Tek Büyük Etiket hücresi (KARAR v1.20 — kırmızı başlık bandı + renkli fiyat
-// kutusu, rozetler kaldırıldı): üst bant SOL logo + "ÖZEL FİYAT"/ürün adı
-// (kırmızı zemin, `AppColors.danger`) → beyaz+kırmızı-kenarlıklı FİYAT kutusu
-// ("SATIŞ FİYATI" / fiyat hero / "KDV DAHİLDİR") → kesikli nötr ayraç → esnek
-// Code128 %80 → alt satır [barkod no sol · tarih sağ] (DEĞİŞMEDİ, v1.13 deseni).
-class _QuadLabelCell extends StatelessWidget {
-  final LabelSlot? slot;
-  final Uint8List? logoBytes;
-
-  const _QuadLabelCell({required this.slot, required this.logoBytes});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = slot;
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(
-          // İnce nötr hairline (merkez haç + kesim kılavuzu; altın YOK).
-          color: s == null ? const Color(0xFFE0E0E0) : const Color(0xFFB8B8B8),
-          width: 0.6,
-        ),
-      ),
-      padding: const EdgeInsets.all(_kQuadPad),
-      child: s == null
-          ? const SizedBox.expand()
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                // 1. Üst bant: KIRMIZI zemin, tam genişlik, köşe radius YOK.
-                //    SOL logo (renkli; yoksa BEYAZ storefront fallback — bu
-                //    banda özel istisna) + "ÖZEL FİYAT" + ürün adı (UPPERCASE).
-                Container(
-                  key: const Key('quadTopBand'),
-                  width: double.infinity,
-                  height: _kQuadTopBandHeight,
-                  color: AppColors.danger,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 60,
-                        height: 52,
-                        child: logoBytes != null
-                            ? Image.memory(logoBytes!, fit: BoxFit.contain)
-                            : const Icon(Icons.storefront,
-                                color: Colors.white, size: 44),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'ÖZEL FİYAT',
-                              maxLines: 1,
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              s.productName.toUpperCase(),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                height: 1.15,
-                                color: Colors.white.withValues(alpha: 0.9),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Başlık: logo (varsa) + "ÜRÜN LİSTESİ" + lacivert ayraç.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (logoBytes != null)
+                SizedBox(
+                  width: 113,
+                  height: 60,
+                  child: Image.memory(logoBytes, fit: BoxFit.contain),
+                ),
+              if (logoBytes != null) const SizedBox(width: 30),
+              const Expanded(
+                child: Text(
+                  'ÜRÜN LİSTESİ',
+                  style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                    color: AppColors.primary,
                   ),
                 ),
-                const SizedBox(height: 10),
-                // 3. Fiyat kutusu: beyaz zemin + kırmızı ince kenarlık.
-                Container(
-                  key: const Key('quadPriceBox'),
-                  width: double.infinity,
-                  // KARAR v1.20.1 madde 2: dikey iç boşluk ~25% daraltıldı
-                  // (10 → 7.5) — ek güvenlik payı için; renk/sıra/hiyerarşi
-                  // DEĞİŞMEDİ.
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 7.5),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: AppColors.danger, width: 2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'SATIŞ FİYATI',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.5,
-                          color: AppColors.danger,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.center,
-                        child: Text(
-                          '${formatNumber(s.price)} TL',
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.visible,
-                          style: const TextStyle(
-                            fontSize: 92,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                            height: 1,
-                            color: AppColors.danger,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'KDV DAHİLDİR',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.danger.withValues(alpha: 0.75),
-                        ),
-                      ),
-                    ],
-                  ),
+              ),
+              if (pageLabel != null)
+                Text(
+                  'Sayfa $pageLabel',
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textMuted),
                 ),
-                const SizedBox(height: 8),
-                // 4. Kesikli ayraç — nötr `#B8B8B8` (mevcut kesim-kılavuzu grisi).
-                const _QuadDashedDivider(color: Color(0xFFB8B8B8)),
-                const SizedBox(height: 8),
-                // 5. Barkod çizgileri (Code128) — esnek: sabit öğeler yerini
-                // korur; taşarsa yalnız barkod çizgisi kısalır. %80'e ortalı.
-                Expanded(
-                  key: const Key('quadBarcodeArea'),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Savunma katmanı (KARAR v1.20.1 madde 3): gerçek
-                      // yükseklik eşiğin altındaysa barkodu HİÇ render etme
-                      // — `barcode` paketinin `assert(height > 0)` çökmesi
-                      // asla tetiklenmez. Normal koşulda (madde 1 ile) bu
-                      // dala hiç girilmemesi beklenir.
-                      if (constraints.maxHeight < _kQuadBarcodeMinHeight) {
-                        return const SizedBox.shrink();
-                      }
-                      return Center(
-                        child: FractionallySizedBox(
-                          widthFactor: 0.8,
-                          child: BarcodeWidget(
-                            barcode: bc.Barcode.code128(),
-                            data: s.barcode,
-                            drawText: false,
-                            color: Colors.black,
-                            errorBuilder: (context, error) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ),
+            ],
+          ),
+          const SizedBox(height: 11),
+          Container(height: 4.5, color: AppColors.primary),
+          const SizedBox(height: 15),
+          // Liste — kalan alanı doldurur; satır yüksekliği kalem sayısına göre
+          // oranlanır (az kalem → iri poster satırı, çok kalem → kompakt tablo).
+          Expanded(
+            child: items.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Henüz ürün okutulmadı.',
+                      style:
+                          TextStyle(fontSize: 16, color: AppColors.textMuted),
+                    ),
+                  )
+                : LayoutBuilder(
+                    builder: (ctx, cons) {
+                      final rowH = _posterClampUi(
+                          cons.maxHeight / items.length, 41.6, 189);
+                      final nameSize =
+                          _posterClampUi(rowH / 3.7795 * 0.72, 11, 30);
+                      final priceSize =
+                          _posterClampUi(rowH / 3.7795 * 0.8, 13, 34);
+                      final numSize =
+                          _posterClampUi(rowH / 3.7795 * 0.4, 8, 16);
+                      return Column(
+                        children: List.generate(items.length, (i) {
+                          final it = items[i];
+                          return Container(
+                            height: rowH,
+                            color: i.isEven
+                                ? Colors.white
+                                : const Color(0xFFF4F5F7),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 15),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 34,
+                                  child: Text(
+                                    '${i + 1}.',
+                                    style: TextStyle(
+                                        fontSize: numSize,
+                                        color: AppColors.textMuted),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    it.productName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: nameSize,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 23),
+                                Text(
+                                  '${formatNumber(it.price)} TL',
+                                  style: TextStyle(
+                                    fontSize: priceSize,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                    letterSpacing: -0.3,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures()
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
                       );
                     },
                   ),
-                ),
-                // 6. En alt: barkod no (sol) + oluşturma tarihi (sağ) — DEĞİŞMEDİ.
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        s.barcode,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 28,
-                          letterSpacing: 0.5,
-                          color: Colors.black,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                    Text(
-                      formatShortDate(s.createdAt),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF555555),
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-    );
-  }
-}
-
-// Kesikli ayraç (KARAR v1.20) — pdf paketinde native dashed-border yok, bu
-// yüzden PDF tarafında da aynı "eşit alternatif segment" deseni kullanılır
-// (önizleme = HTML = PDF birebir aynı görsel dil; HTML tarafı native
-// `border-top: dashed` ile aynı sonucu verir).
-class _QuadDashedDivider extends StatelessWidget {
-  final Color color;
-  static const int _segments = 24;
-
-  const _QuadDashedDivider({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 1.4,
-      child: Row(
-        children: List.generate(_segments, (i) {
-          return Expanded(
-            child: Container(color: i.isEven ? color : Colors.transparent),
-          );
-        }),
+          ),
+          const SizedBox(height: 11),
+          Container(height: 2.3, color: const Color(0xFFB8B8B8)),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Toplam ${items.length} ürün',
+                style:
+                    const TextStyle(fontSize: 11, color: AppColors.textMuted),
+              ),
+              Text(
+                formatShortDate(DateTime.now()),
+                style:
+                    const TextStyle(fontSize: 11, color: AppColors.textMuted),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2602,6 +2454,222 @@ class _WideLabelCell extends StatelessWidget {
                 );
               },
             ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Poster (KARAR v1.23) — sol bölge: tek barkod girişi + eklenen ürün listesi.
+// Ürün Etiketi'nin barkod+adet akışıyla aynı desen, ADET YOK — barkod okut/
+// Enter → ürün doğrudan listeye eklenir (aynı barkod tekrar okutulursa satır
+// yerinde güncellenir). Aktif barkod hanesi = ince sol altın şerit + ink
+// kenarlık (§5); çözülemeyen = danger uyarı.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _PosterInputColumn extends StatelessWidget {
+  final TextEditingController barcodeController;
+  final FocusNode barcodeFocus;
+  final bool barcodeActive;
+  final bool isError;
+  final List<LabelSlot> items;
+  final bool shrinkWrap; // mobil: sayfa scroll'una gömülü (iç scroll yok)
+  final Future<void> Function(String) onBarcodeSubmitted;
+  final void Function(int) onRemoveItem;
+
+  const _PosterInputColumn({
+    required this.barcodeController,
+    required this.barcodeFocus,
+    required this.barcodeActive,
+    required this.isError,
+    required this.items,
+    required this.onBarcodeSubmitted,
+    required this.onRemoveItem,
+    this.shrinkWrap = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Aktif hane = ince sol altın şerit + ink kenarlık (§5). Hata → danger.
+    final Color borderColor = isError
+        ? AppColors.danger
+        : barcodeActive
+            ? AppColors.primary
+            : AppColors.divider;
+
+    final barcodeField = Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: borderColor, width: barcodeActive ? 1.4 : 1),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        child: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 44,
+              color: barcodeActive ? AppColors.gold : Colors.transparent,
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: TextField(
+                  controller: barcodeController,
+                  focusNode: barcodeFocus,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: 'Barkod okut / gir',
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onSubmitted: onBarcodeSubmitted,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final itemRows = <Widget>[
+      for (var i = 0; i < items.length; i++)
+        _PosterItemRow(
+          index: i,
+          item: items[i],
+          onRemove: () => onRemoveItem(i),
+        ),
+    ];
+
+    final itemList = items.isEmpty
+        ? const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSizes.space16),
+            child: Text(
+              'Henüz ürün eklenmedi. Barkod okutun.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+            ),
+          )
+        : (shrinkWrap
+            ? Column(children: itemRows)
+            : Expanded(
+                child: ListView(children: itemRows),
+              ));
+
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          const _SectionLabel('Barkod'),
+          const SizedBox(height: AppSizes.space8),
+          barcodeField,
+          const SizedBox(height: AppSizes.space6),
+          if (isError)
+            const Text(
+              'Ürün bulunamadı.',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.danger,
+              ),
+            )
+          else
+            const SizedBox(height: 14),
+          const SizedBox(height: AppSizes.space12),
+          const _SectionLabel('Eklenen Ürünler'),
+          const SizedBox(height: AppSizes.space8),
+          itemList,
+        ],
+      ),
+    );
+  }
+}
+
+// Tek kalem satırı: ürün adı + barkod (üst) · fiyat + sil.
+class _PosterItemRow extends StatelessWidget {
+  final int index;
+  final LabelSlot item;
+  final VoidCallback onRemove;
+
+  const _PosterItemRow({
+    required this.index,
+    required this.item,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSizes.space6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 22,
+            child: Text(
+              '${index + 1}.',
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.productName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  item.barcode,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${formatNumber(item.price)} TL',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          IconButton(
+            onPressed: onRemove,
+            icon: const Icon(Icons.close, size: 16),
+            color: AppColors.textMuted,
+            tooltip: 'Kalemi sil',
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3121,10 +3189,10 @@ class _ProductLabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Üst sekme seçici (KARAR v1.14 / v1.21): Yeni Etiket · Geniş Logo · Büyük Etiket
-// · Ürün Etiketi · Kayıtlı Dosyalar. Kasa sekme dili (SegmentedButton, aktif
-// sekme token dili). Responsive: mobilde kısa etiketler
-// ("Yeni"·"Geniş"·"Büyük"·"Ürün"·"Dosyalar") + ikonsuz, yatay-kaydırılabilir
+// Üst sekme seçici (KARAR v1.14 / v1.21 / v1.23): Yeni Etiket · Geniş Logo ·
+// Poster · Ürün Etiketi · Kayıtlı Dosyalar. Kasa sekme dili (SegmentedButton,
+// aktif sekme token dili). Responsive: mobilde kısa etiketler
+// ("Yeni"·"Geniş"·"Poster"·"Ürün"·"Dosyalar") + ikonsuz, yatay-kaydırılabilir
 // (SingleChildScrollView) → 5 segment dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -3167,15 +3235,15 @@ class _TabSelector extends StatelessWidget {
                 : const Icon(Icons.aspect_ratio_outlined, size: 18),
           ),
           ButtonSegment(
-            value: _LabelTab.buyuk,
-            label: Text(
-              mobile ? 'Büyük' : 'Büyük Etiket',
+            value: _LabelTab.poster,
+            label: const Text(
+              'Poster',
               maxLines: 1,
               softWrap: false,
             ),
             icon: mobile
                 ? null
-                : const Icon(Icons.crop_square_outlined, size: 18),
+                : const Icon(Icons.receipt_long_outlined, size: 18),
           ),
           ButtonSegment(
             value: _LabelTab.urun,

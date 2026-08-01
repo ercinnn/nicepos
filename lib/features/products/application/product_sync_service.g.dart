@@ -30,7 +30,7 @@ final pendingChangesListProvider =
 typedef PendingChangesListRef =
     AutoDisposeFutureProviderRef<List<PendingChange>>;
 String _$productSyncServiceHash() =>
-    r'7ebc88a3a208f5999d63c324661ffcca668e23b6';
+    r'be70e641dda6d3a9d5e7d7df8898d57788c3ed11';
 
 /// Mobil çevrimdışı ürün ekleme/düzenleme — senkron motoru. Yalnız native/
 /// Android'de anlamlıdır (çağıran taraflar `!kIsWeb` ile korur); web'de bu

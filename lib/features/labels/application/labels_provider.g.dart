@@ -88,26 +88,27 @@ final labelWideSheetProvider =
     );
 
 typedef _$LabelWideSheet = Notifier<LabelWideSheetState>;
-String _$labelQuadSheetHash() => r'992a542ccf94036c37b5069d647d18730c1a0088';
+String _$labelPosterSheetHash() => r'f606085c084a082e7bc5ed77d35c5c84246fae18';
 
-/// Büyük Etiket sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4 hane
-/// korunur (dar-logo `LabelSheet` deseninin logosuz 4-haneli kopyası; dar
-/// 24-hane / geniş 10-hane provider'larıyla KARIŞMAZ).
+/// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste
+/// korunur (diğer etiket provider'larıyla KARIŞMAZ). Mağaza logosu dar-logo
+/// `LabelSheet`'in kalıcı store logosundan paylaşılır (bu sekmede ayrı logo
+/// yükleme YOK).
 ///
-/// Copied from [LabelQuadSheet].
-@ProviderFor(LabelQuadSheet)
-final labelQuadSheetProvider =
-    NotifierProvider<LabelQuadSheet, LabelQuadSheetState>.internal(
-      LabelQuadSheet.new,
-      name: r'labelQuadSheetProvider',
+/// Copied from [LabelPosterSheet].
+@ProviderFor(LabelPosterSheet)
+final labelPosterSheetProvider =
+    NotifierProvider<LabelPosterSheet, LabelPosterSheetState>.internal(
+      LabelPosterSheet.new,
+      name: r'labelPosterSheetProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$labelQuadSheetHash,
+          : _$labelPosterSheetHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
-typedef _$LabelQuadSheet = Notifier<LabelQuadSheetState>;
+typedef _$LabelPosterSheet = Notifier<LabelPosterSheetState>;
 String _$labelProductSheetHash() => r'8a55c900946aa2dafbe695b9c95a9c7e86340ea3';
 
 /// Ürün Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde kalem

@@ -28,3 +28,23 @@ class LabelSlot {
     );
   }
 }
+
+/// Poster sekmesi (KARAR v1.23) A4 sayfa başına en çok satır sayısı — bunun
+/// üzeri 2., 3. sayfaya taşar (Ürün Etiketi'nin çok-sayfalı deseniyle aynı).
+const int kPosterItemsPerPage = 20;
+
+/// Poster kalemlerini (`LabelSlot` — barkod/ad/fiyat) sayfalara böler; her
+/// sayfa en çok [kPosterItemsPerPage] satır tutar. Üç çıktı (önizleme = HTML =
+/// PDF) bu tek fonksiyonu paylaşır → taşma mantığı BİREBİR aynıdır. Kalem
+/// yoksa tek boş liste döner (önizleme "henüz ürün yok" durumunu gösterir).
+List<List<LabelSlot>> paginatePosterItems(List<LabelSlot> items) {
+  if (items.isEmpty) return [const []];
+  final pages = <List<LabelSlot>>[];
+  for (var start = 0; start < items.length; start += kPosterItemsPerPage) {
+    final end = (start + kPosterItemsPerPage < items.length)
+        ? start + kPosterItemsPerPage
+        : items.length;
+    pages.add(items.sublist(start, end));
+  }
+  return pages;
+}
