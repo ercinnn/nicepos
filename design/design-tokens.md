@@ -713,6 +713,24 @@ Tek ölçek (`AppSizes`). Ara değer icat etme.
     rengi, nötr zebra gri; baskı siyah/beyaz + isteğe bağlı renkli logo (dar-logo'nun kalıcı store logosu
     paylaşılır). Toplam > 20 ise 2., 3. sayfaya taşar (Ürün Etiketi'nin çok-sayfalı desenindeki
     `page-break-after` deseniyle aynı).
+  - **Poster — özelleştirilebilir başlık + ürün-adı arama + barkod satırı (KARAR v1.24 — kullanıcı
+    isteği):** v1.23'ün üç noktası genişletildi (önizleme = HTML = PDF birebir korunur):
+    1. **Liste Başlığı hanesi** — sol panelin en üstünde, boş bırakılırsa baskıda `kPosterDefaultTitle`
+       ("ÜRÜN LİSTESİ") kullanılır; kullanıcı "Merdiven Fiyat Listesi"/"Masa Fiyat Listesi" gibi kendi
+       başlığını girerse doğrudan onun yerine basılır (`LabelPosterSheetState.effectiveTitle`, `keepAlive`
+       ile sekme değişiminde korunur).
+    2. **Barkod + ürün-adı arama TEK alanda** — satış ekranının canlı ürün arama deseninin (`OverlayPortal`
+       + debounce + Türkçe-duyarlı substring) Poster'a uyarlanmışı (`_PosterSearchField`). Barkod okutup
+       Enter → önceki gibi tam eşleşme; yazı yazınca altında açılan dropdown'dan bir ürüne dokununca —
+       barkodu olsun olmasın — doğrudan listeye eklenir. Barkodu olmayan (ad araması ile eklenen) kalemler
+       boş barkod ("") ortak anahtarıyla birbirinin üzerine YAZILMAZ — `addOrUpdateItem` yalnız barkodu
+       DOLU kalemlerde eşleşme arar, boş barkodlular her zaman eklenir.
+    3. **"Barkod numarasını da yazdır" tik kutusu** — global (satır bazlı değil) tercih; açıkken her
+       satırda ürün adının altında ikinci bir muted-gri barkod satırı basılır (barkodu olmayan kalemlerde
+       atlanır). Satır tabanı yüksekliği bu modda **11mm → 16mm**'ye yükselir (2. satıra yer açmak için;
+       isim/fiyat/numara font oranları da orantılı küçültülür) — üç çıktıda BİREBİR aynı formül.
+    Yeni renk/altın YOK; Eklenen Ürünler listesinde her satırda artık fiyat da gösterilir (satış
+    ekranındaki sepet satırı diliyle tutarlı).
 
 ---
 

@@ -23,6 +23,8 @@ void printWideLabelsA4({
 /// (KARAR v1.23).
 void printPosterA4({
   required List<LabelSlot> items,
+  required String title,
+  bool showBarcode = false,
   String? logoDataUrl,
 }) {
   // No-op

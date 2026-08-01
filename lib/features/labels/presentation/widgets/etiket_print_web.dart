@@ -50,9 +50,16 @@ void printWideLabelsA4({
 /// logosu (opsiyonel). Çıktı SİYAH/BEYAZ + isteğe bağlı RENKLİ logo.
 void printPosterA4({
   required List<LabelSlot> items,
+  required String title,
+  bool showBarcode = false,
   String? logoDataUrl,
 }) {
-  final html = _buildPosterHtml(items: items, logoDataUrl: logoDataUrl);
+  final html = _buildPosterHtml(
+    items: items,
+    title: title,
+    showBarcode: showBarcode,
+    logoDataUrl: logoDataUrl,
+  );
 
   final blob = web.Blob(
     [html.toJS].toJS,
@@ -421,6 +428,8 @@ double _posterClampWeb(double v, double lo, double hi) =>
 
 String _posterPageHtml(
   List<LabelSlot> page,
+  String title,
+  bool showBarcode,
   String? logoDataUrl,
   DateTime generatedAt,
   String? pageLabel,
@@ -436,16 +445,26 @@ String _posterPageHtml(
     // Satır yüksekliği (mm): kalan yükseklik ≈ 297 − 36 (dış margin) − ~34
     // (başlık) − ~10 (alt bilgi) ≈ 217mm; kalem sayısına oranlı, min/max ile
     // sınırlı (az kalem → iri "poster" satırı, çok kalem → kompakt tablo).
-    final rowH = _posterClampWeb(217 / page.length, 11, 50);
-    final nameSize = _posterClampWeb(rowH * 0.72, 11, 30);
+    // Barkod satırı açıksa taban yükseklik yükselir (2. satıra yer açılır).
+    final minRow = showBarcode ? 16.0 : 11.0;
+    final rowH = _posterClampWeb(217 / page.length, minRow, 50);
+    final nameSize =
+        _posterClampWeb(rowH * (showBarcode ? 0.56 : 0.72), 10, 28);
     final priceSize = _posterClampWeb(rowH * 0.8, 13, 34);
     final numSize = _posterClampWeb(rowH * 0.4, 8, 16);
+    final barcodeSize = _posterClampWeb(rowH * 0.26, 7, 12);
     for (var i = 0; i < page.length; i++) {
       final it = page[i];
+      final barcodeHtml = (showBarcode && it.barcode.isNotEmpty)
+          ? '<span class="pbarcode" style="font-size:${barcodeSize}pt">${_esc(it.barcode)}</span>'
+          : '';
       rows.write('''
         <div class="prow" style="height:${rowH}mm;background:${i.isEven ? '#fff' : '#f4f5f7'}">
           <span class="pnum" style="font-size:${numSize}pt">${i + 1}.</span>
-          <span class="pname" style="font-size:${nameSize}pt">${_esc(it.productName)}</span>
+          <span class="pnamecol">
+            <span class="pname" style="font-size:${nameSize}pt">${_esc(it.productName)}</span>
+            $barcodeHtml
+          </span>
           <span class="pprice" style="font-size:${priceSize}pt">${_esc(formatNumber(it.price))} TL</span>
         </div>''');
     }
@@ -458,7 +477,7 @@ String _posterPageHtml(
     <div class="psheet">
       <div class="phead">
         $logoHtml
-        <span class="ptitle">ÜRÜN LİSTESİ</span>
+        <span class="ptitle">${_esc(title)}</span>
         $pageLabelHtml
       </div>
       <div class="prule"></div>
@@ -473,6 +492,8 @@ String _posterPageHtml(
 
 String _buildPosterHtml({
   required List<LabelSlot> items,
+  required String title,
+  bool showBarcode = false,
   String? logoDataUrl,
 }) {
   final pages = paginatePosterItems(items);
@@ -481,6 +502,8 @@ String _buildPosterHtml({
   for (var p = 0; p < pages.length; p++) {
     sheets.writeln(_posterPageHtml(
       pages[p],
+      title,
+      showBarcode,
       logoDataUrl,
       now,
       pages.length > 1 ? '${p + 1} / ${pages.length}' : null,
@@ -493,7 +516,7 @@ String _buildPosterHtml({
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<title>Ürün Listesi</title>
+<title>${_esc(title)}</title>
 <style>
   @page { size: A4 portrait; margin: 18mm 16mm; }
   * { box-sizing: border-box; }
@@ -520,10 +543,14 @@ String _buildPosterHtml({
   .plogo-img { max-width: 30mm; max-height: 16mm; object-fit: contain; }
   .ptitle {
     flex: 1 1 auto;
+    min-width: 0;
     font-size: 22pt;
     font-weight: 800;
     letter-spacing: 0.5px;
     color: #1B2A4A;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .ppage { font-size: 9pt; color: #6b7280; }
   .prule { height: 1.2mm; background: #1B2A4A; margin: 3mm 0 4mm; }
@@ -543,7 +570,14 @@ String _buildPosterHtml({
     font-variant-numeric: tabular-nums;
   }
   .pnum { flex: 0 0 9mm; color: #6b7280; }
-  .pname { flex: 1 1 auto; font-weight: 700; }
+  .pnamecol {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .pname { font-weight: 700; }
+  .pbarcode { color: #6b7280; font-variant-numeric: tabular-nums; }
   .pprice {
     flex: 0 0 auto;
     font-weight: 700;

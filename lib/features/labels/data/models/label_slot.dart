@@ -33,6 +33,11 @@ class LabelSlot {
 /// üzeri 2., 3. sayfaya taşar (Ürün Etiketi'nin çok-sayfalı deseniyle aynı).
 const int kPosterItemsPerPage = 20;
 
+/// Poster başlık hanesi boş bırakılırsa kullanılan varsayılan başlık (KARAR
+/// v1.24). Kullanıcı "Merdiven Fiyat Listesi" gibi kendi başlığını girerse bu
+/// yerine geçer.
+const String kPosterDefaultTitle = 'ÜRÜN LİSTESİ';
+
 /// Poster kalemlerini (`LabelSlot` — barkod/ad/fiyat) sayfalara böler; her
 /// sayfa en çok [kPosterItemsPerPage] satır tutar. Üç çıktı (önizleme = HTML =
 /// PDF) bu tek fonksiyonu paylaşır → taşma mantığı BİREBİR aynıdır. Kalem

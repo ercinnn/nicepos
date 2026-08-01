@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:barcode/barcode.dart' as bc;
@@ -16,6 +17,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/utils/scan_sound.dart';
 import '../../../products/application/products_provider.dart';
+import '../../../products/data/local/product_local_cache_dao.dart';
 import '../../../products/data/models/product.dart';
 import '../../../sales/application/barcode_cache.dart';
 import '../../application/labels_provider.dart';
@@ -68,10 +70,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   int _wideActiveIndex = 0;
   Uint8List? _figurBytes; // marka figürü (yazdırma için bir kez okunur)
 
-  // Poster sekmesi (KARAR v1.23) — barkod-tabanlı serbest liste; sabit hane
-  // sayısı YOK, tek giriş satırı (satış ekranı _onBarcodeSubmitted deseni).
+  // Poster sekmesi (KARAR v1.23 / v1.24) — barkod VEYA ürün adı ile serbest
+  // liste; sabit hane sayısı YOK, tek giriş satırı (satış ekranı
+  // _onBarcodeSubmitted + canlı ürün arama deseni). Başlık hanesi ayrı.
   late final TextEditingController _posterBarcodeController;
   late final FocusNode _posterBarcodeFocus;
+  late final TextEditingController _posterTitleController;
   bool _posterError = false; // son barkod çözülemedi (danger uyarı)
   bool _posterBarcodeActive = false; // barkod hanesi odaklı mı (aktif altını)
 
@@ -116,6 +120,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         setState(() => _posterBarcodeActive = _posterBarcodeFocus.hasFocus);
       }
     });
+    // keepAlive provider'dan mevcut başlığı geri yükle (sekme değişince korunur).
+    _posterTitleController =
+        TextEditingController(text: ref.read(labelPosterSheetProvider).title);
     // Ürün Etiketi sekmesi (KARAR v1.21) — barkod + adet giriş kontrolleri.
     _prodBarcodeController = TextEditingController();
     _prodQtyController = TextEditingController(text: '1');
@@ -159,6 +166,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     }
     _posterBarcodeController.dispose();
     _posterBarcodeFocus.dispose();
+    _posterTitleController.dispose();
     _prodBarcodeController.dispose();
     _prodQtyController.dispose();
     _prodBarcodeFocus.dispose();
@@ -641,12 +649,30 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // Poster sekmesi (KARAR v1.23) — barkod-tabanlı serbest liste (sabit hane
-  // sayısı YOK). Barkod çözme mantığı ortak (_resolveBarcode); aynı barkod
-  // tekrar okutulursa satır YERİNDE güncellenir (bkz. addOrUpdateItem).
-  // Mağaza logosu dar-logo'nun kalıcı store logosu paylaşılır. Fiyat/barkod
-  // çizgisi YOK — yalnız ad + fiyat (profesyonel liste).
+  // Poster sekmesi (KARAR v1.23 / v1.24) — barkod okutma VEYA ürün adı arama
+  // ile serbest liste (sabit hane sayısı YOK). Barkod çözme mantığı ortak
+  // (_resolveBarcode); aynı barkod tekrar okutulursa satır YERİNDE güncellenir
+  // (bkz. addOrUpdateItem). Kullanıcı başlığı + barkod-göster tercihi ayrı
+  // hanelerde tutulur (provider state). Mağaza logosu dar-logo'nun kalıcı
+  // store logosu paylaşılır.
   // ═════════════════════════════════════════════════════════════════════════
+
+  // Çözülmüş bir ürünü Poster listesine ekler/günceller — barkod okutma
+  // (_onPosterBarcodeSubmitted/kamera) VE canlı ürün-adı araması (satış
+  // ekranındaki sepete ekleme deseni) bu tek noktayı paylaşır.
+  void _addPosterProduct(Product product, {String? fallbackBarcode}) {
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : (fallbackBarcode ?? '');
+    ref.read(labelPosterSheetProvider.notifier).addOrUpdateItem(
+          LabelSlot(
+            barcode: code,
+            productName: product.name,
+            price: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+  }
 
   Future<void> _onPosterBarcodeSubmitted(String raw) async {
     final query = raw.trim();
@@ -660,22 +686,27 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return;
     }
 
-    final code = (product.barcode != null && product.barcode!.isNotEmpty)
-        ? product.barcode!
-        : query;
-    ref.read(labelPosterSheetProvider.notifier).addOrUpdateItem(
-          LabelSlot(
-            barcode: code,
-            productName: product.name,
-            price: product.price1,
-            createdAt: DateTime.now(),
-          ),
-        );
+    _addPosterProduct(product, fallbackBarcode: query);
     HapticFeedback.lightImpact();
     playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
     setState(() => _posterError = false);
     _posterBarcodeController.clear();
     _posterBarcodeFocus.requestFocus();
+  }
+
+  // Canlı ürün-adı arama listesinden bir ürüne dokununca çağrılır (satış
+  // ekranı sepete-ekleme deseni) — barkod okutma gerekmez, ürün doğrudan eklenir.
+  void _onPosterProductPicked(Product product) {
+    _addPosterProduct(product);
+    setState(() => _posterError = false);
+  }
+
+  void _onPosterTitleChanged(String value) {
+    ref.read(labelPosterSheetProvider.notifier).setTitle(value);
+  }
+
+  void _onPosterShowBarcodeChanged(bool value) {
+    ref.read(labelPosterSheetProvider.notifier).setShowBarcode(value);
   }
 
   Future<LabelScanFeedback> _handlePosterCameraScan(String raw) async {
@@ -690,17 +721,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return LabelScanFeedback(
           status: LabelScanStatus.notFound, filledCount: filled());
     }
-    final code = (product.barcode != null && product.barcode!.isNotEmpty)
-        ? product.barcode!
-        : query;
-    ref.read(labelPosterSheetProvider.notifier).addOrUpdateItem(
-          LabelSlot(
-            barcode: code,
-            productName: product.name,
-            price: product.price1,
-            createdAt: DateTime.now(),
-          ),
-        );
+    _addPosterProduct(product, fallbackBarcode: query);
     return LabelScanFeedback(
       status: LabelScanStatus.placed,
       productName: product.name,
@@ -742,6 +763,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     // Mağaza logosu dar-logo sekmesinin kalıcı store logosundan paylaşılır.
     printPosterA4(
       items: state.items,
+      title: state.effectiveTitle,
+      showBarcode: state.showBarcode,
       logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
     );
   }
@@ -765,6 +788,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     try {
       final bytes = await buildPosterPdf(
         items: state.items,
+        title: state.effectiveTitle,
+        showBarcode: state.showBarcode,
         logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
       );
       final saved =
@@ -1196,8 +1221,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           onSavePdf: _savePosterPdf,
           onCameraScan: kIsWeb ? null : _startPosterCameraScan,
           subtitle:
-              'Barkod okutun; her ürün A4 dikey profesyonel bir listeye (ad + '
-              'fiyat) eklenir — 1 üründen 10+ ürüne kadar sayfayı doldurur.',
+              'Barkod okutun veya ürün adı arayın; her ürün A4 dikey '
+              'profesyonel bir listeye eklenir — 1 üründen 10+ ürüne kadar '
+              'sayfayı doldurur.',
         ),
         const SizedBox(height: AppSizes.space16),
         Expanded(
@@ -1207,12 +1233,17 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               Expanded(
                 flex: 5,
                 child: _PosterInputColumn(
+                  titleController: _posterTitleController,
+                  onTitleChanged: _onPosterTitleChanged,
                   barcodeController: _posterBarcodeController,
                   barcodeFocus: _posterBarcodeFocus,
                   barcodeActive: _posterBarcodeActive,
                   isError: _posterError,
                   items: state.items,
+                  showBarcode: state.showBarcode,
+                  onShowBarcodeChanged: _onPosterShowBarcodeChanged,
                   onBarcodeSubmitted: _onPosterBarcodeSubmitted,
+                  onProductSelected: _onPosterProductPicked,
                   onRemoveItem: _removePosterItem,
                 ),
               ),
@@ -1249,20 +1280,25 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
             onSavePdf: _savePosterPdf,
             onCameraScan: kIsWeb ? null : _startPosterCameraScan,
             subtitle:
-                'Barkod okutun; her ürün A4 dikey profesyonel bir listeye '
-                '(ad + fiyat) eklenir — 1 üründen 10+ ürüne kadar sayfayı '
-                'doldurur.',
+                'Barkod okutun veya ürün adı arayın; her ürün A4 dikey '
+                'profesyonel bir listeye eklenir — 1 üründen 10+ ürüne kadar '
+                'sayfayı doldurur.',
             compact: true,
           ),
           const SizedBox(height: AppSizes.space16),
           _PosterInputColumn(
+            titleController: _posterTitleController,
+            onTitleChanged: _onPosterTitleChanged,
             barcodeController: _posterBarcodeController,
             barcodeFocus: _posterBarcodeFocus,
             barcodeActive: _posterBarcodeActive,
             isError: _posterError,
             items: state.items,
+            showBarcode: state.showBarcode,
+            onShowBarcodeChanged: _onPosterShowBarcodeChanged,
             shrinkWrap: true,
             onBarcodeSubmitted: _onPosterBarcodeSubmitted,
+            onProductSelected: _onPosterProductPicked,
             onRemoveItem: _removePosterItem,
           ),
           const SizedBox(height: AppSizes.space20),
@@ -1995,7 +2031,8 @@ class _PosterPreviewPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(labelPosterSheetProvider).items;
+    final posterState = ref.watch(labelPosterSheetProvider);
+    final items = posterState.items;
     final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
     final pages = paginatePosterItems(items);
     return Container(
@@ -2025,6 +2062,8 @@ class _PosterPreviewPane extends ConsumerWidget {
                     fit: BoxFit.contain,
                     child: _PosterA4Canvas(
                       items: pages[i],
+                      title: posterState.effectiveTitle,
+                      showBarcode: posterState.showBarcode,
                       logoDataUrl: logoDataUrl,
                       pageLabel:
                           pages.length > 1 ? '${i + 1} / ${pages.length}' : null,
@@ -2047,11 +2086,15 @@ class _PosterPreviewPane extends ConsumerWidget {
 
 class _PosterA4Canvas extends StatelessWidget {
   final List<LabelSlot> items;
+  final String title;
+  final bool showBarcode;
   final String? logoDataUrl;
   final String? pageLabel;
 
   const _PosterA4Canvas({
     required this.items,
+    required this.title,
+    required this.showBarcode,
     required this.logoDataUrl,
     this.pageLabel,
   });
@@ -2081,7 +2124,8 @@ class _PosterA4Canvas extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Başlık: logo (varsa) + "ÜRÜN LİSTESİ" + lacivert ayraç.
+          // Başlık: logo (varsa) + kullanıcı başlığı (boşsa varsayılan) +
+          // lacivert ayraç.
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2092,10 +2136,12 @@ class _PosterA4Canvas extends StatelessWidget {
                   child: Image.memory(logoBytes, fit: BoxFit.contain),
                 ),
               if (logoBytes != null) const SizedBox(width: 30),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'ÜRÜN LİSTESİ',
-                  style: TextStyle(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontSize: 30,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.5,
@@ -2127,14 +2173,21 @@ class _PosterA4Canvas extends StatelessWidget {
                   )
                 : LayoutBuilder(
                     builder: (ctx, cons) {
+                      // Barkod satırı açıksa taban yükseklik yükselir (2.
+                      // satıra yer açılır) — PDF/HTML ile aynı formül.
+                      final minRowH = showBarcode ? 60.5 : 41.6;
                       final rowH = _posterClampUi(
-                          cons.maxHeight / items.length, 41.6, 189);
-                      final nameSize =
-                          _posterClampUi(rowH / 3.7795 * 0.72, 11, 30);
+                          cons.maxHeight / items.length, minRowH, 189);
+                      final nameSize = _posterClampUi(
+                          rowH / 3.7795 * (showBarcode ? 0.56 : 0.72),
+                          10,
+                          28);
                       final priceSize =
                           _posterClampUi(rowH / 3.7795 * 0.8, 13, 34);
                       final numSize =
                           _posterClampUi(rowH / 3.7795 * 0.4, 8, 16);
+                      final barcodeSize =
+                          _posterClampUi(rowH / 3.7795 * 0.26, 7, 12);
                       return Column(
                         children: List.generate(items.length, (i) {
                           final it = items[i];
@@ -2158,15 +2211,35 @@ class _PosterA4Canvas extends StatelessWidget {
                                   ),
                                 ),
                                 Expanded(
-                                  child: Text(
-                                    it.productName,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: nameSize,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.black,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        it.productName,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: nameSize,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                      if (showBarcode && it.barcode.isNotEmpty)
+                                        Text(
+                                          it.barcode,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: barcodeSize,
+                                            color: AppColors.textMuted,
+                                            fontFeatures: const [
+                                              FontFeature.tabularFigures()
+                                            ],
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                                 const SizedBox(width: 23),
@@ -2467,72 +2540,54 @@ class _WideLabelCell extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _PosterInputColumn extends StatelessWidget {
+  final TextEditingController titleController;
+  final ValueChanged<String> onTitleChanged;
   final TextEditingController barcodeController;
   final FocusNode barcodeFocus;
   final bool barcodeActive;
   final bool isError;
   final List<LabelSlot> items;
+  final bool showBarcode;
+  final ValueChanged<bool> onShowBarcodeChanged;
   final bool shrinkWrap; // mobil: sayfa scroll'una gömülü (iç scroll yok)
   final Future<void> Function(String) onBarcodeSubmitted;
+  final void Function(Product) onProductSelected;
   final void Function(int) onRemoveItem;
 
   const _PosterInputColumn({
+    required this.titleController,
+    required this.onTitleChanged,
     required this.barcodeController,
     required this.barcodeFocus,
     required this.barcodeActive,
     required this.isError,
     required this.items,
+    required this.showBarcode,
+    required this.onShowBarcodeChanged,
     required this.onBarcodeSubmitted,
+    required this.onProductSelected,
     required this.onRemoveItem,
     this.shrinkWrap = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Aktif hane = ince sol altın şerit + ink kenarlık (§5). Hata → danger.
-    final Color borderColor = isError
-        ? AppColors.danger
-        : barcodeActive
-            ? AppColors.primary
-            : AppColors.divider;
-
-    final barcodeField = Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-        border: Border.all(color: borderColor, width: barcodeActive ? 1.4 : 1),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-        child: Row(
-          children: [
-            Container(
-              width: 3,
-              height: 44,
-              color: barcodeActive ? AppColors.gold : Colors.transparent,
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: TextField(
-                  controller: barcodeController,
-                  focusNode: barcodeFocus,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    hintText: 'Barkod okut / gir',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onSubmitted: onBarcodeSubmitted,
-                ),
-              ),
-            ),
-          ],
+    final titleField = TextField(
+      controller: titleController,
+      onChanged: onTitleChanged,
+      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: 'Örn: Merdiven Fiyat Listesi, Masa Fiyat Listesi',
+        hintStyle: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+        filled: true,
+        fillColor: AppColors.cardBg,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+          borderSide: const BorderSide(color: AppColors.divider),
         ),
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12, vertical: 12),
       ),
     );
 
@@ -2549,7 +2604,7 @@ class _PosterInputColumn extends StatelessWidget {
         ? const Padding(
             padding: EdgeInsets.symmetric(vertical: AppSizes.space16),
             child: Text(
-              'Henüz ürün eklenmedi. Barkod okutun.',
+              'Henüz ürün eklenmedi. Barkod okutun veya ürün adı arayın.',
               style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
             ),
           )
@@ -2566,9 +2621,19 @@ class _PosterInputColumn extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: shrinkWrap ? MainAxisSize.min : MainAxisSize.max,
         children: [
-          const _SectionLabel('Barkod'),
+          const _SectionLabel('Liste Başlığı'),
           const SizedBox(height: AppSizes.space8),
-          barcodeField,
+          titleField,
+          const SizedBox(height: AppSizes.space12),
+          const _SectionLabel('Barkod veya Ürün Adı'),
+          const SizedBox(height: AppSizes.space8),
+          _PosterSearchField(
+            controller: barcodeController,
+            focusNode: barcodeFocus,
+            active: barcodeActive,
+            onSubmitted: onBarcodeSubmitted,
+            onProductSelected: onProductSelected,
+          ),
           const SizedBox(height: AppSizes.space6),
           if (isError)
             const Text(
@@ -2581,11 +2646,308 @@ class _PosterInputColumn extends StatelessWidget {
             )
           else
             const SizedBox(height: 14),
-          const SizedBox(height: AppSizes.space12),
+          InkWell(
+            onTap: () => onShowBarcodeChanged(!showBarcode),
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: showBarcode,
+                    onChanged: (v) => onShowBarcodeChanged(v ?? false),
+                    visualDensity: VisualDensity.compact,
+                    activeColor: AppColors.primary,
+                  ),
+                  const Expanded(
+                    child: Text(
+                      'Barkod numarasını da yazdır (ürün adının altında)',
+                      style: TextStyle(
+                          fontSize: 12.5, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSizes.space8),
           const _SectionLabel('Eklenen Ürünler'),
           const SizedBox(height: AppSizes.space8),
           itemList,
         ],
+      ),
+    );
+  }
+}
+
+// ─── Poster: barkod okutma + canlı ürün-adı arama tek alanda (satış ekranı
+// _LiveProductSearchField deseninin Poster'a uyarlanmışı, KARAR v1.24) ────────
+// Barkod okutup Enter → onSubmitted (tam eşleşme, mevcut _resolveBarcode).
+// Yazı yazınca (debounce) altında açılan listede eşleşen ürünler gösterilir;
+// birine dokununca doğrudan listeye eklenir (barkod gerekmez).
+class _PosterSearchField extends ConsumerStatefulWidget {
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool active;
+  final Future<void> Function(String) onSubmitted;
+  final void Function(Product) onProductSelected;
+
+  const _PosterSearchField({
+    required this.controller,
+    required this.focusNode,
+    required this.active,
+    required this.onSubmitted,
+    required this.onProductSelected,
+  });
+
+  @override
+  ConsumerState<_PosterSearchField> createState() =>
+      _PosterSearchFieldState();
+}
+
+class _PosterSearchFieldState extends ConsumerState<_PosterSearchField> {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  Timer? _debounce;
+  List<Product> _results = [];
+  bool _loading = false;
+  double _fieldWidth = 320;
+  int _queryToken = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    widget.focusNode.removeListener(_onFocusChange);
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!widget.focusNode.hasFocus) _portal.hide();
+  }
+
+  void _onChanged(String value) {
+    final query = value.trim();
+    _debounce?.cancel();
+    if (query.isEmpty) {
+      setState(() => _results = []);
+      _portal.hide();
+      return;
+    }
+    final token = ++_queryToken;
+    setState(() => _loading = true);
+    if (!_portal.isShowing) _portal.show();
+    _debounce = Timer(const Duration(milliseconds: 200), () async {
+      List<Product> results;
+      try {
+        results =
+            await ref.read(productRepositoryProvider).fetchAll(query: query);
+      } catch (_) {
+        // Ağ başarısız — native'de yerel önbellekten fallback (satış ekranı
+        // deseniyle aynı; offline'da canlı öneri listesi boş kalmasın diye).
+        try {
+          results = kIsWeb
+              ? const []
+              : await ref
+                  .read(productLocalCacheDaoProvider)
+                  .searchCached(query: query);
+        } catch (_) {
+          results = const [];
+        }
+      }
+      if (!mounted || token != _queryToken) return;
+      if (widget.controller.text.trim() != query) return;
+      setState(() {
+        _results = results.take(40).toList();
+        _loading = false;
+      });
+      if (_results.isNotEmpty && widget.focusNode.hasFocus) {
+        _portal.show();
+      } else {
+        _portal.hide();
+      }
+    });
+  }
+
+  void _select(Product product) {
+    widget.onProductSelected(product);
+    widget.controller.clear();
+    _debounce?.cancel();
+    _queryToken++;
+    setState(() {
+      _results = [];
+      _loading = false;
+    });
+    _portal.hide();
+    widget.focusNode.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Aktif hane = ince sol altın şerit + ink kenarlık (§5). Hata → danger
+    // rengi çağıran taraftan (isError) gelmez, alan kendi rengini taşımaz.
+    final borderColor = widget.active ? AppColors.primary : AppColors.divider;
+
+    return OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (context) {
+        return CompositedTransformFollower(
+          link: _link,
+          targetAnchor: Alignment.bottomLeft,
+          followerAnchor: Alignment.topLeft,
+          offset: const Offset(0, 4),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: TextFieldTapRegion(
+              child: SizedBox(width: _fieldWidth, child: _buildDropdown()),
+            ),
+          ),
+        );
+      },
+      child: CompositedTransformTarget(
+        link: _link,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth.isFinite) {
+              _fieldWidth = constraints.maxWidth;
+            }
+            return Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBg,
+                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                border: Border.all(
+                    color: borderColor, width: widget.active ? 1.4 : 1),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 44,
+                      color: widget.active
+                          ? AppColors.gold
+                          : Colors.transparent,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: TextField(
+                          controller: widget.controller,
+                          focusNode: widget.focusNode,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Barkod okut veya ürün adı yaz',
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onChanged: _onChanged,
+                          onSubmitted: (v) {
+                            _portal.hide();
+                            widget.onSubmitted(v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown() {
+    return Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+      shadowColor: Colors.black26,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 280),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            border: Border.all(color: AppColors.divider),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: _loading && _results.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              : _results.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'Ürün bulunamadı.',
+                        style: TextStyle(color: AppColors.textMuted),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: _results.length,
+                      separatorBuilder: (_, _) =>
+                          const Divider(height: 1, color: AppColors.divider),
+                      itemBuilder: (context, i) {
+                        final p = _results[i];
+                        return InkWell(
+                          onTap: () => _select(p),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: AppSizes.space12,
+                                vertical: AppSizes.space8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    p.name,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: AppSizes.space8),
+                                Text(
+                                  '${formatNumber(p.price1)} TL',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                    fontFeatures: [
+                                      FontFeature.tabularFigures()
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
       ),
     );
   }

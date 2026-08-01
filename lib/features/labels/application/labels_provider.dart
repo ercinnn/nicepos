@@ -131,49 +131,74 @@ class LabelWideSheet extends _$LabelWideSheet {
   }
 }
 
-// ─── Poster sayfası (KARAR v1.23) ─────────────────────────────────────────────
+// ─── Poster sayfası (KARAR v1.23 / v1.24) ────────────────────────────────────
 
-/// Poster sayfasının durumu: barkod okutulan ürünlerin (ad + fiyat) büyümesi
-/// serbest bir liste. Sabit hane sayısı YOK (Yeni/Geniş etiketlerin aksine) —
-/// 1 ürün de, 10+ ürün de olabilir; A4 sayfa doldukça `paginatePosterItems`
-/// ile çok-sayfalıya böler. Aynı barkod tekrar okutulursa (fiyat/ad
-/// güncellenmiş olabilir) mevcut satır YERİNDE güncellenir, yeni satır
-/// EKLENMEZ.
+/// Poster sayfasının durumu: barkod okutulan/ürün adıyla aranan ürünlerin
+/// (ad + fiyat) büyümesi serbest bir liste. Sabit hane sayısı YOK (Yeni/Geniş
+/// etiketlerin aksine) — 1 ürün de, 10+ ürün de olabilir; A4 sayfa doldukça
+/// `paginatePosterItems` ile çok-sayfalıya böler. Aynı barkod tekrar
+/// okutulursa (fiyat/ad güncellenmiş olabilir) mevcut satır YERİNDE
+/// güncellenir, yeni satır EKLENMEZ (barkodu olmayan ürünler her zaman
+/// eklenir — boş barkod eşleşmesiyle birbirinin üzerine YAZILMAZ).
+/// [title] boşsa baskıda `kPosterDefaultTitle` kullanılır (KARAR v1.24).
 class LabelPosterSheetState {
   final List<LabelSlot> items;
+  final String title;
+  final bool showBarcode;
 
-  const LabelPosterSheetState({required this.items});
+  const LabelPosterSheetState({
+    required this.items,
+    this.title = '',
+    this.showBarcode = false,
+  });
 
   factory LabelPosterSheetState.initial() =>
       const LabelPosterSheetState(items: []);
 
   int get itemCount => items.length;
 
-  LabelPosterSheetState copyWith({List<LabelSlot>? items}) {
-    return LabelPosterSheetState(items: items ?? this.items);
+  /// Kullanıcı başlığı boşsa varsayılana düşer (baskı/önizleme bunu kullanır).
+  String get effectiveTitle =>
+      title.trim().isEmpty ? kPosterDefaultTitle : title.trim();
+
+  LabelPosterSheetState copyWith({
+    List<LabelSlot>? items,
+    String? title,
+    bool? showBarcode,
+  }) {
+    return LabelPosterSheetState(
+      items: items ?? this.items,
+      title: title ?? this.title,
+      showBarcode: showBarcode ?? this.showBarcode,
+    );
   }
 }
 
-/// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste
-/// korunur (diğer etiket provider'larıyla KARIŞMAZ). Mağaza logosu dar-logo
-/// `LabelSheet`'in kalıcı store logosundan paylaşılır (bu sekmede ayrı logo
-/// yükleme YOK).
+/// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste/
+/// başlık/barkod tercihi korunur (diğer etiket provider'larıyla KARIŞMAZ).
+/// Mağaza logosu dar-logo `LabelSheet`'in kalıcı store logosundan paylaşılır
+/// (bu sekmede ayrı logo yükleme YOK).
 @Riverpod(keepAlive: true)
 class LabelPosterSheet extends _$LabelPosterSheet {
   @override
   LabelPosterSheetState build() => LabelPosterSheetState.initial();
 
   /// Barkodu zaten listede olan bir ürün tekrar okutulursa satırı yerinde
-  /// günceller (fiyat/ad tazelenir); yoksa listenin sonuna ekler.
+  /// günceller (fiyat/ad tazelenir); yoksa listenin sonuna ekler. Barkodu
+  /// olmayan ürünler (ad araması ile eklenenler) eşleşme aranmadan HER ZAMAN
+  /// eklenir — aksi halde boş barkod ("") ortak anahtar olup birbirinin
+  /// üzerine yazardı.
   void addOrUpdateItem(LabelSlot slot) {
-    final idx = state.items.indexWhere((it) => it.barcode == slot.barcode);
-    if (idx >= 0) {
-      final next = [...state.items];
-      next[idx] = slot;
-      state = state.copyWith(items: next);
-    } else {
-      state = state.copyWith(items: [...state.items, slot]);
+    if (slot.barcode.isNotEmpty) {
+      final idx = state.items.indexWhere((it) => it.barcode == slot.barcode);
+      if (idx >= 0) {
+        final next = [...state.items];
+        next[idx] = slot;
+        state = state.copyWith(items: next);
+        return;
+      }
     }
+    state = state.copyWith(items: [...state.items, slot]);
   }
 
   /// [index] kalemini listeden çıkarır.
@@ -183,8 +208,19 @@ class LabelPosterSheet extends _$LabelPosterSheet {
     state = state.copyWith(items: next);
   }
 
-  /// Tüm kalemleri temizler.
-  void clearAll() => state = LabelPosterSheetState.initial();
+  /// Tüm kalemleri temizler (başlık/barkod tercihi KORUNUR — yalnız liste sıfırlanır).
+  void clearAll() => state = state.copyWith(items: []);
+
+  /// Kullanıcının kendi başlığını ayarlar (boş → baskıda varsayılana döner).
+  void setTitle(String title) {
+    state = state.copyWith(title: title);
+  }
+
+  /// Her satırda ürün adının altında barkod numarasının da basılıp
+  /// basılmayacağını ayarlar.
+  void setShowBarcode(bool value) {
+    state = state.copyWith(showBarcode: value);
+  }
 }
 
 // ─── Ürün Etiketi sayfası (KARAR v1.21) ──────────────────────────────────────

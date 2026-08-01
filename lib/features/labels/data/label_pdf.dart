@@ -455,9 +455,14 @@ double _posterClamp(double v, double lo, double hi) =>
     v < lo ? lo : (v > hi ? hi : v);
 
 /// Poster kalemlerini (çok-sayfalı, [paginatePosterItems]) A4 dikey profesyonel
-/// ürün listesi PDF'ine dönüştürür.
+/// ürün listesi PDF'ine dönüştürür. [title] boşsa çağıran taraf
+/// `kPosterDefaultTitle` göndermelidir (`LabelPosterSheetState.effectiveTitle`).
+/// [showBarcode] true ise her satırda ürün adının altında barkod no da basılır
+/// (barkodu olmayan — ad araması ile eklenen — kalemlerde satır atlanır).
 Future<Uint8List> buildPosterPdf({
   required List<LabelSlot> items,
+  required String title,
+  bool showBarcode = false,
   String? logoDataUrl,
 }) async {
   pw.ThemeData theme;
@@ -494,6 +499,8 @@ Future<Uint8List> buildPosterPdf({
         ),
         build: (context) => _posterPage(
           page: pages[p],
+          title: title,
+          showBarcode: showBarcode,
           logoImage: logoImage,
           generatedAt: now,
           pageLabel: pages.length > 1 ? '${p + 1} / ${pages.length}' : null,
@@ -507,6 +514,8 @@ Future<Uint8List> buildPosterPdf({
 
 pw.Widget _posterPage({
   required List<LabelSlot> page,
+  required String title,
+  required bool showBarcode,
   required pw.MemoryImage? logoImage,
   required DateTime generatedAt,
   required String? pageLabel,
@@ -514,7 +523,7 @@ pw.Widget _posterPage({
   return pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.stretch,
     children: [
-      // Başlık: logo (varsa) + "ÜRÜN LİSTESİ" + lacivert ayraç.
+      // Başlık: logo (varsa) + kullanıcı başlığı (boşsa varsayılan) + lacivert ayraç.
       pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
@@ -527,7 +536,9 @@ pw.Widget _posterPage({
           if (logoImage != null) pw.SizedBox(width: 8 * PdfPageFormat.mm),
           pw.Expanded(
             child: pw.Text(
-              'ÜRÜN LİSTESİ',
+              title,
+              maxLines: 1,
+              overflow: pw.TextOverflow.clip,
               style: pw.TextStyle(
                 fontSize: 22,
                 fontWeight: pw.FontWeight.bold,
@@ -548,6 +559,7 @@ pw.Widget _posterPage({
       pw.SizedBox(height: 4 * PdfPageFormat.mm),
       // Liste — kalan alanı doldurur; satır yüksekliği kalem sayısına göre
       // oranlanır (az kalem → iri poster satırı, çok kalem → kompakt tablo).
+      // barkod satırı açıksa taban yükseklik yükselir (2. satıra yer açılır).
       pw.Expanded(
         child: page.isEmpty
             ? pw.Center(
@@ -559,14 +571,19 @@ pw.Widget _posterPage({
             : pw.LayoutBuilder(
                 builder: (context, constraints) {
                   final maxH = constraints?.maxHeight ?? 400;
-                  final rowH = _posterClamp(
-                      maxH / page.length, 11 * PdfPageFormat.mm, 50 * PdfPageFormat.mm);
-                  final nameSize =
-                      _posterClamp(rowH / PdfPageFormat.mm * 0.72, 11, 30);
+                  final minRowMm = showBarcode ? 16.0 : 11.0;
+                  final rowH = _posterClamp(maxH / page.length,
+                      minRowMm * PdfPageFormat.mm, 50 * PdfPageFormat.mm);
+                  final nameSize = _posterClamp(
+                      rowH / PdfPageFormat.mm * (showBarcode ? 0.56 : 0.72),
+                      10,
+                      28);
                   final priceSize =
                       _posterClamp(rowH / PdfPageFormat.mm * 0.8, 13, 34);
                   final numSize =
                       _posterClamp(rowH / PdfPageFormat.mm * 0.4, 8, 16);
+                  final barcodeSize =
+                      _posterClamp(rowH / PdfPageFormat.mm * 0.26, 7, 12);
                   return pw.Column(
                     mainAxisAlignment: pw.MainAxisAlignment.start,
                     children: List.generate(page.length, (i) {
@@ -588,15 +605,29 @@ pw.Widget _posterPage({
                               ),
                             ),
                             pw.Expanded(
-                              child: pw.Text(
-                                it.productName,
-                                maxLines: 2,
-                                overflow: pw.TextOverflow.clip,
-                                style: pw.TextStyle(
-                                  fontSize: nameSize,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.black,
-                                ),
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                mainAxisSize: pw.MainAxisSize.min,
+                                children: [
+                                  pw.Text(
+                                    it.productName,
+                                    maxLines: 2,
+                                    overflow: pw.TextOverflow.clip,
+                                    style: pw.TextStyle(
+                                      fontSize: nameSize,
+                                      fontWeight: pw.FontWeight.bold,
+                                      color: PdfColors.black,
+                                    ),
+                                  ),
+                                  if (showBarcode && it.barcode.isNotEmpty)
+                                    pw.Text(
+                                      it.barcode,
+                                      style: pw.TextStyle(
+                                        fontSize: barcodeSize,
+                                        color: _posterMuted,
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                             pw.SizedBox(width: 6 * PdfPageFormat.mm),
