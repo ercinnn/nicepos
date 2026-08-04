@@ -24,8 +24,10 @@ class ConfigMissingScreen extends StatelessWidget {
                     children: [
                       Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 32),
                       SizedBox(width: 12),
-                      Text('Supabase yapılandırması eksik',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      Expanded(
+                        child: Text('Supabase yapılandırması eksik',
+                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
