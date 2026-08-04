@@ -20,9 +20,12 @@ class ReportRepository {
     return _fetchSummary(startDay, endDay);
   }
 
-  Future<DailyReportSummary> _fetchSummary(DateTime start, DateTime end) async {
-    // UTC olarak gönderiyoruz: yerel gece yarısı → doğru UTC sınırı (Türkiye UTC+3)
-    // PostgREST 1000 satır limitini aşmak için sayfalı çekim.
+  // Rapor özetinin iki bağımsız veri kaynağı (satışlar · tahsilatlar) ayrı
+  // sayfalı çekimlerdir. Bir sayfa dizisi kendi içinde sıralı olmak ZORUNDA
+  // (bir sonraki `range` bir öncekinin dolu gelmesine bağlı), ama iki DİZİ
+  // birbirinden bağımsız → `_fetchSummary` bunları paralel başlatır.
+  Future<List<Map<String, dynamic>>> _fetchSalesRows(
+      DateTime start, DateTime end) async {
     const pageSize = 1000;
     final salesRows = <Map<String, dynamic>>[];
     var salesFrom = 0;
@@ -41,6 +44,41 @@ class ReportRepository {
       if (list.length < pageSize) break;
       salesFrom += pageSize;
     }
+    return salesRows;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPaymentRows(
+      DateTime start, DateTime end) async {
+    const pageSize = 1000;
+    final paymentRows = <Map<String, dynamic>>[];
+    var paymentFrom = 0;
+    while (true) {
+      final page = await _client
+          .from('customer_payments')
+          .select('*, customers(name)')
+          .eq('type', 'odeme')
+          .gte('payment_date', start.toUtc().toIso8601String())
+          .lt('payment_date', end.toUtc().toIso8601String())
+          .order('payment_date', ascending: false)
+          .range(paymentFrom, paymentFrom + pageSize - 1);
+      final list = (page as List)
+          .map((r) => Map<String, dynamic>.from(r as Map))
+          .toList();
+      paymentRows.addAll(list);
+      if (list.length < pageSize) break;
+      paymentFrom += pageSize;
+    }
+    return paymentRows;
+  }
+
+  Future<DailyReportSummary> _fetchSummary(DateTime start, DateTime end) async {
+    // UTC olarak gönderiyoruz: yerel gece yarısı → doğru UTC sınırı (Türkiye UTC+3)
+    // ⚠️ PERFORMANS: iki sayfalı çekim PARALEL (önceden satışlar tamamen
+    // bitmeden tahsilatlar başlamıyordu).
+    final (salesRows, paymentRows) = await (
+      _fetchSalesRows(start, end),
+      _fetchPaymentRows(start, end),
+    ).wait;
 
     num cashTotal = 0;
     num posTotal = 0;
@@ -74,27 +112,6 @@ class ReportRepository {
       openAccountTotal += remainingDebt;
       turnover += totalAmount;
       sales.add(Sale.fromMap({...map, 'total_products': totalProducts}));
-    }
-
-    // UTC olarak gönderiyoruz: yerel gece yarısı → doğru UTC sınırı (Türkiye UTC+3)
-    // PostgREST 1000 satır limitini aşmak için sayfalı çekim.
-    final paymentRows = <Map<String, dynamic>>[];
-    var paymentFrom = 0;
-    while (true) {
-      final page = await _client
-          .from('customer_payments')
-          .select('*, customers(name)')
-          .eq('type', 'odeme')
-          .gte('payment_date', start.toUtc().toIso8601String())
-          .lt('payment_date', end.toUtc().toIso8601String())
-          .order('payment_date', ascending: false)
-          .range(paymentFrom, paymentFrom + pageSize - 1);
-      final list = (page as List)
-          .map((r) => Map<String, dynamic>.from(r as Map))
-          .toList();
-      paymentRows.addAll(list);
-      if (list.length < pageSize) break;
-      paymentFrom += pageSize;
     }
 
     final receivedPayments = paymentRows
