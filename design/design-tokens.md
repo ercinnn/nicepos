@@ -1033,7 +1033,7 @@ grafik içinde iki ayrı anlam** yükler ("Pazar" + "ortalama") → okuyucu ikis
 | Öğe | Değer | Gerekçe |
 |---|---|---|
 | Çizgi rengi | `panel.ink` (#FFFFFF) @ **alfa 0.40** | Nötr; grafikte hiçbir kategorik anlamla çakışmaz |
-| Kalınlık | **1.2** (`dashArray [6,4]`) | Ana ciro çizgisi 1.5 **solid** kalır → veri her zaman daha baskın |
+| Kalınlık | **1.2** (`dashArray [6,4]`) | Ana ciro çizgisi **2.5 solid** kalır → veri her zaman daha baskın |
 | Etiket | `ORT. ₺X` · `panel.muted` · 9px · w600 · Inter **tabular** · +0.5 tracking | §6.3(3) mikro-etiket dili; para `formatters` (Kural 3) |
 | Konum | `Alignment.topRight` | Sağ üst = enstrüman okuma köşesi; veri çizgisini kesmez |
 
@@ -1045,6 +1045,16 @@ grafik içinde iki ayrı anlam** yükler ("Pazar" + "ortalama") → okuyucu ikis
   Boş veri erken dönüşle ele alınır → sıfıra bölme yok.
 - `ExtraLinesData` **salt-veri (declarative)** bir alandır — `Stack`/`Positioned` kullanılmaz,
   CLAUDE.md'deki "Positioned doğrudan Stack çocuğu olmalı" tuzağı bu yolda oluşmaz.
+- ⚠️ **Ölçü kaynağı uyarısı (bu turda yapılan hata):** Bu dosyaya bir karşılaştırma değeri
+  (kalınlık/alfa) yazarken ölçünün **hangi widget'tan** alındığı doğrulanmalıdır.
+  `dashboard_section.dart` içinde birden çok `barWidth` vardır: stat kartı **mini sparkline
+  = 1.5**, günlük satış grafiği **= 2.5**, yıllık grafikler **= 2**. İlk yazımda sparkline'ın
+  değeri günlük grafiğe atfedilmişti; uygulayan agent yakaladı ve değer düzeltildi.
+- 🟡 **Açık QA maddesi (piksel teyidi gerektirir):** `ExtraLinesData` varsayılan olarak
+  `extraLinesOnTop: true` çizer → referans çizgisi ana veri çizgisinin ve alan dolgusunun
+  **üstünde** kalır. §6.9(b) hiyerarşisi ("veri baskın") `extraLinesOnTop: false` ile daha
+  saf okunabilir, ancak çizgi o zaman dolgunun (α0.22) altında kalıp fazla solabilir.
+  Karar **görsel QA'ya bırakıldı** — tahminle değiştirilmez.
 
 #### (c) Mevcut `_YillikOrtalamaCiroCard` ile ilişkisi
 İkisi **farklı metriklerdir, tekrar değildir**: kart = yıl-içi **kümülatif** günlük ortalama
