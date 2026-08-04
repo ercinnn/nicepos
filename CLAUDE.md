@@ -9,6 +9,7 @@ Bu dosya, Claude Code'a bu depoda çalışırken rehberlik eder.
 - **Ekran tasarımcıları (alt-agent, `tasarim-lideri` devreder):** `satis-ekrani-tasarimci` · `satis-grafikleri-tasarimci` (dashboard/grafikler) · `stok-listesi-tasarimci` (ürünler) · `musteri-kayitlari-tasarimci`. Her biri yalnız kendi ekranının widget'larını düzenler; `design-tokens.md`'yi **okur, değiştirmez**.
 - **`gorsel-elestirmen`** — responsive/token uygunluğunu Playwright ile piksel üstünde QA eder, kod yazmaz (alt-agent).
 - **`icerik-duzenleme-uzmani`** — UI içeriği/metin + arkasındaki matematiksel mantık (toplam, iskonto, yüzde, fiyat formatı) değişiklikleri.
+- **`yazilim-lideri`** — yazılım mimarisi/performans lideri. `tasarim-lideri`'nin mühendislik karşılığı: Flutter/Riverpod/Supabase mimarisine hakim, performans darboğazlarını ölçerek tespit eder, düşük riskli düzeltmeleri **bizzat uygulayıp commit'ler** (`tasarim-lideri`'nin aksine kod YAZAR), riskli/büyük işleri kendi oluşturduğu (worktree izolasyonlu) ad-hoc alt agent'lara devredip sonucu denetler — sabit bir alt-agent rosteri YOK. DB migration/push öncesi kullanıcıya sorar.
 
 `design/design-tokens.md` tasarım sisteminin tek doğru kaynağıdır (palet, tipografi, spacing, §4 imza öğesi: Hero Tutar + Altın Ray, §5 bileşen notları + KARAR geçmişi, §6 v2.0 Enstrüman Konsolu dili). Ekran tasarımcıları bu dosyayı okur, değiştirmez.
 
@@ -38,6 +39,11 @@ flutter analyze              # Lint / statik analiz
 flutter test                 # Tüm testleri çalıştır
 dart run build_runner build --delete-conflicting-outputs  # Riverpod kod üretimi
 
+# App icon + splash screen + web favicon yeniden üret (kaynak: kök dizindeki pos.png,
+# bkz. Marka bölümü) — pos.png değişirse veya yeni platform eklenirse çalıştır
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+
 # GitHub Pages deploy — yeni bir paket eklendiyse (pubspec.yaml değiştiyse) ÖNCE
 # `flutter clean` + `flutter pub get` çalıştır (bkz. Deploy bölümündeki MissingPluginException notu)
 flutter build web --release --base-href /nicepos/ `
@@ -65,6 +71,10 @@ flutter build apk --release `
 | Android APK | ✅ | `android/` klasörü mevcut, INTERNET + CAMERA izinleri |
 
 **Gradle heap:** `android/gradle.properties` → `-Xmx3G` (8GB RAM makine için düşürüldü, OOM crash önlenir).
+
+## Marka (App Icon / Splash / Favicon)
+
+Uygulama adı **NicePOS** (Android `android:label`, web `<title>` + `manifest.json` `name`/`short_name`). Kaynak görsel kökteki **`pos.png`** (NiCE tente logosu, 1080×1080). App icon (Android mipmap + web `icons/`), Android splash screen (light/dark + Android 12 `values-v31`) ve web favicon `flutter_launcher_icons` + `flutter_native_splash` paketleriyle **üretilir**, elle düzenlenmez — pubspec.yaml'daki `flutter_launcher_icons:`/`flutter_native_splash:` bloklarını değiştirip yukarıdaki Commands'taki iki komutu çalıştır. Arka plan rengi beyaz (`#ffffff`), web `theme_color` lacivert (`#1B2A4A`). ⚠️ Bu iki paket ilk çalıştırmada eksik Android SDK Platform'u (o an min_sdk_android ile uyumlu olan) indirebilir, birkaç dakika sürebilir.
 
 ## Mimari
 
