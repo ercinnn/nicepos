@@ -115,7 +115,7 @@ class DashboardSection extends ConsumerWidget {
         const SizedBox(height: AppSizes.space16),
 
         // ── Destek stat kartları (hero'yu tekrar etmez) ─────────────────
-        _StatCardsRow(),
+        const _StatCardsRow(),
         const SizedBox(height: AppSizes.space16),
 
         // ── Grafik: Günlük Satış Grafiği ─────────────────────────────────
@@ -758,47 +758,84 @@ class _DegisimBadgeOnDark extends StatelessWidget {
 // 5 Stat Kartı Satırı (masaüstü: yanyana tek satır; mobil: 2 sütunlu grid)
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _StatCardsRow extends ConsumerWidget {
+/// PERF — bu satır artık HİÇBİR provider izlemez, yalnız YERLEŞİME karar verir.
+///
+/// Önceden tek `ConsumerWidget` olarak 10 ayrı async provider'ı birden izliyordu
+/// (today/yesterday/month/lastMonth/ytd/last365 + 4 sparkline kaynağı). Bunlar
+/// ağdan birbirinden bağımsız zamanlarda çözüldüğü için her `loading → data`
+/// geçişi build()'i baştan çalıştırıyor ve `fl_chart` sparkline'ı olan 5 kartın
+/// TAMAMINI yeniden inşa ediyordu (~10 × 5 = ~50 gereksiz kart build'i).
+/// Şimdi her kart kendi `ConsumerWidget`'ında YALNIZ kendi provider'larını
+/// izler → bir provider çözüldüğünde sadece ona bağlı 1–2 kart yeniden inşa
+/// edilir. Görsel çıktı birebir aynıdır (yalnız veriyi kimin izlediği değişti).
+class _StatCardsRow extends StatelessWidget {
   const _StatCardsRow();
+
+  // Destek kartları: hero (bugünkü ciro) zaten gösterildiği için TEKRAR
+  // edilmez. Kalan metrikler sakin kartlarda — semantik % rozeti dışında
+  // renk taşımaz; kimlik artık sol renk şeridi + ikon + sparkline ile
+  // taşınır (KARAR v1.18, altın KULLANILMAZ). Sıra değişmez.
+  static const List<Widget> _kartlar = [
+    _SatisAdediCard(),
+    _AylikCiroCard(),
+    _AylikAdetCard(),
+    _YillikCiroCard(),
+    _Son365CiroCard(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (context.isMobile) {
+      return GridView.count(
+        crossAxisCount: 2,
+        crossAxisSpacing: AppSizes.space12,
+        mainAxisSpacing: AppSizes.space12,
+        // KARAR v1.18: ikon + sol renk şeridi + sparkline eklendiği için
+        // dikey alan büyüdü — 1.5 taşma yapıyordu (widget testiyle
+        // yakalandı, flutter analyze görmez), 1.1'e düşürüldü.
+        childAspectRatio: 1.1,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        children: _kartlar,
+      );
+    }
+
+    // IntrinsicHeight: kaydırılabilir sayfada (sınırsız yükseklik) stretch'li
+    // Row'a sınırlı yükseklik verir; aksi halde "infinite height" render hatası
+    // tüm dashboard'u çökertir.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < _kartlar.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSizes.space12),
+            Expanded(child: _kartlar[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Kart başına izleyiciler (her biri YALNIZ kendi provider'larını dinler) ──
+//
+// KARAR v1.18 — sparkline kaynakları (kartın periyoduyla birebir örtüşmek
+// zorunda değil, yalnız yönsel eğilim gösterir). Veri yoksa/yükleniyorsa
+// null → kart sparkline'ı sessizce gizler.
+
+/// 1) Satış Adedi / Bugün → todaySummary + yesterdaySummary (% rozeti) +
+/// dailySalesCount(8) (sparkline).
+class _SatisAdediCard extends ConsumerWidget {
+  const _SatisAdediCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final todayAsync = ref.watch(todaySummaryProvider);
     final yesterdayAsync = ref.watch(yesterdaySummaryProvider);
-    final monthAsync = ref.watch(monthSummaryProvider);
-    final lastMonthAsync = ref.watch(lastMonthRevenueProvider);
-    final ytdAsync = ref.watch(yearToDateRevenueProvider);
-    final last365Async = ref.watch(last365DaysRevenueProvider);
-
-    // KARAR v1.18 — sparkline kaynakları (kartın periyoduyla birebir örtüşmek
-    // zorunda değil, yalnız yönsel eğilim gösterir). Veri yoksa/yükleniyorsa
-    // null → kart sparkline'ı sessizce gizler.
     final dailyCountAsync = ref.watch(dailySalesCountProvider(8));
-    final dailyRevenueAsync = ref.watch(dailySalesProvider(8));
-    final currentYearAsync = ref.watch(currentYearMonthlyProvider);
-    final last12MonthsAsync = ref.watch(monthlySalesProvider(12));
 
-    final adetSparkline = dailyCountAsync.valueOrNull
-        ?.map((e) => e.count.toDouble())
-        .toList();
-    final ciroSparkline = dailyRevenueAsync.valueOrNull
-        ?.map((e) => e.amount.toDouble())
-        .toList();
-    final yillikCiroSparkline = currentYearAsync
-        .valueOrNull?[DateTime.now().year]
-        ?.sublist(0, DateTime.now().month)
-        .map((v) => v.toDouble())
-        .toList();
-    final son365Sparkline = last12MonthsAsync.valueOrNull
-        ?.map((e) => e.amount.toDouble())
-        .toList();
-
-    // Destek kartları: hero (bugünkü ciro) zaten gösterildiği için TEKRAR
-    // edilmez. Kalan metrikler sakin kartlarda — semantik % rozeti dışında
-    // renk taşımaz; kimlik artık sol renk şeridi + ikon + sparkline ile
-    // taşınır (KARAR v1.18, altın KULLANILMAZ).
-    final cards = [
-      _StatCardData(
+    return _StatCard(
+      data: _StatCardData(
         baslik: 'Satış Adedi',
         donem: 'Bugün',
         asyncDeger: todayAsync.when(
@@ -813,9 +850,27 @@ class _StatCardsRow extends ConsumerWidget {
         karsilastirmaEtiketi: 'dünden',
         icon: Icons.point_of_sale_outlined,
         renk: AppColors.primary,
-        sparkline: adetSparkline,
+        sparkline: dailyCountAsync.valueOrNull
+            ?.map((e) => e.count.toDouble())
+            .toList(),
       ),
-      _StatCardData(
+    );
+  }
+}
+
+/// 2) Aylık Ciro / Bu Ay → monthSummary + lastMonthRevenue (% rozeti) +
+/// dailySales(8) (sparkline).
+class _AylikCiroCard extends ConsumerWidget {
+  const _AylikCiroCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final monthAsync = ref.watch(monthSummaryProvider);
+    final lastMonthAsync = ref.watch(lastMonthRevenueProvider);
+    final dailyRevenueAsync = ref.watch(dailySalesProvider(8));
+
+    return _StatCard(
+      data: _StatCardData(
         baslik: 'Aylık Ciro',
         donem: 'Bu Ay',
         asyncDeger: monthAsync.when(
@@ -830,9 +885,26 @@ class _StatCardsRow extends ConsumerWidget {
         karsilastirmaEtiketi: 'geçen aydan',
         icon: Icons.payments_outlined,
         renk: AppColors.success,
-        sparkline: ciroSparkline,
+        sparkline: dailyRevenueAsync.valueOrNull
+            ?.map((e) => e.amount.toDouble())
+            .toList(),
       ),
-      _StatCardData(
+    );
+  }
+}
+
+/// 3) Aylık Adet / Bu Ay → monthSummary + dailySalesCount(8) (sparkline).
+/// % değişim YOK (geçen ay adet verisi yok).
+class _AylikAdetCard extends ConsumerWidget {
+  const _AylikAdetCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final monthAsync = ref.watch(monthSummaryProvider);
+    final dailyCountAsync = ref.watch(dailySalesCountProvider(8));
+
+    return _StatCard(
+      data: _StatCardData(
         baslik: 'Aylık Adet',
         donem: 'Bu Ay',
         asyncDeger: monthAsync.when(
@@ -844,9 +916,26 @@ class _StatCardsRow extends ConsumerWidget {
         karsilastirmaEtiketi: '',
         icon: Icons.inventory_2_outlined,
         renk: AppColors.pos,
-        sparkline: adetSparkline,
+        sparkline: dailyCountAsync.valueOrNull
+            ?.map((e) => e.count.toDouble())
+            .toList(),
       ),
-      _StatCardData(
+    );
+  }
+}
+
+/// 4) Yıllık Ciro / Bu Yıl → yearToDateRevenue + currentYearMonthly
+/// (sparkline: cari yılın geçen aylarıyla sınırlı dilim).
+class _YillikCiroCard extends ConsumerWidget {
+  const _YillikCiroCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ytdAsync = ref.watch(yearToDateRevenueProvider);
+    final currentYearAsync = ref.watch(currentYearMonthlyProvider);
+
+    return _StatCard(
+      data: _StatCardData(
         baslik: 'Yıllık Ciro',
         donem: 'Bu Yıl',
         asyncDeger: ytdAsync.when(
@@ -858,9 +947,27 @@ class _StatCardsRow extends ConsumerWidget {
         karsilastirmaEtiketi: '',
         icon: Icons.calendar_month_outlined,
         renk: AppColors.splitPayment,
-        sparkline: yillikCiroSparkline,
+        sparkline: currentYearAsync.valueOrNull?[DateTime.now().year]
+            ?.sublist(0, DateTime.now().month)
+            .map((v) => v.toDouble())
+            .toList(),
       ),
-      _StatCardData(
+    );
+  }
+}
+
+/// 5) Son 365 Günlük Ciro / 365 Gün → last365DaysRevenue + monthlySales(12)
+/// (sparkline).
+class _Son365CiroCard extends ConsumerWidget {
+  const _Son365CiroCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final last365Async = ref.watch(last365DaysRevenueProvider);
+    final last12MonthsAsync = ref.watch(monthlySalesProvider(12));
+
+    return _StatCard(
+      data: _StatCardData(
         baslik: 'Son 365 Günlük Ciro',
         donem: '365 Gün',
         asyncDeger: last365Async.when(
@@ -872,37 +979,9 @@ class _StatCardsRow extends ConsumerWidget {
         karsilastirmaEtiketi: '',
         icon: Icons.timeline_outlined,
         renk: AppColors.primaryLight,
-        sparkline: son365Sparkline,
-      ),
-    ];
-
-    if (context.isMobile) {
-      return GridView.count(
-        crossAxisCount: 2,
-        crossAxisSpacing: AppSizes.space12,
-        mainAxisSpacing: AppSizes.space12,
-        // KARAR v1.18: ikon + sol renk şeridi + sparkline eklendiği için
-        // dikey alan büyüdü — 1.5 taşma yapıyordu (widget testiyle
-        // yakalandı, flutter analyze görmez), 1.1'e düşürüldü.
-        childAspectRatio: 1.1,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        children: cards.map((c) => _StatCard(data: c)).toList(),
-      );
-    }
-
-    // IntrinsicHeight: kaydırılabilir sayfada (sınırsız yükseklik) stretch'li
-    // Row'a sınırlı yükseklik verir; aksi halde "infinite height" render hatası
-    // tüm dashboard'u çökertir.
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < cards.length; i++) ...[
-            if (i > 0) const SizedBox(width: AppSizes.space12),
-            Expanded(child: _StatCard(data: cards[i])),
-          ],
-        ],
+        sparkline: last12MonthsAsync.valueOrNull
+            ?.map((e) => e.amount.toDouble())
+            .toList(),
       ),
     );
   }
