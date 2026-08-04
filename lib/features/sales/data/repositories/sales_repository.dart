@@ -53,6 +53,29 @@ class SalesRepository {
     return (rows as List).map((row) => SaleItem.fromMap(Map<String, dynamic>.from(row as Map))).toList();
   }
 
+  // Birden çok satışın kalemlerini TEK sorguda çeker (`inFilter`) — satış
+  // başına bir `fetchItems` çağıran N+1 desenin yerine. Müşteri detayındaki
+  // "Seçilenleri Yazdır" akışı 50 satış seçildiğinde 50 sıralı gidiş-dönüş
+  // yapıyordu; artık tek sorgu. Dönüş: sale_id → o satışın kalemleri (kalemi
+  // olmayan satış anahtarı da BOŞ liste ile döner, çağıran null kontrolü
+  // yapmak zorunda kalmasın).
+  Future<Map<String, List<SaleItem>>> fetchItemsForSales(
+      List<String> saleIds) async {
+    final result = <String, List<SaleItem>>{for (final id in saleIds) id: []};
+    if (saleIds.isEmpty) return result;
+    final rows = await _client
+        .from('sale_items')
+        .select('*, products(barcode)')
+        .inFilter('sale_id', saleIds);
+    for (final row in (rows as List)) {
+      final item = SaleItem.fromMap(Map<String, dynamic>.from(row as Map));
+      final saleId = item.saleId;
+      if (saleId == null) continue;
+      (result[saleId] ??= []).add(item);
+    }
+    return result;
+  }
+
   Future<void> updateSale({
     required String saleId,
     required List<SaleItem> oldItems,

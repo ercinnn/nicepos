@@ -630,10 +630,11 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     if (selected.isEmpty) return;
     setState(() => _busy = true);
     try {
-      final itemsBySaleId = <String, List<SaleItem>>{};
-      for (final s in selected) {
-        itemsBySaleId[s.id] = await SalesRepository().fetchItems(s.id);
-      }
+      // Seçilen TÜM satışların kalemleri tek sorguda gelir — önceden satış
+      // başına bir `fetchItems` (ve her turda YENİ bir `SalesRepository`)
+      // çağrılıyordu: 50 satış = 50 sıralı gidiş-dönüş.
+      final Map<String, List<SaleItem>> itemsBySaleId = await SalesRepository()
+          .fetchItemsForSales([for (final s in selected) s.id]);
       final customerName =
           ref.read(customerByIdProvider(widget.customerId)).valueOrNull?.name ?? '';
       printMultipleSalesA4(
