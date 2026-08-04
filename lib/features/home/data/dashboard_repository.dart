@@ -387,35 +387,57 @@ class DashboardRepository {
 
   // ── Son N ayın aylık NAKİT-ESASLI ciro tutarlarını getir ─────────────────
   // Her ay için nakit-esaslı ciro (peşin `paid_amount` + o ay gelen borç
-  // tahsilatları) `sales_revenue_between` RPC'si ile hesaplanır — Yıllık Ciro /
-  // Son 365 Gün kartlarıyla AYNI kaynak → tutarlılık garanti. Ay başına tek RPC
-  // çağrısı (önceki sayfalı satır çekmeyle aynı sorgu sayısı, daha az veri).
+  // tahsilatları). Kaynak: `sales_monthly_totals` görünümü — `currentYearMonthly`
+  // / `historicalYearly` ile AYNI kaynak, dolayısıyla aynı nakit-esaslı tanım.
   //
-  // ⚠️ PERFORMANS: aylar PARALEL sorgulanır (`Future.wait`), sıralı DEĞİL.
-  // Önceden `for` döngüsü içinde `await` vardı → `months` kadar RPC round-trip'i
-  // uç uca EKLENİYORDU. Dashboard bunu `monthlySales(12)` ile çağırdığı için
-  // (stat kartı "Son 365 Günlük Ciro" sparkline'ı) 12 gidiş-dönüş seri hâlde
-  // birikiyor, tek başına anasayfa açılışının en uzun zincirini oluşturuyordu.
-  // RPC'ler birbirinden bağımsız (salt-okunur, `stable`) → paralelleştirme
-  // güvenli; toplam süre 12×RTT yerine ~1×RTT'ye iner. Sonuç listesi yine
-  // kronolojik sırada döner (`Future.wait` giriş sırasını korur).
+  // ⚠️ PERFORMANS — TEK sorgu (ölçümle gerekçelendirildi):
+  // Bu metot iki kez elden geçti.
+  //   1) Başlangıçta `for` döngüsü içinde `await` ile ay başına bir
+  //      `sales_revenue_between` RPC'si vardı → 12 round-trip UÇ UCA.
+  //   2) Sonra `Future.wait` ile paralelleştirildi → 12 round-trip eşzamanlı.
+  //   3) Şimdi tek görünüm sorgusu → 12 round-trip yerine 1.
+  // Ölçüm (2026-08-04): Supabase round-trip'i ısınmış hâlde ~550 ms, buna karşılık
+  // görünümün SQL maliyeti ~50 ms (ve `sales_revenue_between` ~10 ms). Yani
+  // maliyet sorguda değil, İSTEK SAYISINDA. Paralelleştirme duvar saatini
+  // düzeltmişti ama 12 isteğin sunucu yükü ve eşzamanlılık baskısı duruyordu;
+  // zayıf mobil bağlantıda (dükkân içi sinyal boşlukları) RTT birkaç saniyeye
+  // çıktığında bu fark belirginleşir.
+  //
+  // Görünüm ay bazında YEREL (Europe/Istanbul) yıl/ay ile grupladığı için,
+  // RPC'nin yerel ay sınırı aralığıyla birebir aynı sonucu verir (bkz.
+  // 0026_sales_monthly_cash_basis.sql) → rakamlar değişmez. Kaydı olmayan aylar
+  // görünümde satır olarak GELMEZ; bu aylar 0 ile doldurulur.
   Future<List<({DateTime date, num amount})>> fetchMonthlySales(
       int months) async {
     final now = DateTime.now();
     final monthStarts = <DateTime>[
       for (var i = months - 1; i >= 0; i--) DateTime(now.year, now.month - i, 1),
     ];
-    final totals = await Future.wait(
-      monthStarts.map(
-        (monthDate) => _fetchRevenueBetween(
-          monthDate,
-          DateTime(monthDate.year, monthDate.month + 1, 1),
-        ),
-      ),
-    );
+    if (monthStarts.isEmpty) return const [];
+
+    // İstenen aralık en fazla iki takvim yılına yayılır (12 ay için); yine de
+    // genel olsun diye ilk/son aydan yıl sınırları türetilir.
+    final firstYear = monthStarts.first.year;
+    final lastYear = monthStarts.last.year;
+    final rows = await _client
+        .from('sales_monthly_totals')
+        .select('year, month, total')
+        .gte('year', firstYear)
+        .lte('year', lastYear);
+
+    // (yıl, ay) → toplam. Anahtar: yıl * 100 + ay (çakışmasız, sıralanabilir).
+    final byYearMonth = <int, num>{};
+    for (final row in (rows as List)) {
+      final map = Map<String, dynamic>.from(row as Map);
+      final y = _asNum(map['year']).toInt();
+      final m = _asNum(map['month']).toInt();
+      if (m < 1 || m > 12) continue; // güvenlik
+      byYearMonth[y * 100 + m] = _asNum(map['total']);
+    }
+
     return [
-      for (var i = 0; i < monthStarts.length; i++)
-        (date: monthStarts[i], amount: totals[i]),
+      for (final d in monthStarts)
+        (date: d, amount: byYearMonth[d.year * 100 + d.month] ?? 0),
     ];
   }
 }
