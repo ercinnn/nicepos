@@ -1,3 +1,7 @@
+// `(f1, f2).wait` record-paralel bekleme genişletmesi için (bkz. dashboard
+// sorgularının paralelleştirilmesi).
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Anasayfa dashboard verisini Supabase'den çeken repository.
@@ -111,57 +115,59 @@ class DashboardRepository {
     return total;
   }
 
+  // ── Bir [start, end) aralığının satış adedi + NAKİT-ESASLI cirosu ────────
+  // `fetchTodaySummary`/`fetchYesterdaySummary`/`fetchMonthSummary` üçü de
+  // BİREBİR aynı işi farklı aralıkla yapıyordu — ortak gövde buraya alındı.
+  //
+  // ⚠️ PERFORMANS: iki bağımsız sorgu (satış satırları + borç tahsilatları)
+  // artık PARALEL çalışır (`Future.wait`), sıralı DEĞİL. Önceden tahsilat
+  // sorgusu satış sorgusu bitmeden başlamıyordu; bu üç provider anasayfada
+  // birlikte çalıştığı için gereksiz yere 3 round-trip'lik gecikme ekleniyordu.
+  // İkisi arasında veri bağımlılığı yok → paralelleştirme davranışı değiştirmez.
+  Future<({int count, num revenue})> _fetchRangeSummary(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final (rows, collections) = await (
+      _fetchAllRows(
+        'paid_amount, sale_items(quantity)',
+        start: start,
+        end: end,
+      ),
+      _sumDebtCollections(start, end),
+    ).wait;
+    num paidFromSales = 0;
+    int count = 0;
+    for (final row in rows) {
+      paidFromSales += (row['paid_amount'] as num? ?? 0);
+      for (final item in (row['sale_items'] as List? ?? [])) {
+        count += ((item['quantity'] as num?) ?? 0).round();
+      }
+    }
+    return (count: count, revenue: paidFromSales + collections);
+  }
+
   // ── Bugünün satış adedi ve NAKİT-ESASLI cirosu ───────────────────────────
   // Ciro = o gün fiilen tahsil edilen para:
   //   (1) bugün yapılan satışların `paid_amount` toplamı (peşin kısım; açık
   //       hesabın ödenmemiş kısmı `remaining_debt`'te kalır, otomatik dışlanır),
   // + (2) bugün gelen borç tahsilatları (`customer_payments` type='odeme').
   // Satış ADEDİ tanımı DEĞİŞMEDİ — bugün yapılan satış kalemlerinin miktar toplamı.
-  Future<({int count, num revenue})> fetchTodaySummary() async {
+  Future<({int count, num revenue})> fetchTodaySummary() {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
-    final rows = await _fetchAllRows(
-      'paid_amount, sale_items(quantity)',
-      start: start,
-      end: end,
-    );
-    num paidFromSales = 0;
-    int count = 0;
-    for (final row in rows) {
-      paidFromSales += (row['paid_amount'] as num? ?? 0);
-      for (final item in (row['sale_items'] as List? ?? [])) {
-        count += ((item['quantity'] as num?) ?? 0).round();
-      }
-    }
-    final collections = await _sumDebtCollections(start, end);
-    return (count: count, revenue: paidFromSales + collections);
+    return _fetchRangeSummary(start, start.add(const Duration(days: 1)));
   }
 
   // ── Dünün satış adedi ve NAKİT-ESASLI cirosu (hero değişim yüzdesi için) ──
   // Hero'nun "düne göre değişim" göstergesi bugünle AYNI tabana (nakit-esaslı)
   // dayanmalı ki karşılaştırma anlamlı olsun; bu yüzden dün de aynı tanımla
   // hesaplanır (peşin `paid_amount` + o gün gelen borç tahsilatları).
-  Future<({int count, num revenue})> fetchYesterdaySummary() async {
+  Future<({int count, num revenue})> fetchYesterdaySummary() {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day)
         .subtract(const Duration(days: 1));
-    final end = start.add(const Duration(days: 1));
-    final rows = await _fetchAllRows(
-      'paid_amount, sale_items(quantity)',
-      start: start,
-      end: end,
-    );
-    num paidFromSales = 0;
-    int count = 0;
-    for (final row in rows) {
-      paidFromSales += (row['paid_amount'] as num? ?? 0);
-      for (final item in (row['sale_items'] as List? ?? [])) {
-        count += ((item['quantity'] as num?) ?? 0).round();
-      }
-    }
-    final collections = await _sumDebtCollections(start, end);
-    return (count: count, revenue: paidFromSales + collections);
+    return _fetchRangeSummary(start, start.add(const Duration(days: 1)));
   }
 
   // ── Bu ayın satış adedi ve NAKİT-ESASLI cirosu ───────────────────────────
@@ -169,25 +175,12 @@ class DashboardRepository {
   //   (1) bu ay yapılan satışların `paid_amount` toplamı (peşin kısım),
   // + (2) bu ay gelen borç tahsilatları (`customer_payments` type='odeme').
   // Satış ADEDİ tanımı DEĞİŞMEDİ — bu ay yapılan satış kalemlerinin miktar toplamı.
-  Future<({int count, num revenue})> fetchMonthSummary() async {
+  Future<({int count, num revenue})> fetchMonthSummary() {
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, 1);
-    final end = DateTime(now.year, now.month + 1, 1);
-    final rows = await _fetchAllRows(
-      'paid_amount, sale_items(quantity)',
-      start: start,
-      end: end,
+    return _fetchRangeSummary(
+      DateTime(now.year, now.month, 1),
+      DateTime(now.year, now.month + 1, 1),
     );
-    num paidFromSales = 0;
-    int count = 0;
-    for (final row in rows) {
-      paidFromSales += (row['paid_amount'] as num? ?? 0);
-      for (final item in (row['sale_items'] as List? ?? [])) {
-        count += ((item['quantity'] as num?) ?? 0).round();
-      }
-    }
-    final collections = await _sumDebtCollections(start, end);
-    return (count: count, revenue: paidFromSales + collections);
   }
 
   // ── Sunucu tarafında NAKİT-ESASLI ciro toplamı — geniş tarih aralıkları ───
@@ -245,11 +238,11 @@ class DashboardRepository {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: days - 1));
-    final saleRows = await _fetchAllRows(
-      'sale_date, paid_amount',
-      start: start,
-    );
-    final odemeRows = await _fetchOdemeRows(start: start);
+    // ⚠️ PERFORMANS: iki bağımsız sorgu paralel (bkz. `_fetchRangeSummary`).
+    final (saleRows, odemeRows) = await (
+      _fetchAllRows('sale_date, paid_amount', start: start),
+      _fetchOdemeRows(start: start),
+    ).wait;
 
     // Gün bazında grupla — tüm günleri sıfırla, sonra iki bileşeni de doldur
     final Map<String, num> grouped = {};
@@ -397,16 +390,32 @@ class DashboardRepository {
   // tahsilatları) `sales_revenue_between` RPC'si ile hesaplanır — Yıllık Ciro /
   // Son 365 Gün kartlarıyla AYNI kaynak → tutarlılık garanti. Ay başına tek RPC
   // çağrısı (önceki sayfalı satır çekmeyle aynı sorgu sayısı, daha az veri).
+  //
+  // ⚠️ PERFORMANS: aylar PARALEL sorgulanır (`Future.wait`), sıralı DEĞİL.
+  // Önceden `for` döngüsü içinde `await` vardı → `months` kadar RPC round-trip'i
+  // uç uca EKLENİYORDU. Dashboard bunu `monthlySales(12)` ile çağırdığı için
+  // (stat kartı "Son 365 Günlük Ciro" sparkline'ı) 12 gidiş-dönüş seri hâlde
+  // birikiyor, tek başına anasayfa açılışının en uzun zincirini oluşturuyordu.
+  // RPC'ler birbirinden bağımsız (salt-okunur, `stable`) → paralelleştirme
+  // güvenli; toplam süre 12×RTT yerine ~1×RTT'ye iner. Sonuç listesi yine
+  // kronolojik sırada döner (`Future.wait` giriş sırasını korur).
   Future<List<({DateTime date, num amount})>> fetchMonthlySales(
       int months) async {
     final now = DateTime.now();
-    final results = <({DateTime date, num amount})>[];
-    for (var i = months - 1; i >= 0; i--) {
-      final monthDate = DateTime(now.year, now.month - i, 1);
-      final nextMonth = DateTime(monthDate.year, monthDate.month + 1, 1);
-      final total = await _fetchRevenueBetween(monthDate, nextMonth);
-      results.add((date: monthDate, amount: total));
-    }
-    return results;
+    final monthStarts = <DateTime>[
+      for (var i = months - 1; i >= 0; i--) DateTime(now.year, now.month - i, 1),
+    ];
+    final totals = await Future.wait(
+      monthStarts.map(
+        (monthDate) => _fetchRevenueBetween(
+          monthDate,
+          DateTime(monthDate.year, monthDate.month + 1, 1),
+        ),
+      ),
+    );
+    return [
+      for (var i = 0; i < monthStarts.length; i++)
+        (date: monthStarts[i], amount: totals[i]),
+    ];
   }
 }
