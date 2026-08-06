@@ -48,6 +48,9 @@ migrate_working_dir/
 /nicepos-etiket.apk
 *.apk
 
+# Cloudflare Wrangler yerel oturum/cache (storefront Cloudflare Pages deploy'u)
+/.wrangler/
+
 # Symbolication related
 app.*.symbols
 
