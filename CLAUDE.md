@@ -13,6 +13,17 @@ Bu dosya, Claude Code'a bu depoda çalışırken rehberlik eder.
 
 `design/design-tokens.md` tasarım sisteminin tek doğru kaynağıdır (palet, tipografi, spacing, §4 imza öğesi: Hero Tutar + Altın Ray, §5 bileşen notları + KARAR geçmişi, §6 v2.0 Enstrüman Konsolu dili). Ekran tasarımcıları bu dosyayı okur, değiştirmez.
 
+**⚠️ Bu roster dosya olarak eksik olabilir:** `.claude/` gitignore'lu olduğundan agent tanımları git ile taşınmaz — yeni bir checkout'ta (ör. bu depo başka bir makineye/klasöre klonlandığında) yukarıdaki agent'lar CLAUDE.md'de belgeli olsa da `.claude/agents/` altında **fiziksel olarak bulunmayabilir**. Çalışmadan önce `ls .claude/agents/` ile doğrula; eksikse kullanıcıya sor (yeniden mi oluşturulsun, yoksa başka bir checkout'ta mı kalmış).
+
+### Storefront (Cloudflare Pages) agent'ları — AYRI roster
+
+`storefront/` (bkz. "Online Satış (storefront)" bölümü) ana uygulamadan bağımsız bir tasarım sistemine sahiptir (`storefront/design/design-tokens.md`) ve KENDİ agent üçlüsünü kullanır — yukarıdaki `tasarim-lideri`/`yazilim-lideri` rosteriyle KARIŞTIRILMAZ:
+- **`magaza-tasarim-lideri`** — storefront'un tasarım lideri, `storefront/design/design-tokens.md`'nin tek sahibi. Kod yazmaz.
+- **`magaza-tasarimci`** — storefront ekranlarını (anasayfa/ürün detay/sepet/checkout) düzenleyen tek ekran tasarımcısı (storefront küçük olduğundan ekran başına ayrı agent YOK). `design-tokens.md`'yi okur, değiştirmez.
+- **`magaza-gorsel-elestirmen`** — canlı siteyi (`nicepos-online-satis.pages.dev`) tarayıcı araçlarıyla (claude-in-chrome, deferred — ToolSearch ile yüklenir) çoklu genişlikte QA eder, kod yazmaz.
+
+Ana uygulamanın koyu "Enstrüman Konsolu" dili storefront'a **taşınmaz** — storefront müşteri karşısında sıcak/aydınlık bir perakende mağazasıdır, palet kökeni ortak (lacivert+altın) ama uygulama dili kasıtlı farklı (bkz. `storefront/design/design-tokens.md` başlığındaki not).
+
 **⚠️ Sıralama kuralı (yaşanmış hata):** Bir KARAR token'a yazıldıysa, alt agent'a devretmeden **ÖNCE commit edilmelidir**. Worktree'ler temiz `HEAD`'den açılır → ana checkout'ta *uncommitted* duran token değişikliğini alt agent **göremez** ve kararı belgeden doğrulayamaz (v2.2 turunda yaşandı: agent §6.7'yi bulamadı, yalnız görev metnine dayanarak uyguladı).
 
 ## Supabase Kimlik Bilgileri
@@ -213,6 +224,32 @@ Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, S
 - **⚠️ RPC migration dersi:** Bir RPC'nin parametre listesini değiştiren migration'da ÖNCE `DO $$ ... DROP FUNCTION ... $$` ile eski overload'ları temizle — aksi halde `CREATE OR REPLACE` parametre tipi farklıysa yeni bir overload yaratır, "function name is not unique" hatası çıkar.
 - **⚠️ Sorgu planlayıcı dersi:** Bir view'ı büyük bir tabloya JOIN edip window/agregasyon fonksiyonu kullanıyorsan CTE'yi `MATERIALIZED` işaretle — aksi halde planlayıcı satır başına yeniden hesaplayıp statement timeout (57014) verebilir.
 - Eşlenik Barkod: `products.equivalent_group_id` + `product_equivalent_aggregate` view (detay: Ürünler Sayfası notu).
+- **Online Satış** (`0028_online_satis.sql`, `0029_online_categories_public_read.sql`): `online_products` view (public-safe sütunlar, `is_online_active=true` filtresi, `anon` okur) + `online_orders`/`online_order_items` tabloları + `create_online_order()` RPC (SECURITY DEFINER, atomik — `complete_sale_offline` ile aynı desen, fiyat/stok/aktiflik sunucuda doğrulanır). `product_groups`'a `anon` için ek public-read policy (kategori navigasyonu). Detay: aşağıdaki "Online Satış (Storefront)" bölümü.
+
+## Online Satış (Storefront)
+
+Ana POS'un dışında, **ayrı bir Flutter web projesi** olarak kurulu ikinci bir müşteri-karşısı site: `storefront/` (paket adı `nicepos_storefront`, kendi `pubspec.yaml`'ı var, ana projeyle kod paylaşmaz). Aynı Supabase projesine (aynı `SUPABASE_URL`/`SUPABASE_ANON_KEY` dart-define'ları) `anon` rolüyle bağlanır.
+
+- **Kontrol paneli** ana uygulamada: `/online-satis` (`lib/features/online_satis/`) — canlı ürün arama (sales_screen'deki desenin sadeleştirilmiş hali) ile seçilen ürün `products.is_online_active=true` yapılır; ürün formundaki mevcut "Online Aç" anahtarıyla AYNI alanı paylaşır (ikisi birbirini tamamlar, ayrı bir online-ürün tablosu YOK).
+- **Storefront ekranları** (`storefront/lib/`): anasayfa (`features/home/`, kategori `Wrap` filtresi + arama + ürün grid'i), ürün detay (`features/product/`), sepet (`features/cart/`, yalnız bellekte — `cartProvider`, sayfa yenilenince sıfırlanır, bilinçli v1 basitleştirmesi), checkout (`features/checkout/`, misafir bilgi formu → `create_online_order` RPC → sipariş kodu onay ekranı). State: plain `flutter_riverpod` (codegen YOK, ana projenin `@riverpod` deseninden farklı — küçük proje için daha az boilerplate). Routing: `go_router`, tüm rotalar `_fadeThroughPage` (ana uygulamanın `router.dart`'ıyla birebir aynı 240ms/180ms `easeOutCubic` fade+slide eğrisi, `storefront/lib/app.dart`).
+- **v1'de online müşteri GİRİŞİ (Supabase Auth hesabı) YOK, yalnız misafir sipariş** — mevcut RLS `auth.role()='authenticated'` blanket-tam-erişim politikası yüzünden (bkz. `0002_rls.sql`), online müşteri hesabı aynı Auth havuzunda olsaydı tüm POS verisine erişebilirdi. Gerçek müşteri hesabı istenirse önce TÜM RLS politikalarının staff-allowlist kontrolüne geçmesi gerekir (ayrı, büyük bir iş — bkz. `0028_online_satis.sql` migration yorumu).
+- **Tasarım sistemi AYRI:** `storefront/design/design-tokens.md` — ana uygulamanın koyu "Enstrüman Konsolu" diliyle KARIŞTIRILMAZ, sıcak/aydınlık perakende kimliği (Space Grotesk başlık + Inter gövde tipografik çifti, `google_fonts`; ana uygulamanın "altın ray" imzasının statik/ışıltısız yorumu — hero banner + AppBar alt çizgisi). Agent rosteri de ayrı (`magaza-tasarim-lideri`/`magaza-tasarimci`/`magaza-gorsel-elestirmen` — bkz. yukarıdaki "Agent'lar" bölümü).
+- **⚠️ Bilinen tuzak:** yatay `ListView` cross-axis'te çocuklarına DAR (tight) yükseklik zorlar — 200+ kategori bu yüzden `Wrap` (sabit `maxHeight` + dikey kaydırma) ile gösterilir, yatay `ListView` DEĞİL (kategori chip'i içeriden taşıyordu, yaşanmış hata).
+
+### Deploy — Cloudflare Pages
+
+Site: `https://nicepos-online-satis.pages.dev` (custom domain YOK, deneme aşaması). GitHub Pages'ten TAMAMEN AYRI bir deploy akışı — GitHub Actions/webhook'a bağlı DEĞİL, `wrangler` CLI ile elle deploy edilir:
+
+```powershell
+cd storefront
+flutter build web --release `
+  --dart-define=SUPABASE_URL=https://maogkrllltlxkfdwfsdj.supabase.co `
+  "--dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hb2drcmxsbHRseGtmZHdmc2RqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MDk3NjQsImV4cCI6MjA5NzA4NTc2NH0.BsPCU9Hx1OuMf-JI7TU4I6SRuSKsLcmL2MIpQc2gKp0"
+cd ..
+npx wrangler pages deploy storefront/build/web --project-name nicepos-online-satis --branch master
+```
+
+`storefront/build/` git'e commit EDİLMEZ (kendi `.gitignore`'u `/build/` — ana projenin `docs/`+`build/web` deseninin AKSİNE, burada build çıktısı yalnız Cloudflare'e gider, repoda tutulmaz). Kaynak kod (`storefront/lib/`) normal şekilde ana repoya commit edilir. `.wrangler/` (yerel wrangler cache/oturum) kök `.gitignore`'da hariç tutulur.
 
 ## Deploy — GitHub Pages
 
