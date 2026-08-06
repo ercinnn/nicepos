@@ -14,13 +14,18 @@ final storeRouter = GoRouter(
     GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
     GoRoute(
       path: '/urun/:id',
-      builder: (context, state) => ProductDetailScreen(productId: state.pathParameters['id']!),
+      builder: (context, state) =>
+          ProductDetailScreen(productId: state.pathParameters['id']!),
     ),
     GoRoute(path: '/sepet', builder: (context, state) => const CartScreen()),
-    GoRoute(path: '/odeme', builder: (context, state) => const CheckoutScreen()),
+    GoRoute(
+      path: '/odeme',
+      builder: (context, state) => const CheckoutScreen(),
+    ),
     GoRoute(
       path: '/siparis-alindi/:code',
-      builder: (context, state) => OrderSuccessScreen(orderCode: state.pathParameters['code']!),
+      builder: (context, state) =>
+          OrderSuccessScreen(orderCode: state.pathParameters['code']!),
     ),
   ],
 );

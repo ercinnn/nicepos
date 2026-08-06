@@ -40,6 +40,10 @@ dependencies:
   flutter_riverpod: ^2.6.1
   go_router: ^17.3.0
   intl: ^0.20.2
+  # Hero/başlık tipografisi (Space Grotesk) — jenerik varsayılan Roboto yerine
+  # marka kimliğine özgü bir görsel imza. Web'de ilk yüklemede Google Fonts
+  # CDN'inden çekilir (sonraki ziyaretlerde tarayıcı cache'inden).
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:

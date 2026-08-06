@@ -11,13 +11,24 @@ class StoreAppBar extends ConsumerWidget implements PreferredSizeWidget {
   const StoreAppBar({super.key, this.searchField});
 
   @override
-  Size get preferredSize => const Size.fromHeight(64);
+  Size get preferredSize => const Size.fromHeight(65);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final itemCount = ref.watch(cartProvider.select((items) => items.fold(0, (s, i) => s + i.quantity)));
+    final itemCount = ref.watch(
+      cartProvider.select((items) => items.fold(0, (s, i) => s + i.quantity)),
+    );
 
     return AppBar(
+      // İnce altın çizgi — ana uygulamanın "altın ray" imzasının en küçük
+      // yansıması, koyu app bar'ı sıradan bir Material AppBar olmaktan çıkarır.
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(
+          height: 1,
+          color: StoreColors.gold.withValues(alpha: 0.55),
+        ),
+      ),
       title: GestureDetector(
         onTap: () => context.go('/'),
         child: const Row(

@@ -14,7 +14,11 @@ class CatalogFilter {
 
   const CatalogFilter({this.query = '', this.groupId});
 
-  CatalogFilter copyWith({String? query, String? groupId, bool clearGroup = false}) {
+  CatalogFilter copyWith({
+    String? query,
+    String? groupId,
+    bool clearGroup = false,
+  }) {
     return CatalogFilter(
       query: query ?? this.query,
       groupId: clearGroup ? null : (groupId ?? this.groupId),
@@ -22,9 +26,13 @@ class CatalogFilter {
   }
 }
 
-final catalogFilterProvider = StateProvider<CatalogFilter>((ref) => const CatalogFilter());
+final catalogFilterProvider = StateProvider<CatalogFilter>(
+  (ref) => const CatalogFilter(),
+);
 
 final catalogProductsProvider = FutureProvider<List<StoreProduct>>((ref) async {
   final filter = ref.watch(catalogFilterProvider);
-  return ref.watch(storeRepositoryProvider).fetchProducts(query: filter.query, groupId: filter.groupId);
+  return ref
+      .watch(storeRepositoryProvider)
+      .fetchProducts(query: filter.query, groupId: filter.groupId);
 });

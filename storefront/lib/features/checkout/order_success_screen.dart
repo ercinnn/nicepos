@@ -17,13 +17,29 @@ class OrderSuccessScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle_outline, size: 56, color: StoreColors.success),
+            const Icon(
+              Icons.check_circle_outline,
+              size: 56,
+              color: StoreColors.success,
+            ),
             const SizedBox(height: 16),
-            const Text('Siparişiniz alındı!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            const Text(
+              'Siparişiniz alındı!',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
-            Text('Sipariş kodu: $orderCode', style: const TextStyle(fontSize: 15, color: StoreColors.textMuted)),
+            Text(
+              'Sipariş kodu: $orderCode',
+              style: const TextStyle(
+                fontSize: 15,
+                color: StoreColors.textMuted,
+              ),
+            ),
             const SizedBox(height: 24),
-            ElevatedButton(onPressed: () => context.go('/'), child: const Text('Alışverişe Devam Et')),
+            ElevatedButton(
+              onPressed: () => context.go('/'),
+              child: const Text('Alışverişe Devam Et'),
+            ),
           ],
         ),
       ),

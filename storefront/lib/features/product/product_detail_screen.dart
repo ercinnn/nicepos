@@ -8,7 +8,10 @@ import '../../data/models/store_product.dart';
 import '../../state/cart_provider.dart';
 import '../../widgets/store_app_bar.dart';
 
-final _productByIdProvider = FutureProvider.family<StoreProduct?, String>((ref, id) async {
+final _productByIdProvider = FutureProvider.family<StoreProduct?, String>((
+  ref,
+  id,
+) async {
   return ref.watch(storeRepositoryProvider).fetchProductById(id);
 });
 
@@ -18,7 +21,8 @@ class ProductDetailScreen extends ConsumerStatefulWidget {
   const ProductDetailScreen({super.key, required this.productId});
 
   @override
-  ConsumerState<ProductDetailScreen> createState() => _ProductDetailScreenState();
+  ConsumerState<ProductDetailScreen> createState() =>
+      _ProductDetailScreenState();
 }
 
 class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
@@ -35,7 +39,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         error: (e, _) => Center(child: Text('Ürün yüklenemedi: $e')),
         data: (product) {
           if (product == null) {
-            return const Center(child: Text('Ürün bulunamadı veya online satışta değil.'));
+            return const Center(
+              child: Text('Ürün bulunamadı veya online satışta değil.'),
+            );
           }
           return SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -58,13 +64,18 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                             ? Image.network(
                                 product.imageUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stack) => const Icon(
-                                  Icons.image_not_supported_outlined,
-                                  size: 48,
-                                  color: StoreColors.textMuted,
-                                ),
+                                errorBuilder: (context, error, stack) =>
+                                    const Icon(
+                                      Icons.image_not_supported_outlined,
+                                      size: 48,
+                                      color: StoreColors.textMuted,
+                                    ),
                               )
-                            : const Icon(Icons.image_not_supported_outlined, size: 48, color: StoreColors.textMuted),
+                            : const Icon(
+                                Icons.image_not_supported_outlined,
+                                size: 48,
+                                color: StoreColors.textMuted,
+                              ),
                       ),
                     );
                     final info = _ProductInfo(
@@ -72,9 +83,15 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                       quantity: _quantity,
                       onQuantityChanged: (q) => setState(() => _quantity = q),
                       onAddToCart: () {
-                        ref.read(cartProvider.notifier).add(product, quantity: _quantity);
+                        ref
+                            .read(cartProvider.notifier)
+                            .add(product, quantity: _quantity);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${product.name} sepete eklendi (x$_quantity)')),
+                          SnackBar(
+                            content: Text(
+                              '${product.name} sepete eklendi (x$_quantity)',
+                            ),
+                          ),
                         );
                         context.go('/sepet');
                       },
@@ -123,19 +140,50 @@ class _ProductInfo extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(product.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: StoreColors.textPrimary)),
+        Text(
+          product.name,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: StoreColors.textPrimary,
+          ),
+        ),
         const SizedBox(height: 8),
         if (!product.inStock)
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
-            child: Text('Şu an stokta yok', style: TextStyle(color: StoreColors.danger, fontWeight: FontWeight.w600)),
+            child: Text(
+              'Şu an stokta yok',
+              style: TextStyle(
+                color: StoreColors.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-        Text(formatCurrency(product.price), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: StoreColors.navy)),
+        Text(
+          formatCurrency(product.price),
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            color: StoreColors.navy,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text('KDV dahil, %${product.vatRate.toStringAsFixed(0)}', style: const TextStyle(fontSize: 12, color: StoreColors.textMuted)),
-        if (product.description != null && product.description!.trim().isNotEmpty) ...[
+        Text(
+          'KDV dahil, %${product.vatRate.toStringAsFixed(0)}',
+          style: const TextStyle(fontSize: 12, color: StoreColors.textMuted),
+        ),
+        if (product.description != null &&
+            product.description!.trim().isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text(product.description!, style: const TextStyle(fontSize: 14, color: StoreColors.textPrimary, height: 1.5)),
+          Text(
+            product.description!,
+            style: const TextStyle(
+              fontSize: 14,
+              color: StoreColors.textPrimary,
+              height: 1.5,
+            ),
+          ),
         ],
         const SizedBox(height: 24),
         Row(
@@ -165,7 +213,10 @@ class _QuantityStepper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(border: Border.all(color: StoreColors.border), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        border: Border.all(color: StoreColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -173,7 +224,14 @@ class _QuantityStepper extends StatelessWidget {
             onPressed: quantity > 1 ? () => onChanged(quantity - 1) : null,
             icon: const Icon(Icons.remove, size: 18),
           ),
-          SizedBox(width: 28, child: Text('$quantity', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600))),
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$quantity',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
           IconButton(
             onPressed: () => onChanged(quantity + 1),
             icon: const Icon(Icons.add, size: 18),

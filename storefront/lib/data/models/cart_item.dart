@@ -8,5 +8,6 @@ class CartItem {
 
   num get subtotal => product.price * quantity;
 
-  CartItem copyWith({int? quantity}) => CartItem(product: product, quantity: quantity ?? this.quantity);
+  CartItem copyWith({int? quantity}) =>
+      CartItem(product: product, quantity: quantity ?? this.quantity);
 }

@@ -44,12 +44,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       _error = null;
     });
     try {
-      final orderCode = await ref.read(storeRepositoryProvider).createOrder(
+      final orderCode = await ref
+          .read(storeRepositoryProvider)
+          .createOrder(
             customerName: _nameController.text.trim(),
             customerPhone: _phoneController.text.trim(),
-            customerEmail: _emailController.text.trim().isEmpty ? null : _emailController.text.trim(),
+            customerEmail: _emailController.text.trim().isEmpty
+                ? null
+                : _emailController.text.trim(),
             shippingAddress: _addressController.text.trim(),
-            customerNote: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+            customerNote: _noteController.text.trim().isEmpty
+                ? null
+                : _noteController.text.trim(),
             items: items,
           );
       ref.read(cartProvider.notifier).clear();
@@ -74,9 +80,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Sepetiniz boş', style: TextStyle(color: StoreColors.textMuted)),
+              const Text(
+                'Sepetiniz boş',
+                style: TextStyle(color: StoreColors.textMuted),
+              ),
               const SizedBox(height: 12),
-              ElevatedButton(onPressed: () => context.go('/'), child: const Text('Alışverişe Başla')),
+              ElevatedButton(
+                onPressed: () => context.go('/'),
+                child: const Text('Alışverişe Başla'),
+              ),
             ],
           ),
         ),
@@ -95,37 +107,49 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Teslimat Bilgileri', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Teslimat Bilgileri',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(labelText: 'Ad Soyad'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Zorunlu' : null,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Zorunlu' : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _phoneController,
                     keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(labelText: 'Telefon'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Zorunlu' : null,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Zorunlu' : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'E-posta (opsiyonel)'),
+                    decoration: const InputDecoration(
+                      labelText: 'E-posta (opsiyonel)',
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _addressController,
                     maxLines: 3,
-                    decoration: const InputDecoration(labelText: 'Teslimat Adresi'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Zorunlu' : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Teslimat Adresi',
+                    ),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Zorunlu' : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _noteController,
-                    decoration: const InputDecoration(labelText: 'Sipariş Notu (opsiyonel)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Sipariş Notu (opsiyonel)',
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Container(
@@ -137,15 +161,28 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Text('Toplam', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const Text(
+                          'Toplam',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
                         const Spacer(),
-                        Text(formatCurrency(total), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: StoreColors.navy)),
+                        Text(
+                          formatCurrency(total),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: StoreColors.navy,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(_error!, style: const TextStyle(color: StoreColors.danger)),
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: StoreColors.danger),
+                    ),
                   ],
                   const SizedBox(height: 20),
                   SizedBox(
@@ -153,7 +190,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     child: ElevatedButton(
                       onPressed: _submitting ? null : _submit,
                       child: _submitting
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
                           : const Text('Siparişi Onayla'),
                     ),
                   ),

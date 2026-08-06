@@ -4,7 +4,9 @@ import '../data/models/cart_item.dart';
 import '../data/models/store_product.dart';
 import '../data/store_repository.dart';
 
-final storeRepositoryProvider = Provider<StoreRepository>((ref) => StoreRepository());
+final storeRepositoryProvider = Provider<StoreRepository>(
+  (ref) => StoreRepository(),
+);
 
 // Sepet — yalnız bellekte tutulur (v1: sayfa yenilenince sıfırlanır, sunucu
 // tarafında hiçbir şey yazılmaz — sipariş ancak checkout'ta create_online_order
@@ -23,7 +25,9 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
       return;
     }
     final updated = [...state];
-    updated[index] = updated[index].copyWith(quantity: updated[index].quantity + quantity);
+    updated[index] = updated[index].copyWith(
+      quantity: updated[index].quantity + quantity,
+    );
     state = updated;
   }
 
@@ -34,7 +38,10 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
     }
     state = [
       for (final item in state)
-        if (item.product.id == productId) item.copyWith(quantity: quantity) else item,
+        if (item.product.id == productId)
+          item.copyWith(quantity: quantity)
+        else
+          item,
     ];
   }
 
@@ -45,4 +52,6 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
   void clear() => state = const [];
 }
 
-final cartProvider = StateNotifierProvider<CartNotifier, List<CartItem>>((ref) => CartNotifier());
+final cartProvider = StateNotifierProvider<CartNotifier, List<CartItem>>(
+  (ref) => CartNotifier(),
+);

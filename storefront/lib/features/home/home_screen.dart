@@ -8,6 +8,8 @@ import '../../state/cart_provider.dart';
 import '../../state/catalog_provider.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/store_app_bar.dart';
+import '../../widgets/store_footer.dart';
+import '../../widgets/store_hero_banner.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -31,7 +33,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
       final filter = ref.read(catalogFilterProvider);
-      ref.read(catalogFilterProvider.notifier).state = filter.copyWith(query: value);
+      ref.read(catalogFilterProvider.notifier).state = filter.copyWith(
+        query: value,
+      );
     });
   }
 
@@ -53,67 +57,92 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             prefixIcon: const Icon(Icons.search, color: Colors.white70),
             filled: true,
             fillColor: Colors.white.withValues(alpha: 0.12),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
             isDense: true,
           ),
         ),
       ),
-      body: Column(
-        children: [
-          categoriesAsync.when(
-            loading: () => const SizedBox(height: 64),
-            error: (e, _) => const SizedBox.shrink(),
-            data: (categories) {
-              if (categories.isEmpty) return const SizedBox(height: 8);
-              // 200+ kategori tek satır yatay kaydırmaya sığmıyor (yalnız
-              // 10-12'si görünüyordu) — Wrap ile alt sıralara geçer. Hepsi
-              // birden açık kalırsa sayfa aşırı uzayacağından sabit yükseklikli
-              // bir alanda (yaklaşık 3 satır) dikey kaydırmalı gösterilir.
-              return Container(
-                constraints: const BoxConstraints(maxHeight: 168),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: SingleChildScrollView(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _CategoryChip(
-                        label: 'Tümü',
-                        selected: filter.groupId == null,
-                        onTap: () => ref.read(catalogFilterProvider.notifier).state = filter.copyWith(clearGroup: true),
-                      ),
-                      for (final category in categories)
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            const StoreHeroBanner(),
+            categoriesAsync.when(
+              loading: () => const SizedBox(height: 64),
+              error: (e, _) => const SizedBox.shrink(),
+              data: (categories) {
+                if (categories.isEmpty) return const SizedBox(height: 8);
+                // 200+ kategori tek satır yatay kaydırmaya sığmıyor (yalnız
+                // 10-12'si görünüyordu) — Wrap ile alt sıralara geçer. Hepsi
+                // birden açık kalırsa sayfa aşırı uzayacağından sabit yükseklikli
+                // bir alanda (yaklaşık 3 satır) dikey kaydırmalı gösterilir.
+                return Container(
+                  constraints: const BoxConstraints(maxHeight: 168),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
                         _CategoryChip(
-                          label: category.name,
-                          selected: filter.groupId == category.id,
-                          onTap: () => ref.read(catalogFilterProvider.notifier).state = filter.copyWith(groupId: category.id),
+                          label: 'Tümü',
+                          selected: filter.groupId == null,
+                          onTap: () =>
+                              ref.read(catalogFilterProvider.notifier).state =
+                                  filter.copyWith(clearGroup: true),
                         ),
-                    ],
+                        for (final category in categories)
+                          _CategoryChip(
+                            label: category.name,
+                            selected: filter.groupId == category.id,
+                            onTap: () =>
+                                ref.read(catalogFilterProvider.notifier).state =
+                                    filter.copyWith(groupId: category.id),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-          const Divider(height: 1, color: StoreColors.border),
-          Expanded(
-            child: productsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text('Ürünler yüklenemedi: $e', textAlign: TextAlign.center),
+                );
+              },
+            ),
+            const Divider(height: 1, color: StoreColors.border),
+            productsAsync.when(
+              loading: () => const SizedBox(
+                height: 320,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (e, _) => SizedBox(
+                height: 200,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Ürünler yüklenemedi: $e',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
               ),
               data: (products) {
                 if (products.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('Bu kriterlere uygun ürün bulunamadı', style: TextStyle(color: StoreColors.textMuted)),
+                  return const SizedBox(
+                    height: 200,
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'Bu kriterlere uygun ürün bulunamadı',
+                          style: TextStyle(color: StoreColors.textMuted),
+                        ),
+                      ),
                     ),
                   );
                 }
                 return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(16),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 220,
@@ -129,7 +158,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       onAddToCart: () {
                         ref.read(cartProvider.notifier).add(product);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${product.name} sepete eklendi'), duration: const Duration(seconds: 1)),
+                          SnackBar(
+                            content: Text('${product.name} sepete eklendi'),
+                            duration: const Duration(seconds: 1),
+                          ),
                         );
                       },
                     );
@@ -137,8 +169,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 );
               },
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            const StoreFooter(),
+          ],
+        ),
       ),
     );
   }
@@ -149,7 +183,11 @@ class _CategoryChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _CategoryChip({required this.label, required this.selected, required this.onTap});
+  const _CategoryChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +196,10 @@ class _CategoryChip extends StatelessWidget {
       selected: selected,
       onSelected: (_) => onTap(),
       selectedColor: StoreColors.navy,
-      labelStyle: TextStyle(color: selected ? Colors.white : StoreColors.textPrimary, fontSize: 12.5),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : StoreColors.textPrimary,
+        fontSize: 12.5,
+      ),
       backgroundColor: Colors.white,
       side: BorderSide(color: selected ? StoreColors.navy : StoreColors.border),
     );
