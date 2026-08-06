@@ -65,32 +65,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             error: (e, _) => const SizedBox.shrink(),
             data: (categories) {
               if (categories.isEmpty) return const SizedBox(height: 8);
-              return SizedBox(
-                // Yatay ListView, çocuklarına DAR (tight) yükseklik constraint'i
-                // verir (viewport yüksekliği - dikey padding) — bu değer
-                // ChoiceChip'in doğal yüksekliğinden küçükse chip kendi içinde
-                // taşar (görünür ama kırpılır/overflow şeridi çıkar). 64 - 16
-                // (padding) = 48dp, ChoiceChip'e (~36-40dp) rahat pay bırakır.
-                height: 64,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  children: [
-                    _CategoryChip(
-                      label: 'Tümü',
-                      selected: filter.groupId == null,
-                      onTap: () => ref.read(catalogFilterProvider.notifier).state = filter.copyWith(clearGroup: true),
-                    ),
-                    const SizedBox(width: 8),
-                    for (final category in categories) ...[
+              // 200+ kategori tek satır yatay kaydırmaya sığmıyor (yalnız
+              // 10-12'si görünüyordu) — Wrap ile alt sıralara geçer. Hepsi
+              // birden açık kalırsa sayfa aşırı uzayacağından sabit yükseklikli
+              // bir alanda (yaklaşık 3 satır) dikey kaydırmalı gösterilir.
+              return Container(
+                constraints: const BoxConstraints(maxHeight: 168),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: SingleChildScrollView(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
                       _CategoryChip(
-                        label: category.name,
-                        selected: filter.groupId == category.id,
-                        onTap: () => ref.read(catalogFilterProvider.notifier).state = filter.copyWith(groupId: category.id),
+                        label: 'Tümü',
+                        selected: filter.groupId == null,
+                        onTap: () => ref.read(catalogFilterProvider.notifier).state = filter.copyWith(clearGroup: true),
                       ),
-                      const SizedBox(width: 8),
+                      for (final category in categories)
+                        _CategoryChip(
+                          label: category.name,
+                          selected: filter.groupId == category.id,
+                          onTap: () => ref.read(catalogFilterProvider.notifier).state = filter.copyWith(groupId: category.id),
+                        ),
                     ],
-                  ],
+                  ),
                 ),
               );
             },
