@@ -61,12 +61,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Column(
         children: [
           categoriesAsync.when(
-            loading: () => const SizedBox(height: 48),
+            loading: () => const SizedBox(height: 64),
             error: (e, _) => const SizedBox.shrink(),
             data: (categories) {
               if (categories.isEmpty) return const SizedBox(height: 8);
               return SizedBox(
-                height: 52,
+                // Yatay ListView, çocuklarına DAR (tight) yükseklik constraint'i
+                // verir (viewport yüksekliği - dikey padding) — bu değer
+                // ChoiceChip'in doğal yüksekliğinden küçükse chip kendi içinde
+                // taşar (görünür ama kırpılır/overflow şeridi çıkar). 64 - 16
+                // (padding) = 48dp, ChoiceChip'e (~36-40dp) rahat pay bırakır.
+                height: 64,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
