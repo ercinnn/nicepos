@@ -16,6 +16,13 @@ const kProductPageSize = 50;
 @Riverpod(keepAlive: true)
 ProductRepository productRepository(ProductRepositoryRef ref) => ProductRepository();
 
+// Online Satış kontrol paneli — halihazırda `is_online_active` olan ürünler.
+// autoDispose: ekrandan çıkınca serbest bırakılır, sık değişen küçük bir liste.
+@riverpod
+Future<List<Product>> onlineActiveProducts(OnlineActiveProductsRef ref) async {
+  return ref.watch(productRepositoryProvider).fetchOnlineActive();
+}
+
 @Riverpod(keepAlive: true)
 ProductGroupRepository productGroupRepository(ProductGroupRepositoryRef ref) => ProductGroupRepository();
 

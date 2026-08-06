@@ -88,12 +88,12 @@ final labelWideSheetProvider =
     );
 
 typedef _$LabelWideSheet = Notifier<LabelWideSheetState>;
-String _$labelPosterSheetHash() => r'f606085c084a082e7bc5ed77d35c5c84246fae18';
+String _$labelPosterSheetHash() => r'4b298861d1dfb0c92c553a95aa5c189c0eb0685d';
 
-/// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste
-/// korunur (diğer etiket provider'larıyla KARIŞMAZ). Mağaza logosu dar-logo
-/// `LabelSheet`'in kalıcı store logosundan paylaşılır (bu sekmede ayrı logo
-/// yükleme YOK).
+/// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste/
+/// başlık/barkod tercihi korunur (diğer etiket provider'larıyla KARIŞMAZ).
+/// Mağaza logosu dar-logo `LabelSheet`'in kalıcı store logosundan paylaşılır
+/// (bu sekmede ayrı logo yükleme YOK).
 ///
 /// Copied from [LabelPosterSheet].
 @ProviderFor(LabelPosterSheet)

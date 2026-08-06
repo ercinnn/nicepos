@@ -23,6 +23,25 @@ final productRepositoryProvider = Provider<ProductRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ProductRepositoryRef = ProviderRef<ProductRepository>;
+String _$onlineActiveProductsHash() =>
+    r'8d437a691bf962eb43a309b4c9c2087b0255cd72';
+
+/// See also [onlineActiveProducts].
+@ProviderFor(onlineActiveProducts)
+final onlineActiveProductsProvider =
+    AutoDisposeFutureProvider<List<Product>>.internal(
+      onlineActiveProducts,
+      name: r'onlineActiveProductsProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$onlineActiveProductsHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef OnlineActiveProductsRef = AutoDisposeFutureProviderRef<List<Product>>;
 String _$productGroupRepositoryHash() =>
     r'1d8fc51a53ba2483dab53100570faf306df383ca';
 

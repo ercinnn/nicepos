@@ -384,6 +384,26 @@ class ProductRepository {
         .update({'price1': newPrice}).eq('id', productId);
   }
 
+  // Yalnızca online mağaza görünürlüğünü değiştirir (Online Satış kontrol
+  // paneli + ürün formundaki "Online Aç" anahtarı ortak metod) — updatePrice1
+  // ile aynı hedefli-update deseni, diğer alanları etkilemez.
+  Future<void> setOnlineActive(String productId, bool value) async {
+    await _client
+        .from('products')
+        .update({'is_online_active': value}).eq('id', productId);
+  }
+
+  // Online Satış kontrol panelinde gösterilen, halihazırda mağazada aktif
+  // ürünler listesi.
+  Future<List<Product>> fetchOnlineActive() async {
+    final rows = await _client
+        .from('products')
+        .select('*, product_groups(name, parent_group:parent_group_id(name))')
+        .eq('is_online_active', true)
+        .order('name');
+    return (rows as List).map((row) => Product.fromMap(Map<String, dynamic>.from(row as Map))).toList();
+  }
+
   Future<void> upsertByBarcode(Product product) async {
     if (product.barcode == null || product.barcode!.isEmpty) {
       await create(product);
