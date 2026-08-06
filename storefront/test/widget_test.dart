@@ -1,14 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:nicepos_storefront/main.dart';
+import 'package:nicepos_storefront/core/supabase_config.dart';
 
 void main() {
-  testWidgets('Placeholder ekranı render olur', (WidgetTester tester) async {
-    await tester.pumpWidget(const StorefrontApp());
-
-    // Testte dart-define geçilmediğinden Supabase yapılandırılmamış sayılır;
-    // yalnız ekranın hatasız render olduğunu doğrular.
-    expect(find.byType(Scaffold), findsOneWidget);
+  test('SupabaseConfig dart-define geçilmeyince yapılandırılmamış sayılır', () {
+    // Testte dart-define geçilmez; StorefrontApp Supabase.initialize
+    // gerektirdiğinden (canlı ağ çağrısı) burada tam widget pump yerine
+    // yalnız yapılandırma algılama mantığı doğrulanır.
+    expect(SupabaseConfig.isConfigured, isFalse);
   });
 }

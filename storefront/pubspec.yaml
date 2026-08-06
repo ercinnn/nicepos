@@ -37,6 +37,9 @@ dependencies:
   # 2.14.2'de sabit — ana nicepos projesindeki gibi (2.15.x web'de açılış
   # hatası veriyor: passkeys_web/ua_client_hints -> dart:html). Bkz. CLAUDE.md.
   supabase_flutter: 2.14.2
+  flutter_riverpod: ^2.6.1
+  go_router: ^17.3.0
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
