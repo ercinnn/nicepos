@@ -236,6 +236,20 @@ Ana POS'un dışında, **ayrı bir Flutter web projesi** olarak kurulu ikinci bi
 - **Tasarım sistemi AYRI:** `storefront/design/design-tokens.md` — ana uygulamanın koyu "Enstrüman Konsolu" diliyle KARIŞTIRILMAZ, sıcak/aydınlık perakende kimliği (Space Grotesk başlık + Inter gövde tipografik çifti, `google_fonts`; ana uygulamanın "altın ray" imzasının statik/ışıltısız yorumu — hero banner + AppBar alt çizgisi). Agent rosteri de ayrı (`magaza-tasarim-lideri`/`magaza-tasarimci`/`magaza-gorsel-elestirmen` — bkz. yukarıdaki "Agent'lar" bölümü).
 - **⚠️ Bilinen tuzak:** yatay `ListView` cross-axis'te çocuklarına DAR (tight) yükseklik zorlar — 200+ kategori bu yüzden `Wrap` (sabit `maxHeight` + dikey kaydırma) ile gösterilir, yatay `ListView` DEĞİL (kategori chip'i içeriden taşıyordu, yaşanmış hata).
 
+### Ödeme Entegrasyonu (planlandı, HENÜZ YAPILMADI)
+
+**Karar: iyzico.** Türkiye'de TL hesaba ödeme aktarımı yapan, hosted checkout/iframe sunan (kart bilgisi bize hiç dokunmaz, PCI yükü minimal) bir sağlayıcı gerekiyordu — Stripe TL/Türkiye tarafında sınırlı olduğundan elenmiş, PayTR ikinci sırada değerlendirilmişti. **Kullanıcının henüz bir iyzico üye işyeri hesabı YOK** — bu, entegrasyon çalışmasının önündeki ilk ve zorunlu adım (KYC/işletme doğrulaması gerektirir, Claude bunu kullanıcı adına yapamaz).
+
+**Şu anki durum (ödeme entegrasyonu yokken):** `create_online_order` RPC'si siparişi doğrudan `'yeni'` durumunda oluşturuyor — online mağazadan gelen HİÇBİR sipariş şu an gerçek bir ödeme adımından geçmiyor (fiilen "kapıda ödeme/elle mutabakat" modeli). Bu bilinçli bir v1 sınırlaması, ödeme eklenene kadar böyle kalacak.
+
+**Planlanan mimari (üye işyeri hesabı açılınca uygulanacak):**
+1. Checkout akışına bir ödeme adımı eklenir — iyzico'nun hosted Checkout Form'una yönlendirme ya da embed (kart verisi storefront'a/Supabase'e hiç değmez).
+2. **Sunucu tarafı bir webhook/callback ucu şart** — istemcinin "ödeme başarılı" demesine GÜVENİLMEZ, yalnız iyzico'nun imzalı async callback'i siparişi kesinleştirir. Bu, şu an sistemde OLMAYAN yeni bir bileşen gerektirir: Supabase Edge Function ya da (storefront zaten Cloudflare'de barındığından daha doğal) bir Cloudflare Worker.
+3. `online_orders` şemasına ödeme alanları eklenmesi gerekecek (ör. `payment_status`, `payment_provider_ref`) — mevcut `status` enum'u (`yeni/onaylandi/hazirlaniyor/kargoda/tamamlandi/iptal`) sipariş lojistik durumu için, ödeme durumu için AYRI bir alan daha doğru olur.
+4. Stok düşümü şu an sipariş anında (`create_online_order` içinde) yapılıyor — ödeme eklenince bunun ödeme ONAYINDAN SONRAYA mı taşınacağı (stok kilitleme riski vs. ödenmemiş sipariş için stok bloke etme riski) ayrıca karara bağlanmalı.
+
+**Sıradaki somut adım:** kullanıcı iyzico üye işyeri başvurusunu tamamlayıp API anahtarlarını aldığında bu bölüm güncellenip gerçek migration/Worker/checkout-akışı işine başlanacak.
+
 ### Deploy — Cloudflare Pages
 
 Site: `https://nicepos-online-satis.pages.dev` (custom domain YOK, deneme aşaması). GitHub Pages'ten TAMAMEN AYRI bir deploy akışı — GitHub Actions/webhook'a bağlı DEĞİL, `wrangler` CLI ile elle deploy edilir:
