@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import '../../core/formatters.dart';
 import '../../core/theme.dart';
 import '../../data/models/cart_item.dart';
 import '../../state/cart_provider.dart';
+import '../../widgets/skeleton_box.dart';
 import '../../widgets/store_app_bar.dart';
 import '../../widgets/store_empty_state.dart';
 
@@ -96,31 +98,50 @@ class CartScreen extends ConsumerWidget {
                                   ),
                                 ],
                               ),
-                              child: Row(
-                                children: [
-                                  ClipRRect(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  // < ~420: görsel(56) + miktar(~88) +
+                                  // tutar(84) + kaldır(~48) + container
+                                  // padding(24) sabit öğeleri ürün adına
+                                  // neredeyse yer bırakmıyordu (375px'te
+                                  // ~19px) — product_detail_screen.dart'taki
+                                  // 640px narrow-breakpoint deseniyle
+                                  // tutarlı şekilde iki satıra bölünür.
+                                  final narrow = constraints.maxWidth < 420;
+
+                                  final image = ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: SizedBox(
                                       width: 56,
                                       height: 56,
                                       child: item.product.imageUrl != null
-                                          ? Image.network(
-                                              item.product.imageUrl!,
+                                          ? CachedNetworkImage(
+                                              imageUrl:
+                                                  item.product.imageUrl!,
                                               fit: BoxFit.cover,
-                                              errorBuilder:
-                                                  (
-                                                    context,
-                                                    error,
-                                                    stack,
-                                                  ) => Container(
-                                                    color: StoreColors.pageBg,
-                                                    child: const Icon(
-                                                      Icons
-                                                          .image_not_supported_outlined,
-                                                      color: StoreColors
-                                                          .textMuted,
+                                              placeholder: (context, url) =>
+                                                  const StoreShimmer(
+                                                    child: SkeletonBox(
+                                                      width: 56,
+                                                      height: 56,
+                                                      borderRadius:
+                                                          BorderRadius.all(
+                                                            Radius.circular(8),
+                                                          ),
                                                     ),
                                                   ),
+                                              errorWidget:
+                                                  (context, url, error) =>
+                                                      Container(
+                                                        color: StoreColors
+                                                            .pageBg,
+                                                        child: const Icon(
+                                                          Icons
+                                                              .image_not_supported_outlined,
+                                                          color: StoreColors
+                                                              .textMuted,
+                                                        ),
+                                                      ),
                                             )
                                           : Container(
                                               color: StoreColors.pageBg,
@@ -131,52 +152,51 @@ class CartScreen extends ConsumerWidget {
                                               ),
                                             ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12), // space.md
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          item.product.name,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13.5,
-                                          ),
+                                  );
+
+                                  final nameAndPrice = Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.product.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13.5,
                                         ),
-                                        const SizedBox(height: 4), // space.xs
-                                        Text(
-                                          formatCurrency(item.product.price),
-                                          style: const TextStyle(
-                                            color: StoreColors.textMuted,
-                                            fontSize: 12.5,
-                                          ),
+                                      ),
+                                      const SizedBox(height: 4), // space.xs
+                                      Text(
+                                        formatCurrency(item.product.price),
+                                        style: const TextStyle(
+                                          color: StoreColors.textMuted,
+                                          fontSize: 12.5,
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  _QtyControl(
+                                      ),
+                                    ],
+                                  );
+
+                                  final qtyControl = _QtyControl(
                                     quantity: item.quantity,
                                     onChanged: (q) => ref
                                         .read(cartProvider.notifier)
                                         .setQuantity(item.product.id, q),
-                                  ),
-                                  const SizedBox(width: 12), // space.md
-                                  SizedBox(
-                                    width: 84,
-                                    child: Text(
-                                      formatCurrency(item.subtotal),
-                                      textAlign: TextAlign.right,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color: StoreColors.navy,
-                                      ),
+                                  );
+
+                                  Text amountText({
+                                    required TextAlign align,
+                                  }) => Text(
+                                    formatCurrency(item.subtotal),
+                                    textAlign: align,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: StoreColors.navy,
                                     ),
-                                  ),
-                                  IconButton(
+                                  );
+
+                                  final removeButton = IconButton(
                                     onPressed: () => removeItem(item),
                                     icon: const Icon(Icons.close, size: 18),
                                     style: IconButton.styleFrom(
@@ -184,8 +204,54 @@ class CartScreen extends ConsumerWidget {
                                       overlayColor: StoreColors.danger
                                           .withValues(alpha: 0.06),
                                     ),
-                                  ),
-                                ],
+                                  );
+
+                                  if (narrow) {
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            image,
+                                            const SizedBox(
+                                              width: 12,
+                                            ), // space.md
+                                            Expanded(child: nameAndPrice),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          children: [
+                                            qtyControl,
+                                            const Spacer(),
+                                            amountText(align: TextAlign.left),
+                                            removeButton,
+                                          ],
+                                        ),
+                                      ],
+                                    );
+                                  }
+
+                                  return Row(
+                                    children: [
+                                      image,
+                                      const SizedBox(width: 12), // space.md
+                                      Expanded(child: nameAndPrice),
+                                      qtyControl,
+                                      const SizedBox(width: 12), // space.md
+                                      SizedBox(
+                                        width: 84,
+                                        child: amountText(
+                                          align: TextAlign.right,
+                                        ),
+                                      ),
+                                      removeButton,
+                                    ],
+                                  );
+                                },
                               ),
                             ),
                           );

@@ -24,6 +24,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _searchController = TextEditingController();
   Timer? _debounce;
 
+  // Dar ekranda (<600) arama satırının açık/kapalı durumu — bkz.
+  // store_app_bar.dart üstündeki not: bu state StoreAppBar'ın DEĞİL, üst
+  // ekranın kendisinde yaşamak zorunda (aksi halde Scaffold'un dinamik
+  // AppBar yüksekliğini fark etmesi için gereken yeniden derleme tetiklenmez).
+  bool _searchExpanded = false;
+
   @override
   void dispose() {
     _debounce?.cancel();
@@ -46,9 +52,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final filter = ref.watch(catalogFilterProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final productsAsync = ref.watch(catalogProductsProvider);
+    final narrow = MediaQuery.sizeOf(context).width < 600;
 
     return Scaffold(
       appBar: StoreAppBar(
+        narrow: narrow,
+        searchExpanded: _searchExpanded,
+        onToggleSearch: () =>
+            setState(() => _searchExpanded = !_searchExpanded),
         searchField: ValueListenableBuilder<TextEditingValue>(
           valueListenable: _searchController,
           builder: (context, value, _) {
