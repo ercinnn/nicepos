@@ -44,6 +44,11 @@ dependencies:
   # marka kimliğine özgü bir görsel imza. Web'de ilk yüklemede Google Fonts
   # CDN'inden çekilir (sonraki ziyaretlerde tarayıcı cache'inden).
   google_fonts: ^6.2.1
+  # design-tokens.md §12 (KARAR v1.1) onaylı — ürün görsellerinde cache+fade-in
+  # (ham Image.network'ün yerini alır).
+  cached_network_image: ^3.4.1
+  # design-tokens.md §5/§12 (KARAR v1.1) onaylı — skeleton yükleme durumları.
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:
