@@ -7,7 +7,9 @@ import '../../core/theme.dart';
 import '../../state/cart_provider.dart';
 import '../../state/catalog_provider.dart';
 import '../../widgets/product_card.dart';
+import '../../widgets/skeleton_box.dart';
 import '../../widgets/store_app_bar.dart';
+import '../../widgets/store_empty_state.dart';
 import '../../widgets/store_footer.dart';
 import '../../widgets/store_hero_banner.dart';
 
@@ -47,22 +49,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: StoreAppBar(
-        searchField: TextField(
-          controller: _searchController,
-          onChanged: _onSearchChanged,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'Ürün ara...',
-            hintStyle: const TextStyle(color: Colors.white70),
-            prefixIcon: const Icon(Icons.search, color: Colors.white70),
-            filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
-            ),
-            isDense: true,
-          ),
+        searchField: ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _searchController,
+          builder: (context, value, _) {
+            return TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Ürün ara...',
+                hintStyle: const TextStyle(color: Colors.white70),
+                prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                suffixIcon: value.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Aramayı temizle',
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.white70,
+                          size: 18,
+                        ),
+                        onPressed: () {
+                          _debounce?.cancel();
+                          _searchController.clear();
+                          final current = ref.read(catalogFilterProvider);
+                          ref.read(catalogFilterProvider.notifier).state =
+                              current.copyWith(query: '');
+                        },
+                      ),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+                isDense: true,
+              ),
+            );
+          },
         ),
       ),
       body: SingleChildScrollView(
@@ -70,8 +94,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             const StoreHeroBanner(),
             categoriesAsync.when(
-              loading: () => const SizedBox(height: 64),
-              error: (e, _) => const SizedBox.shrink(),
+              loading: () => const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: SkeletonChipRow(),
+              ),
+              error: (e, _) => const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text(
+                  'Kategoriler yüklenemedi',
+                  style: TextStyle(color: StoreColors.textMuted, fontSize: 12.5),
+                ),
+              ),
               data: (categories) {
                 if (categories.isEmpty) return const SizedBox(height: 8);
                 // 200+ kategori tek satır yatay kaydırmaya sığmıyor (yalnız
@@ -109,34 +142,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const Divider(height: 1, color: StoreColors.border),
             productsAsync.when(
-              loading: () => const SizedBox(
-                height: 320,
-                child: Center(child: CircularProgressIndicator()),
+              loading: () => GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 220,
+                  mainAxisExtent: 250,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                itemCount: 8,
+                itemBuilder: (context, i) => const SkeletonProductCard(),
               ),
               error: (e, _) => SizedBox(
                 height: 200,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Ürünler yüklenemedi: $e',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+                child: StoreEmptyState(
+                  icon: Icons.error_outline,
+                  message: 'Ürünler yüklenemedi: $e',
                 ),
               ),
               data: (products) {
                 if (products.isEmpty) {
-                  return const SizedBox(
-                    height: 200,
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'Bu kriterlere uygun ürün bulunamadı',
-                          style: TextStyle(color: StoreColors.textMuted),
-                        ),
-                      ),
+                  final query = filter.query.trim();
+                  return SizedBox(
+                    height: 240,
+                    child: StoreEmptyState(
+                      icon: query.isNotEmpty
+                          ? Icons.search_off_outlined
+                          : Icons.inventory_2_outlined,
+                      message: query.isNotEmpty
+                          ? '"$query" için sonuç yok'
+                          : 'Bu kategoride ürün yok',
                     ),
                   );
                 }
@@ -178,6 +215,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+// design-tokens.md §7 — token'lı kategori chip'i (bare ChoiceChip yerine).
+// Gold KULLANILMAZ: seçili durum navy zeminle işaretlenir.
 class _CategoryChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -191,17 +230,31 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      selectedColor: StoreColors.navy,
-      labelStyle: TextStyle(
-        color: selected ? Colors.white : StoreColors.textPrimary,
-        fontSize: 12.5,
+    return Material(
+      color: selected ? StoreColors.navy : StoreColors.cardBg,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected ? StoreColors.navy : StoreColors.border,
+        ),
       ),
-      backgroundColor: Colors.white,
-      side: BorderSide(color: selected ? StoreColors.navy : StoreColors.border),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12, // space.md
+            vertical: 4, // space.xs
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : StoreColors.textPrimary,
+              fontSize: 12.5,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

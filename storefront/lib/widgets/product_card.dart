@@ -1,9 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/formatters.dart';
 import '../core/theme.dart';
 import '../data/models/store_product.dart';
+import 'skeleton_box.dart';
 
 class ProductCard extends StatefulWidget {
   final StoreProduct product;
@@ -62,10 +64,16 @@ class _ProductCardState extends State<ProductCard> {
                   children: [
                     Positioned.fill(
                       child: product.imageUrl != null
-                          ? Image.network(
-                              product.imageUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: product.imageUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stack) =>
+                              fadeInDuration: const Duration(milliseconds: 150),
+                              placeholder: (context, url) => StoreShimmer(
+                                child: const SkeletonBox(
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                              ),
+                              errorWidget: (context, url, error) =>
                                   const _ImagePlaceholder(),
                             )
                           : const _ImagePlaceholder(),
