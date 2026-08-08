@@ -63,7 +63,10 @@ final storeRouter = GoRouter(
       path: '/siparis-alindi/:code',
       pageBuilder: (context, state) => _fadeThroughPage(
         state,
-        OrderSuccessScreen(orderCode: state.pathParameters['code']!),
+        OrderSuccessScreen(
+          orderCode: state.pathParameters['code']!,
+          summary: state.extra as OrderSummary?,
+        ),
       ),
     ),
   ],
