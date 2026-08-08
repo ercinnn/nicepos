@@ -443,6 +443,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
     if (tab.items.isEmpty) return;
 
     setState(() => _completing = true);
+    final stopwatch = Stopwatch()..start();
     try {
       final num cashAmount = type == PaymentType.nakit ? tab.total : 0;
       final num cardAmount = type == PaymentType.pos ? tab.total : 0;
@@ -490,11 +491,12 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
       ref.read(paymentInputProvider.notifier).reset();
       _requestBarcodeFocusIfDesktop();
 
+      stopwatch.stop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(offlineQueued
               ? 'Satış çevrimdışı kaydedildi — $saleCode, bağlantı gelince otomatik gönderilecek.'
-              : 'Satış tamamlandı: $saleCode'),
+              : 'Satış tamamlandı - $saleCode - ${stopwatch.elapsedMilliseconds}ms'),
         ));
       }
     } finally {
@@ -582,6 +584,7 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
     }
 
     setState(() => _completing = true);
+    final stopwatch = Stopwatch()..start();
     try {
       final saleCode = await withNetworkTimeout(ref.read(salesRepositoryProvider).completeSale(
             items: tab.items,
@@ -598,9 +601,10 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
       ref.read(paymentInputProvider.notifier).reset();
       _requestBarcodeFocusIfDesktop();
 
+      stopwatch.stop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Satış tamamlandı: $saleCode')),
+          SnackBar(content: Text('Satış tamamlandı - $saleCode - ${stopwatch.elapsedMilliseconds}ms')),
         );
       }
     } on PostgrestException catch (e) {

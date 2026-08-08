@@ -15,6 +15,12 @@ import '../../data/models/sale_item.dart';
 import '../../data/repositories/sales_repository.dart';
 import '../widgets/sale_print.dart';
 
+/// `SaleEditScreen`'in `Navigator.pop` sonucu — `changed` çağıranın (rapor/müşteri
+/// ekranı) listeyi yenileyip yenilemeyeceğini, `message` ise (yalnız silme için)
+/// çağıranın kendi `ScaffoldMessenger`'ında göstereceği bir snackbar metnini taşır
+/// (dialog kapandıktan sonra kendi context'inde snackbar göstermek güvenilir değil).
+typedef SaleEditResult = ({bool changed, String? message});
+
 class SaleEditScreen extends ConsumerStatefulWidget {
   final Sale sale;
   final List<SaleItem> initialItems;
@@ -288,6 +294,51 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
         discountValue: old.discountValue,
         total: (old.unitPrice * result) - old.discountValue,
         note: old.note,
+        barcode: old.barcode,
+      );
+    });
+  }
+
+  Future<void> _changeUnitPrice(int index) async {
+    final item = _items[index];
+    final controller = TextEditingController(text: formatNumber(item.unitPrice));
+    final result = await showDialog<num>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(item.productName),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))],
+          decoration: const InputDecoration(labelText: 'Birim Fiyat', suffixText: '₺'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
+          TextButton(
+            onPressed: () {
+              final val = num.tryParse(controller.text.replaceAll(',', '.'));
+              if (val != null && val >= 0) Navigator.pop(ctx, val);
+            },
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return;
+    setState(() {
+      final old = _items[index];
+      _items[index] = SaleItem(
+        id: old.id,
+        saleId: old.saleId,
+        productId: old.productId,
+        productName: old.productName,
+        quantity: old.quantity,
+        unitPrice: result,
+        discountValue: old.discountValue,
+        total: (result * old.quantity) - old.discountValue,
+        note: old.note,
+        barcode: old.barcode,
       );
     });
   }
@@ -358,7 +409,7 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
         customerId: widget.sale.customerId,
         saleCode: widget.sale.saleCode,
       );
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, (changed: true, message: null));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -394,9 +445,19 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
     if (confirmed != true) return;
 
     setState(() => _saving = true);
+    final stopwatch = Stopwatch()..start();
     try {
       await SalesRepository().deleteSale(widget.sale.id);
-      if (mounted) Navigator.pop(context, true);
+      stopwatch.stop();
+      if (mounted) {
+        Navigator.pop(
+          context,
+          (
+            changed: true,
+            message: 'Satış silindi - ${widget.sale.saleCode} - ${stopwatch.elapsedMilliseconds}ms',
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -601,9 +662,16 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
   Widget build(BuildContext context) {
     if (context.isMobile) return _buildMobile(context);
     // ── Masaüstü: geniş dialog ────────────────────────────────────────────────
+    // Ekran boyutunun büyük kısmını kullanır (kaydırmaya gerek kalmadan daha
+    // fazla ürün satırı görünsün diye) — sabit 700×600 çok sayıda kalemde
+    // hemen scroll gerektiriyordu.
+    final screenSize = MediaQuery.sizeOf(context);
     return Dialog(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 700, maxHeight: 600),
+        constraints: BoxConstraints(
+          maxWidth: (screenSize.width * 0.9).clamp(700, 1200),
+          maxHeight: (screenSize.height * 0.9).clamp(500, 950),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -628,156 +696,198 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close),
-                    onPressed: _saving ? null : () => Navigator.pop(context, false),
+                    onPressed: _saving ? null : () => Navigator.pop(context, (changed: false, message: null)),
                   ),
                 ],
               ),
               const Divider(height: 24),
+              // ── İki sütun: sol ürün listesi (geniş) · sağ işlemler paneli (sabit) ──
               Expanded(
-                child: _items.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Ürün yok. Eklemek için aşağıdaki butona tıklayın.',
-                          style: TextStyle(color: AppColors.textMuted),
-                        ),
-                      )
-                    : SingleChildScrollView(
-                        child: DataTable(
-                          headingRowColor: WidgetStateProperty.all(AppColors.tableHeader),
-                          columnSpacing: 16,
-                          columns: const [
-                            DataColumn(label: Text('Ürün')),
-                            DataColumn(label: Text('Barkod')),
-                            DataColumn(label: Text('Miktar'), numeric: true),
-                            DataColumn(label: Text('Birim Fiyat'), numeric: true),
-                            DataColumn(label: Text('Toplam'), numeric: true),
-                            DataColumn(label: Text('')),
-                          ],
-                          rows: List.generate(_items.length, (i) {
-                            final item = _items[i];
-                            return DataRow(cells: [
-                              DataCell(
-                                SizedBox(
-                                  width: 200,
-                                  child: Text(
-                                    item.productName,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _items.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Ürün yok. Sağdaki panelden ekleyebilirsiniz.',
+                                style: TextStyle(color: AppColors.textMuted),
                               ),
-                              DataCell(
-                                Text(
-                                  (item.barcode == null || item.barcode!.isEmpty)
-                                      ? '—'
-                                      : item.barcode!,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textMuted,
-                                    fontFeatures: [FontFeature.tabularFigures()],
-                                  ),
-                                ),
-                              ),
-                              DataCell(
-                                InkWell(
-                                  onTap: () => _changeQuantity(i),
-                                  child: Text(
-                                    item.quantity.toString(),
-                                    style: const TextStyle(
-                                      color: AppColors.primary,
-                                      decoration: TextDecoration.underline,
+                            )
+                          : SingleChildScrollView(
+                              child: DataTable(
+                                headingRowColor:
+                                    WidgetStateProperty.all(AppColors.tableHeader),
+                                columnSpacing: 16,
+                                columns: const [
+                                  DataColumn(label: Text('Ürün')),
+                                  DataColumn(label: Text('Barkod')),
+                                  DataColumn(label: Text('Miktar'), numeric: true),
+                                  DataColumn(label: Text('Birim Fiyat'), numeric: true),
+                                  DataColumn(label: Text('Toplam'), numeric: true),
+                                  DataColumn(label: Text('')),
+                                ],
+                                rows: List.generate(_items.length, (i) {
+                                  final item = _items[i];
+                                  return DataRow(cells: [
+                                    DataCell(
+                                      SizedBox(
+                                        width: 280,
+                                        child: Text(
+                                          item.productName,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                                     ),
+                                    DataCell(
+                                      Text(
+                                        (item.barcode == null || item.barcode!.isEmpty)
+                                            ? '—'
+                                            : item.barcode!,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textMuted,
+                                          fontFeatures: [FontFeature.tabularFigures()],
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      InkWell(
+                                        onTap: () => _changeQuantity(i),
+                                        child: Text(
+                                          item.quantity.toString(),
+                                          style: const TextStyle(
+                                            color: AppColors.primary,
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      InkWell(
+                                        onTap: () => _changeUnitPrice(i),
+                                        child: Text(
+                                          formatCurrency(item.unitPrice),
+                                          style: const TextStyle(
+                                            color: AppColors.primary,
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(Text(
+                                      formatCurrency(item.total),
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    )),
+                                    DataCell(
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline, size: 18),
+                                        color: AppColors.danger,
+                                        tooltip: 'Kaldır',
+                                        onPressed: () => _removeItem(i),
+                                      ),
+                                    ),
+                                  ]);
+                                }),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: 20),
+                    SizedBox(
+                      width: 320,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.pageBg,
+                          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                          border: Border.all(color: AppColors.divider),
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                'İŞLEMLER',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.6,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    icon: const Icon(Icons.add, size: 16),
+                                    label: const Text('Ürün Ekle'),
+                                    onPressed: _saving ? null : _addProduct,
                                   ),
+                                  OutlinedButton.icon(
+                                    icon: const Icon(Icons.edit_note, size: 16),
+                                    label: const Text('Muhtelif'),
+                                    onPressed: _saving ? null : _addMiscItem,
+                                  ),
+                                  if (kIsWeb)
+                                    OutlinedButton.icon(
+                                      icon: const Icon(Icons.print_outlined, size: 16),
+                                      label: const Text('Yazdır'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.primary,
+                                        side: const BorderSide(color: AppColors.primary),
+                                      ),
+                                      onPressed: _items.isEmpty ? null : _print,
+                                    ),
+                                ],
+                              ),
+                              const Divider(height: 28, color: AppColors.divider),
+                              const Text(
+                                'ÖDEME TÜRÜ',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.6,
+                                  color: AppColors.textMuted,
                                 ),
                               ),
-                              DataCell(Text(formatCurrency(item.unitPrice))),
-                              DataCell(Text(
-                                formatCurrency(item.total),
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              )),
-                              DataCell(
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, size: 18),
-                                  color: AppColors.danger,
-                                  tooltip: 'Kaldır',
-                                  onPressed: () => _removeItem(i),
+                              const SizedBox(height: 10),
+                              _buildPaymentTypeSelector(),
+                              const Divider(height: 28, color: AppColors.divider),
+                              _buildDiscountTotals(),
+                              const SizedBox(height: 20),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.delete_outline, size: 16),
+                                label: const Text('Satışı Sil'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.danger,
+                                  side: const BorderSide(color: AppColors.danger),
+                                  minimumSize: const Size.fromHeight(40),
                                 ),
+                                onPressed: _saving ? null : _delete,
                               ),
-                            ]);
-                          }),
+                              const SizedBox(height: 8),
+                              FilledButton(
+                                onPressed: _saving ? null : _save,
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(44),
+                                ),
+                                child: _saving
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Text('Kaydet'),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-              ),
-              const Divider(height: 24),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Sol: kalem aksiyon butonları
-                  Expanded(
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.delete_outline, size: 16),
-                          label: const Text('Satışı Sil'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.danger,
-                            side: const BorderSide(color: AppColors.danger),
-                          ),
-                          onPressed: _saving ? null : _delete,
-                        ),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Ürün Ekle'),
-                          onPressed: _saving ? null : _addProduct,
-                        ),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.edit_note, size: 16),
-                          label: const Text('Muhtelif'),
-                          onPressed: _saving ? null : _addMiscItem,
-                        ),
-                        if (kIsWeb)
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.print_outlined, size: 16),
-                            label: const Text('Yazdır'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.primary,
-                              side: const BorderSide(color: AppColors.primary),
-                            ),
-                            onPressed: _items.isEmpty ? null : _print,
-                          ),
-                      ],
                     ),
-                  ),
-                  const SizedBox(width: 24),
-                  // Sağ: ödeme türü + iskonto girişi + toplamlar
-                  SizedBox(
-                    width: 300,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildPaymentTypeSelector(),
-                        const SizedBox(height: 14),
-                        _buildDiscountTotals(),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: _saving ? null : _save,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('Kaydet'),
+                  ],
                 ),
               ),
             ],
@@ -799,7 +909,7 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
           foregroundColor: Colors.white,
           leading: IconButton(
             icon: const Icon(Icons.close),
-            onPressed: _saving ? null : () => Navigator.pop(context, false),
+            onPressed: _saving ? null : () => Navigator.pop(context, (changed: false, message: null)),
           ),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -895,18 +1005,37 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                 ),
                             ],
                           ),
-                          // Miktar + birim fiyat — dokunarak miktar düzenlenebilir
-                          subtitle: GestureDetector(
-                            onTap: () => _changeQuantity(i),
-                            child: Text(
-                              'Miktar: ${item.quantity}  ·  Birim: ${formatCurrency(item.unitPrice)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.primary,
-                                decoration: TextDecoration.underline,
-                                decorationColor: AppColors.primary,
+                          // Miktar + birim fiyat — her ikisi de ayrı ayrı dokunarak düzenlenebilir
+                          subtitle: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              GestureDetector(
+                                onTap: () => _changeQuantity(i),
+                                child: Text(
+                                  'Miktar: ${item.quantity}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.primary,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: AppColors.primary,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const Text('  ·  ',
+                                  style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                              GestureDetector(
+                                onTap: () => _changeUnitPrice(i),
+                                child: Text(
+                                  'Birim: ${formatCurrency(item.unitPrice)}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.primary,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,

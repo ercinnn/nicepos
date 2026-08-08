@@ -146,43 +146,13 @@ class SalesRepository {
     }
   }
 
-  /// Bir satışı tamamen siler ve completeSale'in yan etkilerini geri alır.
-  ///
-  /// Sıra ve gerekçe:
-  /// 1. sale_items'tan ürün/miktar bilgisi okunur (stok iadesi için).
-  /// 2. Satılan ürünlerin STOĞU geri eklenir (completeSale decrementStock yapıyordu).
-  /// 3. Bu satışa bağlı customer_payments kayıtları (sale_id) silinir.
-  ///    completeSale açık hesap satışında sale_id'li bir 'borc' hareketi
-  ///    ekliyordu; customer_balances görünümü borcu bu hareketlerden hesapladığı
-  ///    için kaydı silmek borcu doğrudan geri alır (ters kayıt eklemeye gerek yok).
-  /// 3b. Kasa mutabakat düzeltme satışıysa bağlı kasa_reconciliations kaydı
-  ///    silinir (sale_id FK engeli kalkar; o gün+kanal mutabakatsız hâle döner).
-  /// 4. sale_items silinir (FK), sonra sales kaydı silinir.
+  /// Bir satışı tamamen siler ve completeSale'in yan etkilerini geri alır —
+  /// TEK atomik RPC ile (bkz. 0031_delete_sale.sql). Önceden stok iadesi +
+  /// borç/mutabakat/kalem/satış silme sıralı ayrı gidiş-dönüşlere bölünüyordu
+  /// (1 kalemlik satışta bile 6 round-trip, ~2.5sn) — artık tek round-trip,
+  /// tek transaction (completeSale() ile aynı desen).
   Future<void> deleteSale(String saleId) async {
-    // 1. Stok iadesi için kalemleri oku
-    final items = await fetchItems(saleId);
-
-    // 2. Stoğu geri ekle
-    for (final item in items) {
-      if (item.productId != null) {
-        await _productRepository.incrementStock(item.productId!, item.quantity);
-      }
-    }
-
-    // 3. Satışa bağlı borç/ödeme hareketlerini sil (açık hesap borcunu geri alır)
-    await _client.from('customer_payments').delete().eq('sale_id', saleId);
-
-    // Kasa mutabakat düzeltme satışıysa (is_adjustment), bağlı mutabakat kaydını
-    // önce sil: (1) kasa_reconciliations.sale_id FK engeli kalkar → satış silinebilir,
-    // (2) o gün+kanal 'hiç mutabakat yapılmamış' hâline döner (tekrar Kaydet & Mutabakat
-    // yapılınca sistem tabanından yeniden hesaplanır). Normal satışta eşleşen kayıt
-    // yoktur → zararsız no-op.
-    await _client.from('kasa_reconciliations').delete().eq('sale_id', saleId);
-
-    // 4. Kalemleri, sonra satışı sil (FK sırası)
-    await _client.from('sale_items').delete().eq('sale_id', saleId);
-    final deleted = await _client.from('sales').delete().eq('id', saleId).select('id');
-    if (deleted.isEmpty) throw Exception('Satış silinemedi.');
+    await _client.rpc('delete_sale', params: {'p_sale_id': saleId});
   }
 
   /// `SaleSyncService` de kullanır — offline kuyruktan senkron edilen bir
@@ -193,6 +163,12 @@ class SalesRepository {
     return result as String;
   }
 
+  /// Satışı TEK atomik RPC ile tamamlar (bkz. 0030_complete_sale.sql) —
+  /// önceden `sales` insert + `sale_items` insert + sepetteki her kalem için
+  /// ayrı `decrement_product_stock` RPC + borç hareketi insert olmak üzere
+  /// sıralı ayrı gidiş-dönüşlere bölünüyordu (N+3 round-trip ağ şelalesi, 5+
+  /// kalemli sepette satış kapatmayı 3-4 saniyeye çıkarıyordu). Artık
+  /// `completeSaleOffline()` ile aynı desen: tek round-trip, tek transaction.
   Future<String> completeSale({
     required List<CartItem> items,
     required num discountPercent,
@@ -205,63 +181,36 @@ class SalesRepository {
     String? personnel,
     String? note,
   }) async {
-    final saleCode = await generateSaleCode();
     final remainingDebt = (totalAmount - cashAmount - cardAmount).clamp(0, double.infinity);
     // İskontonun kesin TL tutarı: brüt (kalem toplamları) − net toplam.
     final subtotal = items.fold<num>(0, (sum, item) => sum + item.total);
     final discountAmount = (subtotal - totalAmount).clamp(0, double.infinity);
 
-    final saleRow = await _client.from('sales').insert({
-      'sale_code': saleCode,
-      'customer_id': customerId,
-      'total_amount': totalAmount,
-      'discount_percent': discountPercent,
-      'discount_amount': discountAmount,
-      'discount_type': 'percent',
-      'paid_amount': paidAmount,
-      'payment_type': paymentType.dbValue,
-      'cash_amount': cashAmount,
-      'card_amount': cardAmount,
-      'remaining_debt': remainingDebt,
-      'personnel': personnel ?? 'Yönetici',
-      'note': note,
-      // Türkiye saatiyle kaydedilsin diye UTC olarak gönderiyoruz
-      'sale_date': DateTime.now().toUtc().toIso8601String(),
-    }).select('id').single();
+    final result = await _client.rpc('complete_sale', params: {
+      'p_customer_id': customerId,
+      'p_total_amount': totalAmount,
+      'p_discount_percent': discountPercent,
+      'p_discount_amount': discountAmount,
+      'p_paid_amount': paidAmount,
+      'p_payment_type': paymentType.dbValue,
+      'p_cash_amount': cashAmount,
+      'p_card_amount': cardAmount,
+      'p_remaining_debt': remainingDebt,
+      'p_personnel': personnel ?? 'Yönetici',
+      'p_note': note,
+      'p_items': items
+          .map((item) => {
+                'product_id': item.productId,
+                'product_name': item.productName,
+                'quantity': item.quantity,
+                'unit_price': item.unitPrice,
+                'discount_value': item.discountAmount,
+                'total': item.total,
+              })
+          .toList(),
+    });
 
-    final saleId = saleRow['id'] as String;
-
-    if (items.isNotEmpty) {
-      await _client.from('sale_items').insert(
-        items.map((item) => SaleItem(
-          productId: item.productId,
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          discountValue: item.discountAmount,
-          total: item.total,
-        ).toInsertMap(saleId)).toList(),
-      );
-    }
-
-    for (final item in items) {
-      if (item.productId != null) {
-        await _productRepository.decrementStock(item.productId!, item.quantity);
-      }
-    }
-
-    if (customerId != null && remainingDebt > 0) {
-      await _customerRepository.addPayment(CustomerPayment(
-        customerId: customerId,
-        saleId: saleId,
-        type: CustomerPaymentType.borc,
-        amount: remainingDebt,
-        note: 'Satış: $saleCode',
-        paymentDate: DateTime.now(),
-      ));
-    }
-
-    return saleCode;
+    return result as String;
   }
 
   /// Offline kuyruktan (`SaleSyncService`) senkron edilen bir Nakit/POS

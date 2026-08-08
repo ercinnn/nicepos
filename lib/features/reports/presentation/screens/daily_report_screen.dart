@@ -26,13 +26,16 @@ class _DailyReportScreenState extends ConsumerState<DailyReportScreen> {
   Future<void> _openSaleEdit(BuildContext context, Sale s) async {
     final items = await SalesRepository().fetchItems(s.id);
     if (!context.mounted) return;
-    final updated = await showDialog<bool>(
+    final result = await showDialog<SaleEditResult>(
       context: context,
       barrierDismissible: false,
       builder: (_) => SaleEditScreen(sale: s, initialItems: items),
     );
-    if (updated == true) {
+    if (result?.changed == true) {
       ref.invalidate(dailyReportProvider(DateTime(_date.year, _date.month, _date.day)));
+    }
+    if (result?.message != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result!.message!)));
     }
   }
 

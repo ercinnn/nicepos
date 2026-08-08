@@ -662,12 +662,15 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     if (_busy) return;
     final items = await SalesRepository().fetchItems(s.id);
     if (!mounted) return;
-    final updated = await showDialog<bool>(
+    final result = await showDialog<SaleEditResult>(
       context: context,
       barrierDismissible: false,
       builder: (_) => SaleEditScreen(sale: s, initialItems: items),
     );
-    if (updated == true) _invalidateHistory();
+    if (result?.changed == true) _invalidateHistory();
+    if (result?.message != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result!.message!)));
+    }
   }
 
   Future<bool> _confirm(String title, String message) async {

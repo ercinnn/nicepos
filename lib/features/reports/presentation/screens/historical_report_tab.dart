@@ -27,13 +27,16 @@ class _HistoricalReportTabState extends ConsumerState<HistoricalReportTab> {
   Future<void> _openSaleEdit(Sale s) async {
     final items = await SalesRepository().fetchItems(s.id);
     if (!mounted) return;
-    final updated = await showDialog<bool>(
+    final result = await showDialog<SaleEditResult>(
       context: context,
       barrierDismissible: false,
       builder: (_) => SaleEditScreen(sale: s, initialItems: items),
     );
-    if (updated == true && _activeParam != null) {
+    if (result?.changed == true && _activeParam != null) {
       ref.invalidate(dateRangeReportProvider(_activeParam!));
+    }
+    if (result?.message != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result!.message!)));
     }
   }
 

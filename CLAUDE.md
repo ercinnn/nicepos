@@ -318,3 +318,12 @@ git diff --stat HEAD    # beklenen dosyalar geldi mi
 - **Web-only özellikler** (Yazdır, Excel export, TTS, Etiket PDF): hepsi `kIsWeb` guard'ı veya conditional export (`*_web.dart`/`*_stub.dart`) deseniyle native'de no-op/gizli.
 - **Native-only özellikler** (kamera barkod okuma, çevrimdışı ürün senkronu/sqflite): tersine `!kIsWeb` guard'ı ile web'de no-op/gizli — bkz. "Mobil Çevrimdışı Ürün Ekleme/Düzenleme" bölümü.
 - **Layout (kaydırılabilir sayfa = sınırsız yükseklik):** stretch'li/Expanded'lı `Row` → `IntrinsicHeight` ile sar; dikey `Column`'da `FractionallySizedBox` (heightFactor null) aynı sonsuz-yükseklik hatasını verir → genişlik için `LayoutBuilder + SizedBox(width:...)` kullan. Bu tür render hataları `flutter analyze`'da GÖRÜNMEZ — widget testiyle veya gözle yakalanır.
+
+## Yapılacaklar
+
+Henüz uygulanmamış, kullanıcıyla konuşma sırasında ortaya çıkan özellik fikirleri. Kullanıcı "yapılacaklar listesi" isterse bu liste madde madde okunur/güncellenir.
+
+- **Düşük stok / stok tükenmesi uyarısı** — `product_status` view'ı zaten "Tükendi" durumunu sunucuda hesaplıyor; Dashboard'a rozet/bildirim katmanı eklenecek. Gerçek zamanlı bildirim (push/e-posta) istenirse ayrı bir tetikleyici (Supabase Edge Function veya periyodik client kontrolü) gerekir — yalnız "Dashboard'da görünür uyarı" ise mevcut mimariyle ek maliyeti düşük.
+- **Müşteri SMS/WhatsApp bildirimi** (borç hatırlatma, sipariş hazır) — dış servis entegrasyonu gerektirir, sağlayıcı henüz seçilmedi.
+- **Kullanıcı rolleri/izinler** — şu an tek yönetici hesabı (Supabase Auth) var; çalışan girişi ayrı ve kısıtlı yetkilerle eklenebilir. Auth/RLS politikalarına dokunan orta ölçekli bir iş (bkz. Online Satış bölümündeki RLS notu — mevcut politikalar `auth.role()='authenticated'` blanket-erişim, rol bazlı kısıtlama için hepsi gözden geçirilmeli).
+- **iyzico ödeme entegrasyonu** — ayrıntılı plan yukarıda "Online Satış (Storefront) → Ödeme Entegrasyonu" bölümünde; kullanıcının iyzico üye işyeri başvurusu tamamlanmadan başlanamaz.

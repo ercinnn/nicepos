@@ -239,13 +239,16 @@ class _ProductHistoryState extends ConsumerState<_ProductHistory> {
     final sale = await repo.fetchSaleById(r.saleId);
     final items = await repo.fetchItems(r.saleId);
     if (!mounted) return;
-    final updated = await showDialog<bool>(
+    final result = await showDialog<SaleEditResult>(
       context: context,
       barrierDismissible: false,
       builder: (_) => SaleEditScreen(sale: sale, initialItems: items),
     );
-    if (updated == true) {
+    if (result?.changed == true) {
       ref.invalidate(productSalesHistoryProvider(widget.product.id));
+    }
+    if (result?.message != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result!.message!)));
     }
   }
 
