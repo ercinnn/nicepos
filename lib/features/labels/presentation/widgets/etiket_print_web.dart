@@ -26,6 +26,25 @@ void printLabelsA4({
   // URL'yi hemen iptal etmiyoruz; yeni pencere yüklenene kadar gerekli.
 }
 
+/// Dolu Tel Etiketlerini A4 dikey (4 sütun × 8 satır = 32) olarak yeni bir
+/// tarayıcı penceresinde açar ve otomatik yazdırma diyaloğunu tetikler. Raf
+/// Etiketi'nin (`printLabelsA4`) birebir aynı hücre tasarımı, yalnız 4'lü
+/// ızgara. Çıktı SİYAH/BEYAZ + mağaza logosu (Raf'ın kalıcı logoDataUrl'i
+/// çağıran taraftan geçirilir).
+void printTelLabelsA4({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  final html = _buildTelHtml(slots: slots, logoDataUrl: logoDataUrl);
+
+  final blob = web.Blob(
+    [html.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/html'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.window.open(url, '_blank');
+}
+
 /// Geniş Logo etiketlerini A4 dikey (2 sütun × 5 satır = 10) olarak yeni bir
 /// tarayıcı penceresinde açar ve otomatik yazdırır (KARAR v1.14 / v1.14.2).
 /// [figurDataUrl] = tam marka figürü (genis_logo_figur.png) base64 data URL'i
@@ -247,7 +266,122 @@ String _buildHtml({
     flex: 0 0 auto;
     font-variant-numeric: tabular-nums;
   }
-  .bcno { font-size: 14pt; letter-spacing: 0.5px; }
+  .bcno { font-size: 14pt; letter-spacing: 0.5px; text-align: center; }
+  .cdate { font-size: 5.5pt; color: #444; }
+</style>
+</head>
+<body onload="window.focus(); window.print();">
+  <div class="sheet">
+    $cells
+  </div>
+</body>
+</html>''';
+}
+
+// ─── Tel Etiketi — 4 sütun × 8 satır = 32 etiket ─────────────────────────────
+// Raf Etiketi ile birebir aynı hücre tasarımı/yükseklik (_cellHtml paylaşılır);
+// yalnız sütun sayısı ve hücre genişliği farklı.
+
+String _buildTelHtml({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  final cells = StringBuffer();
+  for (final slot in slots) {
+    cells.writeln(_cellHtml(slot, logoDataUrl));
+  }
+
+  // A4 portrait: 210×297mm, kenar 5mm → yazdırılabilir 200×287mm.
+  // 4 sütun → 50mm, 8 satır → ~35.9mm hücre (Raf ile birebir aynı yükseklik).
+  return '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Tel Etiketleri</title>
+<style>
+  @page { size: A4 portrait; margin: 5mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    width: 200mm;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 35.9mm;
+    gap: 0;
+  }
+  .cell {
+    /* İnce nötr hairline kesim kılavuzu (altın YOK). */
+    border: 0.2mm solid #b8b8b8;
+    padding: 1.5mm 2.5mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .cell.empty { border-color: #e0e0e0; }
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2mm;
+    flex: 0 0 auto;
+  }
+  .logo {
+    width: 18mm;
+    height: 13mm;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .logo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .price {
+    font-weight: 800;
+    font-size: 39pt;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    text-align: center;
+    flex: 1 1 auto;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pname {
+    font-size: 10pt;
+    font-weight: 600;
+    line-height: 1.15;
+    text-transform: uppercase;
+    text-align: center;
+    flex: 0 0 auto;
+    /* En fazla 2 satır, taşarsa kısalt. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .bc {
+    /* Esnek: sabit öğeler (üst bant, ürün adı, alt satır) yerini korur;
+       taşarsa yalnız barkod çizgisi kısalır. Yatayda %80'e ortalı. */
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 80%;
+    margin: 0 auto;
+  }
+  .bc svg { width: 100%; height: 100%; display: block; }
+  .bottom {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .bcno { font-size: 14pt; letter-spacing: 0.5px; text-align: center; }
   .cdate { font-size: 5.5pt; color: #444; }
 </style>
 </head>

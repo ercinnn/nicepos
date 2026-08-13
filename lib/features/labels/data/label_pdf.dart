@@ -22,6 +22,11 @@ import 'models/product_label_item.dart';
 const int _kCols = 3;
 const int _kRows = 8;
 
+// Tel Etiketi ızgarası: Raf ile birebir aynı satır sayısı (yükseklik), yalnız
+// yan yana 4 adet.
+const int _kTelCols = 4;
+const int _kTelRows = _kRows;
+
 // Mağaza ikonu fallback (logo yoksa) — Material "store" path, ink lacivert
 // (KARAR v1.10: standart ikon fallback, aynı yuva boyutu). Baskı için tek renk.
 const String _storeIconSvg =
@@ -38,6 +43,33 @@ const PdfColor _dateGrey = PdfColor.fromInt(0xFF555555);
 /// mağaza ikonu fallback kullanılır. Türkçe karakterler için Roboto (Google Font)
 /// gömülür; ağ/hata durumunda gömülü standart yazı tipine düşer.
 Future<Uint8List> buildLabelsPdf({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) =>
+    _buildGridLabelsPdf(
+      cols: _kCols,
+      rows: _kRows,
+      slots: slots,
+      logoDataUrl: logoDataUrl,
+    );
+
+/// Tel Etiketi PDF'i: Raf Etiketi ile birebir aynı hücre tasarımı/yüksekliği
+/// (`_cell` paylaşılır), yalnız 4×8=32 ızgara. Mağaza logosu Raf'ın kalıcı
+/// logoDataUrl'i çağıran taraftan geçirilir (ayrı bir logo kavramı YOK).
+Future<Uint8List> buildTelLabelsPdf({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) =>
+    _buildGridLabelsPdf(
+      cols: _kTelCols,
+      rows: _kTelRows,
+      slots: slots,
+      logoDataUrl: logoDataUrl,
+    );
+
+Future<Uint8List> _buildGridLabelsPdf({
+  required int cols,
+  required int rows,
   required List<LabelSlot?> slots,
   String? logoDataUrl,
 }) async {
@@ -72,11 +104,11 @@ Future<Uint8List> buildLabelsPdf({
       margin: pw.EdgeInsets.all(5 * PdfPageFormat.mm), // ~5mm kenar
       build: (context) {
         return pw.Column(
-          children: List.generate(_kRows, (r) {
+          children: List.generate(rows, (r) {
             return pw.Expanded(
               child: pw.Row(
-                children: List.generate(_kCols, (c) {
-                  final idx = r * _kCols + c;
+                children: List.generate(cols, (c) {
+                  final idx = r * cols + c;
                   final slot = idx < slots.length ? slots[idx] : null;
                   return pw.Expanded(child: _cell(slot, logoImage));
                 }),
@@ -185,6 +217,7 @@ pw.Widget _cell(LabelSlot? slot, pw.MemoryImage? logoImage) {
             pw.Expanded(
               child: pw.Text(
                 slot.barcode,
+                textAlign: pw.TextAlign.center,
                 maxLines: 1,
                 overflow: pw.TextOverflow.clip,
                 style: pw.TextStyle(

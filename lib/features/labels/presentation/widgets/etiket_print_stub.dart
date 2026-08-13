@@ -11,6 +11,15 @@ void printLabelsA4({
   // No-op
 }
 
+/// Tel Etiketi yazdırma — web dışı platformlarda no-op (Raf Etiketi'nin
+/// `printLabelsA4` no-op'uyla aynı desen).
+void printTelLabelsA4({
+  required List<LabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  // No-op
+}
+
 /// Geniş Logo etiketi yazdırma — web dışı platformlarda no-op (KARAR v1.14).
 void printWideLabelsA4({
   required List<LabelSlot?> slots,

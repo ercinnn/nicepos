@@ -88,6 +88,25 @@ final labelWideSheetProvider =
     );
 
 typedef _$LabelWideSheet = Notifier<LabelWideSheetState>;
+String _$labelTelSheetHash() => r'db8bb78540f059bb8453ed9d7f4d75466a7cb976';
+
+/// Tel Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 32 hane
+/// korunur (Raf/Geniş Logo provider'larıyla KARIŞMAZ).
+///
+/// Copied from [LabelTelSheet].
+@ProviderFor(LabelTelSheet)
+final labelTelSheetProvider =
+    NotifierProvider<LabelTelSheet, LabelTelSheetState>.internal(
+      LabelTelSheet.new,
+      name: r'labelTelSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelTelSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelTelSheet = Notifier<LabelTelSheetState>;
 String _$labelPosterSheetHash() => r'4b298861d1dfb0c92c553a95aa5c189c0eb0685d';
 
 /// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste/

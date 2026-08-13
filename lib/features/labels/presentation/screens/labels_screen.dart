@@ -29,10 +29,16 @@ import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
 import '../widgets/label_scan_sheet.dart';
 
-// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.21 / v1.23): dar 24-hane akışı +
-// Geniş Logo 10-hane akışı + Poster (barkod okutulan ürünlerin profesyonel
-// A4 listesi) + Ürün Etiketi (adet-tabanlı 6×12) + kayıtlı PDF'ler.
-enum _LabelTab { yeni, genis, poster, urun, kayitli }
+// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.21 / v1.23): Raf Etiketi
+// (eski "Yeni Etiket") 24-hane akışı + Tel Etiketi (Raf ile birebir aynı
+// hücre/yükseklik, yalnız 4×8=32 ızgara) + Geniş Logo 10-hane akışı + Poster
+// (barkod okutulan ürünlerin profesyonel A4 listesi) + Ürün Etiketi
+// (adet-tabanlı 6×12) + kayıtlı PDF'ler.
+enum _LabelTab { raf, tel, genis, poster, urun, kayitli }
+
+// _InputColumn/_SlotInputRow'un hangi hane provider'ını izleyeceğini seçer
+// (Raf/Geniş Logo/Tel — üçü de aynı giriş-sütunu/satır widget'larını paylaşır).
+enum _LabelSlotSource { raf, wide, tel }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Etiket (raf etiketi A4 yazdırma) ekranı — KARAR v1.10
@@ -70,6 +76,13 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   int _wideActiveIndex = 0;
   Uint8List? _figurBytes; // marka figürü (yazdırma için bir kez okunur)
 
+  // Tel Etiketi sekmesi — Raf ile birebir aynı akış, 32 haneli ayrı giriş
+  // durumu (mağaza logosu Raf'ın kalıcı logoDataUrl'ini paylaşır).
+  late final List<TextEditingController> _telControllers;
+  late final List<FocusNode> _telFocusNodes;
+  final Set<int> _telErrors = {};
+  int _telActiveIndex = 0;
+
   // Poster sekmesi (KARAR v1.23 / v1.24) — barkod VEYA ürün adı ile serbest
   // liste; sabit hane sayısı YOK, tek giriş satırı (satış ekranı
   // _onBarcodeSubmitted + canlı ürün arama deseni). Başlık hanesi ayrı.
@@ -90,7 +103,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   bool _prodError = false; // son barkod çözülemedi (danger uyarı)
   bool _prodBarcodeActive = false; // barkod hanesi odaklı mı (aktif altını)
 
-  _LabelTab _tab = _LabelTab.yeni; // aktif sekme
+  _LabelTab _tab = _LabelTab.raf; // aktif sekme
 
   @override
   void initState() {
@@ -110,6 +123,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       final node = FocusNode();
       node.addListener(() {
         if (node.hasFocus && mounted) setState(() => _wideActiveIndex = i);
+      });
+      return node;
+    });
+    _telControllers =
+        List.generate(kTelCount, (_) => TextEditingController());
+    _telFocusNodes = List.generate(kTelCount, (i) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus && mounted) setState(() => _telActiveIndex = i);
       });
       return node;
     });
@@ -162,6 +184,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       c.dispose();
     }
     for (final n in _wideFocusNodes) {
+      n.dispose();
+    }
+    for (final c in _telControllers) {
+      c.dispose();
+    }
+    for (final n in _telFocusNodes) {
       n.dispose();
     }
     _posterBarcodeController.dispose();
@@ -649,6 +677,182 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  // Tel Etiketi sekmesi — Raf Etiketi'nin (dar-logo) 4×8=32 haneli kopyası.
+  // Hücre tasarımı/yükseklik Raf ile BİREBİR aynı (_LabelCell paylaşılır);
+  // mağaza logosu da Raf'ın kalıcı `labelSheetProvider` logosunu paylaşır
+  // (ayrı bir logo yükleme akışı YOK — Poster sekmesinin zaten yaptığı gibi).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  int _nextTelEmptyIndex() {
+    final slots = ref.read(labelTelSheetProvider).slots;
+    for (var i = 0; i < kTelCount; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  Future<void> _onTelSubmitted(int index, String raw) async {
+    final query = raw.trim();
+    final notifier = ref.read(labelTelSheetProvider.notifier);
+    if (query.isEmpty) {
+      notifier.clearSlot(index);
+      setState(() => _telErrors.remove(index));
+      return;
+    }
+
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      notifier.clearSlot(index);
+      setState(() => _telErrors.add(index));
+      playScanBeep(success: false); // danger uyarı sesi (KARAR v1.14.1)
+      return;
+    }
+
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    notifier.setSlot(
+      index,
+      LabelSlot(
+        barcode: code,
+        productName: product.name,
+        price: product.price1,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _telControllers[index].text = code;
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
+    setState(() => _telErrors.remove(index));
+
+    if (index + 1 < kTelCount) {
+      _telFocusNodes[index + 1].requestFocus();
+      _telControllers[index + 1].selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _telControllers[index + 1].text.length,
+      );
+    }
+  }
+
+  Future<LabelScanFeedback> _handleTelCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelTelSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextTelEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    ref.read(labelTelSheetProvider.notifier).setSlot(
+          index,
+          LabelSlot(
+            barcode: code,
+            productName: product.name,
+            price: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+    _telControllers[index].text = code;
+    setState(() => _telErrors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  Future<void> _startTelCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleTelCameraScan,
+      totalCount: kTelCount,
+      initialFilled: ref.read(labelTelSheetProvider).filledCount,
+    );
+  }
+
+  void _clearTelSlot(int index) {
+    _telControllers[index].clear();
+    ref.read(labelTelSheetProvider.notifier).clearSlot(index);
+    setState(() => _telErrors.remove(index));
+    _telFocusNodes[index].requestFocus();
+  }
+
+  void _clearTelAll() {
+    for (final c in _telControllers) {
+      c.clear();
+    }
+    ref.read(labelTelSheetProvider.notifier).clearAll();
+    setState(() => _telErrors.clear());
+  }
+
+  void _printTel() {
+    final state = ref.read(labelTelSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+    printTelLabelsA4(slots: state.slots, logoDataUrl: logoDataUrl);
+  }
+
+  Future<void> _saveTelPdf() async {
+    final state = ref.read(labelTelSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'tel-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+      final bytes = await buildTelLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: logoDataUrl,
+      );
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   // Poster sekmesi (KARAR v1.23 / v1.24) — barkod okutma VEYA ürün adı arama
   // ile serbest liste (sabit hane sayısı YOK). Barkod çözme mantığı ortak
   // (_resolveBarcode); aynı barkod tekrar okutulursa satır YERİNDE güncellenir
@@ -981,6 +1185,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
     }
 
+    // ── Sekme: Tel Etiketi (Raf Etiketi ile birebir aynı, yalnız 4×8) ──────
+    if (_tab == _LabelTab.tel) {
+      return mobile ? _buildTelMobile(selector) : _buildTelDesktop(selector);
+    }
+
     // ── Sekme 2: Geniş Logo (KARAR v1.14) ──────────────────────────────────
     if (_tab == _LabelTab.genis) {
       return mobile ? _buildWideMobile(selector) : _buildWideDesktop(selector);
@@ -1000,7 +1209,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           : _buildProductDesktop(selector);
     }
 
-    // ── Sekme 1: Yeni Etiket (mevcut akış) ─────────────────────────────────
+    // ── Sekme 1: Raf Etiketi (eski "Yeni Etiket", mevcut akış) ─────────────
     return mobile ? _buildMobile(selector) : _buildDesktop(selector);
   }
 
@@ -1133,7 +1342,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                   errors: _wideErrors,
                   activeIndex: _wideActiveIndex,
                   itemCount: kWideCount,
-                  wide: true,
+                  source: _LabelSlotSource.wide,
                   onSubmitted: _onWideSubmitted,
                   onClear: _clearWideSlot,
                 ),
@@ -1180,7 +1389,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               focusNode: _wideFocusNodes[i],
               isActive: _wideActiveIndex == i,
               isError: _wideErrors.contains(i),
-              wide: true,
+              source: _LabelSlotSource.wide,
               onSubmitted: (v) => _onWideSubmitted(i, v),
               onClear: () => _clearWideSlot(i),
             );
@@ -1193,6 +1402,117 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               width: c.maxWidth,
               height: c.maxWidth * (_kA4Height / _kA4Width),
               child: _WidePreviewPane(),
+            ),
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tel Etiketi — masaüstü (sol 32-hane giriş · sağ A4 önizleme) ─────────
+  // Raf Etiketi ile birebir aynı akış (mağaza logosu paylaşılır), yalnız
+  // 4×8 ızgara ve kTelCount hane sayısı.
+  Widget _buildTelDesktop(Widget selector) {
+    final logoState = ref.watch(labelSheetProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: ref.watch(labelTelSheetProvider).filledCount,
+          totalCount: kTelCount,
+          hasLogo: logoState.logoDataUrl != null,
+          onPickLogo: _pickLogo,
+          onRemoveLogo: _removeLogo,
+          onClearAll: _clearTelAll,
+          onPrint: _printTel,
+          onSavePdf: _saveTelPdf,
+          onCameraScan: kIsWeb ? null : _startTelCameraScan,
+          subtitle:
+              'Barkod okutun; her hane ürün adı + fiyatıyla A4 Tel Etiketine '
+              'dönüşür (Raf Etiketi ile aynı hücre, yan yana 4 adet).',
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // SOL: 32 haneli barkod giriş sütunu
+              Expanded(
+                flex: 5,
+                child: _InputColumn(
+                  controllers: _telControllers,
+                  focusNodes: _telFocusNodes,
+                  errors: _telErrors,
+                  activeIndex: _telActiveIndex,
+                  itemCount: kTelCount,
+                  source: _LabelSlotSource.tel,
+                  onSubmitted: _onTelSubmitted,
+                  onClear: _clearTelSlot,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              // SAĞ: canlı A4 önizleme
+              Expanded(
+                flex: 6,
+                child: _TelPreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Tel Etiketi — mobil (tek kolon) ───────────────────────────────────────
+  Widget _buildTelMobile(Widget selector) {
+    final state = ref.watch(labelTelSheetProvider);
+    final logoState = ref.watch(labelSheetProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.filledCount,
+            totalCount: kTelCount,
+            hasLogo: logoState.logoDataUrl != null,
+            onPickLogo: _pickLogo,
+            onRemoveLogo: _removeLogo,
+            onClearAll: _clearTelAll,
+            onPrint: _printTel,
+            onSavePdf: _saveTelPdf,
+            onCameraScan: kIsWeb ? null : _startTelCameraScan,
+            subtitle:
+                'Barkod okutun; her hane ürün adı + fiyatıyla A4 Tel Etiketine '
+                'dönüşür (Raf Etiketi ile aynı hücre, yan yana 4 adet).',
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          // Giriş haneleri (iç scroll yok — sayfa scroll'una gömülü)
+          ...List.generate(kTelCount, (i) {
+            return _SlotInputRow(
+              index: i,
+              controller: _telControllers[i],
+              focusNode: _telFocusNodes[i],
+              isActive: _telActiveIndex == i,
+              isError: _telErrors.contains(i),
+              source: _LabelSlotSource.tel,
+              onSubmitted: (v) => _onTelSubmitted(i, v),
+              onClear: () => _clearTelSlot(i),
+            );
+          }),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          LayoutBuilder(
+            builder: (ctx, c) => SizedBox(
+              width: c.maxWidth,
+              height: c.maxWidth * (_kA4Height / _kA4Width),
+              child: _TelPreviewPane(),
             ),
           ),
           const SizedBox(height: AppSizes.space20),
@@ -1589,7 +1909,7 @@ class _InputColumn extends StatelessWidget {
   final Set<int> errors;
   final int activeIndex;
   final int itemCount;
-  final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
+  final _LabelSlotSource source; // hangi hane provider'ı izlenecek
   final Future<void> Function(int, String) onSubmitted;
   final void Function(int) onClear;
 
@@ -1601,7 +1921,7 @@ class _InputColumn extends StatelessWidget {
     required this.onSubmitted,
     required this.onClear,
     this.itemCount = kLabelCount,
-    this.wide = false,
+    this.source = _LabelSlotSource.raf,
   });
 
   @override
@@ -1627,7 +1947,7 @@ class _InputColumn extends StatelessWidget {
                   focusNode: focusNodes[i],
                   isActive: activeIndex == i,
                   isError: errors.contains(i),
-                  wide: wide,
+                  source: source,
                   onSubmitted: (v) => onSubmitted(i, v),
                   onClear: () => onClear(i),
                 );
@@ -1666,7 +1986,7 @@ class _SlotInputRow extends ConsumerWidget {
   final FocusNode focusNode;
   final bool isActive;
   final bool isError;
-  final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
+  final _LabelSlotSource source; // hangi hane provider'ı izlenecek
   final Future<void> Function(String) onSubmitted;
   final VoidCallback onClear;
 
@@ -1678,14 +1998,19 @@ class _SlotInputRow extends ConsumerWidget {
     required this.isError,
     required this.onSubmitted,
     required this.onClear,
-    this.wide = false,
+    this.source = _LabelSlotSource.raf,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final slot = wide
-        ? ref.watch(labelWideSheetProvider.select((s) => s.slots[index]))
-        : ref.watch(labelSheetProvider.select((s) => s.slots[index]));
+    final slot = switch (source) {
+      _LabelSlotSource.raf =>
+        ref.watch(labelSheetProvider.select((s) => s.slots[index])),
+      _LabelSlotSource.wide =>
+        ref.watch(labelWideSheetProvider.select((s) => s.slots[index])),
+      _LabelSlotSource.tel =>
+        ref.watch(labelTelSheetProvider.select((s) => s.slots[index])),
+    };
 
     // Aktif hane = aktif durum altını (izinli: ince sol altın şerit + ink
     // kenarlık, §5). Hata → danger kenarlık.
@@ -1828,11 +2153,52 @@ class _PreviewPane extends ConsumerWidget {
   }
 }
 
+// Tel Etiketi önizlemesi — Raf'ın _PreviewPane'inin küçük bir kopyası; yalnız
+// labelTelSheetProvider'ı izler ve _A4Canvas'a 4×8 ızgara boyutunu geçer
+// (mağaza logosu Raf'ın kalıcı labelSheetProvider'ından paylaşılır).
+class _TelPreviewPane extends ConsumerWidget {
+  const _TelPreviewPane();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(labelTelSheetProvider);
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: _A4Canvas(
+            slots: state.slots,
+            logoDataUrl: logoDataUrl,
+            columns: kTelColumns,
+            rows: kTelRows,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _A4Canvas extends StatelessWidget {
   final List<LabelSlot?> slots;
   final String? logoDataUrl;
+  // Izgara boyutu — varsayılan Raf Etiketi (3×8); Tel Etiketi aynı hücre
+  // tasarımını (_LabelCell) paylaşıp yalnız columns=4 geçer.
+  final int columns;
+  final int rows;
 
-  const _A4Canvas({required this.slots, required this.logoDataUrl});
+  const _A4Canvas({
+    required this.slots,
+    required this.logoDataUrl,
+    this.columns = kLabelColumns,
+    this.rows = kLabelRows,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1856,11 +2222,11 @@ class _A4Canvas extends StatelessWidget {
       color: Colors.white,
       padding: const EdgeInsets.all(margin),
       child: Column(
-        children: List.generate(kLabelRows, (r) {
+        children: List.generate(rows, (r) {
           return Expanded(
             child: Row(
-              children: List.generate(kLabelColumns, (c) {
-                final idx = r * kLabelColumns + c;
+              children: List.generate(columns, (c) {
+                final idx = r * columns + c;
                 return Expanded(
                   child: _LabelCell(
                     slot: slots[idx],
@@ -1981,6 +2347,7 @@ class _LabelCell extends StatelessWidget {
                     Expanded(
                       child: Text(
                         s.barcode,
+                        textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -3577,13 +3944,23 @@ class _TabSelector extends StatelessWidget {
         showSelectedIcon: false,
         segments: [
           ButtonSegment(
-            value: _LabelTab.yeni,
+            value: _LabelTab.raf,
             label: Text(
-              mobile ? 'Yeni' : 'Yeni Etiket',
+              mobile ? 'Raf' : 'Raf Etiketi',
               maxLines: 1,
               softWrap: false,
             ),
             icon: mobile ? null : const Icon(Icons.add_box_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.tel,
+            label: Text(
+              mobile ? 'Tel' : 'Tel Etiketi',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon:
+                mobile ? null : const Icon(Icons.view_column_outlined, size: 18),
           ),
           ButtonSegment(
             value: _LabelTab.genis,

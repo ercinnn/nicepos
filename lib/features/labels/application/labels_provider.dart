@@ -16,6 +16,12 @@ const int kWideCols = 2;
 const int kWideRows = 5;
 const int kWideCount = kWideCols * kWideRows; // 10
 
+/// Tel Etiketi sayfası sabitleri: Raf Etiketi ile birebir aynı yükseklik/stil,
+/// yalnız yan yana 4 adet (satır sayısı aynı kalır) → 4×8 = 32 etiket.
+const int kTelColumns = 4;
+const int kTelRows = kLabelRows;
+const int kTelCount = kTelColumns * kTelRows; // 32
+
 
 /// Etiket sayfasının durumu: 24 hanelik liste (`null` = boş hane) + mağaza logosu
 /// (data URL / base64; hem önizleme hem baskıda kullanılır).
@@ -128,6 +134,54 @@ class LabelWideSheet extends _$LabelWideSheet {
 
   void clearAll() {
     state = state.copyWith(slots: List<LabelSlot?>.filled(kWideCount, null));
+  }
+}
+
+// ─── Tel Etiketi sayfası ──────────────────────────────────────────────────────
+
+/// Tel Etiketi sayfasının durumu: 32 hanelik liste (`null` = boş hane). Raf
+/// Etiketi ile birebir aynı hücre tasarımını paylaşır (yalnız 4×8 ızgara);
+/// mağaza logosu ayrı YÜKLENMEZ, Raf'ın kalıcı `LabelSheetState.logoDataUrl`
+/// alanı doğrudan yeniden kullanılır (Poster sekmesinin zaten yaptığı gibi).
+class LabelTelSheetState {
+  final List<LabelSlot?> slots;
+
+  const LabelTelSheetState({required this.slots});
+
+  factory LabelTelSheetState.initial() => LabelTelSheetState(
+        slots: List<LabelSlot?>.filled(kTelCount, null),
+      );
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  LabelTelSheetState copyWith({List<LabelSlot?>? slots}) {
+    return LabelTelSheetState(slots: slots ?? this.slots);
+  }
+}
+
+/// Tel Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 32 hane
+/// korunur (Raf/Geniş Logo provider'larıyla KARIŞMAZ).
+@Riverpod(keepAlive: true)
+class LabelTelSheet extends _$LabelTelSheet {
+  @override
+  LabelTelSheetState build() => LabelTelSheetState.initial();
+
+  void setSlot(int index, LabelSlot slot) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = slot;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearSlot(int index) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = null;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(slots: List<LabelSlot?>.filled(kTelCount, null));
   }
 }
 
