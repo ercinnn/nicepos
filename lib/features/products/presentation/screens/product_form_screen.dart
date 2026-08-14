@@ -10,6 +10,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -57,6 +58,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _barcodeCtrl;
+  late FocusNode _barcodeFocus;
   late TextEditingController _nameCtrl;
   late TextEditingController _price1Ctrl;
   late TextEditingController _price2Ctrl;
@@ -113,6 +115,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   /// spinner göstermek için.
   bool _generatingBarcode = false;
 
+  /// Ürün Adı mikrofon-ile-giriş (mobil/native, `!kIsWeb`) — `speech_to_text`
+  /// yalnız ilk mikrofon dokunuşunda `initialize()` edilir (izin isteğini
+  /// ekran açılışına değil, kullanıcı eylemine bağlar).
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
+
   /// `ProductSyncService`'in son prob sonucu zaten "offline" diyorsa `true` —
   /// bu durumda `_loadProduct`/`_fetchByBarcode`/`_save` her seferinde 6sn'lik
   /// ağ timeout'unu tekrar tekrar beklemez, doğrudan yerel yola düşer. Bir
@@ -139,6 +147,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     super.initState();
     _currentId = widget.productId;
     _barcodeCtrl = TextEditingController();
+    _barcodeFocus = FocusNode();
     _nameCtrl = TextEditingController();
     _price1Ctrl = TextEditingController(text: '0');
     _price2Ctrl = TextEditingController(text: '0');
@@ -229,6 +238,43 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _imageUrl = p.imageUrl;
   }
 
+  /// Formu `initState`'teki boş "Yeni Ürün" durumuna döndürür — iki çağıran:
+  /// (1) `_fetchByBarcode` barkodun KESİN kayıtlı olmadığını öğrenince (eski
+  /// ürünün bilgileri ekranda kalıp kafa karıştırmasın diye, [clearBarcode]
+  /// `false` — kullanıcının az önce girdiği barkod korunur); (2) yeni bir
+  /// ürün başarıyla kaydedilince, ekrandan çıkmadan sıradaki ürüne geçmek
+  /// için ([clearBarcode] `true`). Çağıran taraf `setState` içine almalı.
+  void _resetProductFields({required bool clearBarcode}) {
+    _currentId = null;
+    if (clearBarcode) _barcodeCtrl.clear();
+    _nameCtrl.clear();
+    _price1Ctrl.text = '0';
+    _price2Ctrl.text = '0';
+    _purchasePriceCtrl.text = '0';
+    _stockCtrl.text = '0';
+    _criticalStockCtrl.text = '0';
+    _vatRateCtrl.text = '20';
+    _profitMargin1Ctrl.text = '0';
+    _unitCtrl.text = 'Adet';
+    _originCtrl.clear();
+    _stockCodeCtrl.clear();
+    _weightCtrl.clear();
+    _quickOrderCtrl.clear();
+    _companyCtrl.clear();
+    _detailDate = DateTime.now();
+    _statusLetter = 'Y';
+    _price1VatIncluded = true;
+    _price2VatIncluded = true;
+    _purchaseVatIncluded = true;
+    _isOnlineActive = false;
+    _groupId = null;
+    _imageUrl = null;
+    _pickedImageBytes = null;
+    _pickedImageExt = 'jpg';
+    _pendingSync = false;
+    _awaitingFetch = false;
+  }
+
   String _fmt(num value) {
     if (value == value.roundToDouble()) return value.toInt().toString();
     return value.toString();
@@ -272,7 +318,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   @override
   void dispose() {
+    if (_isListening) _speech.stop();
     _barcodeCtrl.dispose();
+    _barcodeFocus.dispose();
     _nameCtrl.dispose();
     _price1Ctrl.dispose();
     _price2Ctrl.dispose();
@@ -504,6 +552,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final String message;
       if (!networkFailed) {
         message = 'Bu barkoda ait ürün bulunamadı, yeni ürün oluşturabilirsiniz.';
+        // Sunucu KESİN "yok" dedi (ağ sorunu değil) — önceki barkodun (varsa)
+        // hâlâ ekranda duran bilgileri kafa karıştırmasın diye formu boşaltır
+        // (barkod hanesi KORUNUR — kullanıcı o barkotla yeni ürün oluşturur).
+        // networkFailed=true dallarında (bağlantı yok/timeout) BOŞALTMAYIZ —
+        // ürün gerçekte var olabilir, yalnız şu an sorgulanamadı; kullanıcının
+        // henüz kaydetmediği elle girdiği değerleri silmek yanlış olur.
+        setState(() => _resetProductFields(clearBarcode: false));
       } else if (kIsWeb) {
         message = 'Bağlantı hatası — barkod sorgulanamadı, tekrar deneyin.';
       } else {
@@ -580,6 +635,44 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     } finally {
       if (mounted) setState(() => _generatingBarcode = false);
     }
+  }
+
+  /// Ürün Adı mikrofon butonu — dinlerken tekrar basılırsa durdurur.
+  /// `result.recognizedWords` her callback'te O ANA KADAR tanınan TÜM
+  /// tümceyi taşır (delta değil) — bu yüzden hane her seferinde DEĞİŞTİRİLİR
+  /// (append edilmez), tek bir dikte oturumu = tek bir ürün adı.
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      await _speech.stop();
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if ((status == 'notListening' || status == 'done') && mounted) {
+          setState(() => _isListening = false);
+        }
+      },
+      onError: (_) {
+        if (mounted) setState(() => _isListening = false);
+      },
+    );
+    if (!available) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Ses tanıma kullanılamıyor (mikrofon izni gerekebilir).')));
+      }
+      return;
+    }
+    setState(() => _isListening = true);
+    await _speech.listen(
+      listenOptions: stt.SpeechListenOptions(localeId: 'tr_TR'),
+      onResult: (result) {
+        _nameCtrl.text = result.recognizedWords;
+        _nameCtrl.selection = TextSelection.collapsed(offset: _nameCtrl.text.length);
+        if (result.finalResult && mounted) setState(() => _isListening = false);
+      },
+    );
   }
 
   Future<void> _pickImage() async {
@@ -664,7 +757,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                 content:
                     Text('Ürün kaydedildi, ancak resim yüklenemedi — bağlantı gelince otomatik yüklenecek.')));
-            context.go('/products');
+            _afterSaveOrStay(isNew: isNew);
           }
           return;
         }
@@ -677,7 +770,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ürün kaydedildi')));
-        context.go('/products');
+        _afterSaveOrStay(isNew: isNew);
       }
     } on PostgrestException catch (e) {
       // Sunucu YANIT VERDİ — gerçek red (ör. barkod çakışması ONLINE iken).
@@ -702,6 +795,20 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
   }
 
+  /// Kayıt başarıyla bittikten sonra (tam başarı/yalnız-görsel-hata/offline-
+  /// kuyruk — üçü de bunu çağırır): YENİ ürün kaydıysa `/products`'a
+  /// GİTMEZ — formu boşaltıp (barkod dahil) barkod hanesine odaklanır,
+  /// kullanıcı ekrandan çıkmadan sıradaki ürünü kaydedebilsin diye. Mevcut
+  /// bir ürün düzenlemesiyse eski davranış (listeye dön) AYNEN korunur.
+  void _afterSaveOrStay({required bool isNew}) {
+    if (isNew) {
+      setState(() => _resetProductFields(clearBarcode: true));
+      _barcodeFocus.requestFocus();
+    } else {
+      context.go('/products');
+    }
+  }
+
   /// Ürünü senkron kuyruğuna yazar ve kullanıcıyı bilgilendirip ekrandan
   /// çıkar — hem "zaten offline olduğu biliniyordu" kısayolundan hem de
   /// "ağ denemesi timeout'la başarısız oldu" dalından çağrılır.
@@ -712,7 +819,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Bağlantı yok — ürün çevrimdışı kaydedildi, bağlantı gelince otomatik gönderilecek.')));
-      context.go('/products');
+      _afterSaveOrStay(isNew: isNew);
     }
   }
 
@@ -827,6 +934,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 Expanded(
                   child: TextField(
                     controller: _barcodeCtrl,
+                    focusNode: _barcodeFocus,
                     decoration: const InputDecoration(hintText: 'Ürün barkodunu okutunuz...'),
                     onSubmitted: (_) => _fetchByBarcode(),
                     // Elle ilk karakter girilince kilit açılır (orta "Ürünü
@@ -1275,7 +1383,21 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       children: [
         TextFormField(
           controller: _nameCtrl,
-          decoration: const InputDecoration(labelText: 'Ürün Adı *'),
+          decoration: InputDecoration(
+            labelText: 'Ürün Adı *',
+            // Ses ile ürün adı girişi — yalnız mobil/native (kamera/barkod
+            // üret ikonlarıyla aynı koşul).
+            suffixIcon: (!kIsWeb && context.isMobile)
+                ? IconButton(
+                    tooltip: 'Ses ile gir',
+                    icon: Icon(
+                      _isListening ? Icons.mic : Icons.mic_none,
+                      color: _isListening ? AppColors.danger : null,
+                    ),
+                    onPressed: _toggleListening,
+                  )
+                : null,
+          ),
           validator: (v) =>
               (v == null || v.trim().isEmpty) ? 'Ürün adı giriniz' : null,
         ),
