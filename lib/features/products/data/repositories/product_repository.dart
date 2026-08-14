@@ -241,6 +241,17 @@ class ProductRepository {
     return product;
   }
 
+  // Mobil "Yeni Ürün" ekranındaki "+ barkod üret" butonu — bugünün YYMMDD
+  // önekiyle başlayan tüm barkodları döner, sıradaki boş XXX'i bulmak için
+  // (bkz. product_form_screen.dart `nextBarcodeCandidate`).
+  Future<Set<String>> fetchBarcodesWithPrefix(String prefix) async {
+    final rows = await _client.from('products').select('barcode').ilike('barcode', '$prefix%');
+    return {
+      for (final row in (rows as List))
+        if ((row as Map)['barcode'] != null) row['barcode'] as String,
+    };
+  }
+
   // Eşlenik Barkod: görüntülenen sayfadaki ürünler için grup toplamlarını
   // `product_equivalent_aggregate` view'ından (bkz. 0021_equivalent_barcodes.sql)
   // tek sorguda çeker — `fetchStatuses` ile BİREBİR aynı desen (id listesiyle

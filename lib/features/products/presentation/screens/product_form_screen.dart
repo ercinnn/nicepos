@@ -28,6 +28,19 @@ import '../../data/models/pending_change.dart';
 import '../../data/models/product.dart';
 import '../widgets/equivalent_barcode_section.dart';
 
+/// [prefix] (ör. "260814") ile başlayan, henüz [existing] kümesinde olmayan
+/// ilk "XXX" (001..999) barkodu üretir — mobil "Yeni Ürün" ekranındaki
+/// "+ barkod üret" butonu kullanır. Top-level (private değil) tutulur ki
+/// test dosyasından ağ/widget kurulumu gerektirmeden doğrudan sınanabilsin.
+/// Boşluk bulunmazsa (pratikte imkânsız, günde 999 barkod) son numarayı döner.
+String nextBarcodeCandidate(String prefix, Set<String> existing) {
+  for (var i = 1; i <= 999; i++) {
+    final candidate = '$prefix${i.toString().padLeft(3, '0')}';
+    if (!existing.contains(candidate)) return candidate;
+  }
+  return '${prefix}999';
+}
+
 class ProductFormScreen extends ConsumerStatefulWidget {
   /// null ise yeni ürün, aksi halde düzenlenecek ürünün id'si.
   final String? productId;
@@ -85,6 +98,18 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   /// Senkron metotlarında karşılıklı tetiklenmeyi önleyen yeniden-giriş kilidi.
   bool _syncing = false;
+
+  /// Barkod hanesi doldurulduğunda (taranarak/üretilerek/elle) `true` olur —
+  /// mobilde ekranın ortasında "Ürünü Getir" belirir, barkod hanesi + kamera
+  /// + "barkod üret" ikonu DIŞINDA her şey (sekmeler, Kaydet/Sil barı) devre
+  /// dışı kalır. `_fetchByBarcode()` başında (Enter/orta buton/kamera akışı
+  /// hepsi oradan geçer) `false`'a döner — kullanıcı bir kez "getir" deyince
+  /// kilit kalkar (sonuç bulunsa da bulunmasa da).
+  bool _awaitingFetch = false;
+
+  /// "+ barkod üret" butonunun ağ/yerel-önbellek sorgusu sürerken küçük bir
+  /// spinner göstermek için.
+  bool _generatingBarcode = false;
 
   /// `ProductSyncService`'in son prob sonucu zaten "offline" diyorsa `true` —
   /// bu durumda `_loadProduct`/`_fetchByBarcode`/`_save` her seferinde 6sn'lik
@@ -172,6 +197,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     setState(() {
       _loaded = true;
       _pendingSync = pendingSync;
+      _awaitingFetch = false;
     });
   }
 
@@ -421,6 +447,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Future<void> _fetchByBarcode() async {
     final barcode = _barcodeCtrl.text.trim();
     if (barcode.isEmpty) return;
+    // Orta ekrandaki "Ürünü Getir" / Enter / kamera akışının hepsi buradan
+    // geçer — kilit sonuç ne olursa olsun (bulundu/bulunamadı/hata) hemen
+    // kalkar, kullanıcı BİR KEZ "getir" dedikten sonra formu düzenleyebilir.
+    if (mounted) setState(() => _awaitingFetch = false);
 
     Product? product;
     var fromCache = false;
@@ -472,6 +502,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     setState(() {
       _applyProduct(product!);
       _pendingSync = pendingSync;
+      _awaitingFetch = false;
     });
 
     if (fromCache && mounted) {
@@ -480,6 +511,46 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             content:
                 Text('Çevrimdışı kayıttan yüklendi — veriler son senkronizasyondan bu yana değişmiş olabilir.')),
       );
+    }
+  }
+
+  /// "+ barkod üret" ikonu — bugünün YYMMDD önekiyle başlayan, henüz
+  /// kullanılmamış ilk XXX'i bulup hanaye yazar (ör. 260814001, doluysa
+  /// 260814002, ...). `_loadProduct`/`_fetchByBarcode` ile aynı "önce ağ
+  /// (timeout'lu), olmazsa (`!kIsWeb`) yerel önbellek" desenini kullanır.
+  Future<void> _generateBarcode() async {
+    if (_generatingBarcode) return;
+    setState(() => _generatingBarcode = true);
+    try {
+      final now = DateTime.now();
+      final prefix = '${(now.year % 100).toString().padLeft(2, '0')}'
+          '${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}';
+
+      Set<String> existing;
+      if (_knownOffline) {
+        existing = !kIsWeb
+            ? await ref.read(productLocalCacheDaoProvider).fetchBarcodesWithPrefix(prefix)
+            : const <String>{};
+      } else {
+        try {
+          existing = await withNetworkTimeout(
+              ref.read(productRepositoryProvider).fetchBarcodesWithPrefix(prefix));
+        } catch (_) {
+          existing = !kIsWeb
+              ? await ref.read(productLocalCacheDaoProvider).fetchBarcodesWithPrefix(prefix)
+              : const <String>{};
+        }
+      }
+      if (!mounted) return;
+
+      final candidate = nextBarcodeCandidate(prefix, existing);
+      setState(() {
+        _barcodeCtrl.text = candidate;
+        _awaitingFetch = true;
+      });
+    } finally {
+      if (mounted) setState(() => _generatingBarcode = false);
     }
   }
 
@@ -730,33 +801,84 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                     controller: _barcodeCtrl,
                     decoration: const InputDecoration(hintText: 'Ürün barkodunu okutunuz...'),
                     onSubmitted: (_) => _fetchByBarcode(),
+                    // Elle ilk karakter girilince kilit açılır (orta "Ürünü
+                    // Getir" belirir); hane boşalınca kilit kalkar.
+                    onChanged: (v) => setState(() => _awaitingFetch = v.trim().isNotEmpty),
                   ),
                 ),
-                // Kamera ile barkod okut — sadece mobil/native
+                // Kamera + "barkod üret" — sadece mobil/native. "Ürünü Getir"
+                // masaüstünde satırda kalır; mobilde yerini orta-ekran
+                // overlay'e bırakır (bkz. aşağıdaki kilit Stack'i).
                 if (!kIsWeb && context.isMobile) ...[
                   const SizedBox(width: 8),
-                  SizedBox(
-                    height: 48,
-                    width: 48,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _scanBarcode,
-                      child: const Icon(Icons.camera_alt_outlined, size: 22),
-                    ),
+                  _buildSquareIconButton(
+                    icon: const Icon(Icons.camera_alt_outlined, size: 22),
+                    color: AppColors.primary,
+                    onPressed: _scanBarcode,
                   ),
+                  const SizedBox(width: 8),
+                  _buildSquareIconButton(
+                    icon: const Badge(
+                      label: Icon(Icons.add, size: 10, color: Colors.white),
+                      backgroundColor: AppColors.success,
+                      child: Icon(Icons.qr_code_2, size: 22),
+                    ),
+                    color: AppColors.success,
+                    onPressed: _generatingBarcode ? null : _generateBarcode,
+                    loading: _generatingBarcode,
+                  ),
+                ] else ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton(onPressed: _fetchByBarcode, child: const Text('Ürünü Getir')),
                 ],
-                const SizedBox(width: 8),
-                OutlinedButton(onPressed: _fetchByBarcode, child: const Text('Ürünü Getir')),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
+        _buildFormArea(groupsAsync),
+      ],
+    );
+  }
+
+  /// Barkod kartındaki kamera/üret ikonları için ortak 48×48 kare buton
+  /// iskeleti (DRY — ikisi de aynı görünüm, yalnız ikon/renk/eylem değişir).
+  Widget _buildSquareIconButton({
+    required Widget icon,
+    required Color color,
+    required VoidCallback? onPressed,
+    bool loading = false,
+  }) {
+    return SizedBox(
+      height: 48,
+      width: 48,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        onPressed: onPressed,
+        child: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : icon,
+      ),
+    );
+  }
+
+  /// Sekmeler + Kaydet/Sil barı. Mobilde barkod hanesi doldurulup henüz
+  /// "Ürünü Getir" ile onaylanmadıysa (`_awaitingFetch`) bu bölge dim +
+  /// dokunmaz hale gelir, ortasında büyük "Ürünü Getir" belirir — kullanıcı
+  /// önce barkodu netleştirsin diye (üst başlık/geri oku ve barkod kartı bu
+  /// kilidin DIŞINDadır, her zaman erişilebilir kalır).
+  Widget _buildFormArea(AsyncValue<List<dynamic>> groupsAsync) {
+    final formArea = Column(
+      children: [
         Expanded(
           child: Form(
             key: _formKey,
@@ -787,6 +909,22 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         const SizedBox(height: 12),
         _buildBottomBar(),
       ],
+    );
+
+    final locked = !kIsWeb && context.isMobile && _awaitingFetch;
+    if (!locked) return Expanded(child: formArea);
+
+    return Expanded(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: AbsorbPointer(
+              child: Opacity(opacity: 0.25, child: formArea),
+            ),
+          ),
+          Center(child: _CenterFetchButton(onTap: _fetchByBarcode)),
+        ],
+      ),
     );
   }
 
@@ -1377,6 +1515,49 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           onChanged: (v) => setState(() => _isOnlineActive = v),
         ),
       ],
+    );
+  }
+}
+
+/// Barkod hanesi kilitliyken (`_awaitingFetch`) ekranın ortasında beliren
+/// büyük "Ürünü Getir" düğmesi — mobil barkod-kilit overlay'inin tek aktif
+/// eylemi (bkz. `_ProductFormScreenState._buildFormArea`).
+class _CenterFetchButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CenterFetchButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(100),
+        onTap: onTap,
+        child: Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primary,
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, 4)),
+            ],
+          ),
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.download_outlined, color: Colors.white, size: 36),
+              SizedBox(height: 6),
+              Text(
+                'Ürünü\nGetir',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
