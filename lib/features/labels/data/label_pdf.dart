@@ -46,10 +46,22 @@ Future<Uint8List> buildLabelsPdf({
   required List<LabelSlot?> slots,
   String? logoDataUrl,
 }) =>
-    _buildGridLabelsPdf(
+    buildLabelsPdfMultiPage(pages: [slots], logoDataUrl: logoDataUrl);
+
+/// Etiket Havuzu (KARAR — bkz. 0032_label_pool.sql): kapasiteyi (24) aşan
+/// birikimi TEK pdf'te çok sayfaya böler ([pages] — her sayfa zaten
+/// `paginateLabelPoolItems` ile 24'lük parçalara ayrılmış olmalı). Tema/logo
+/// kurulumu PDF başına BİR KEZ yapılır (mevcut tek-sayfalı `buildLabelsPdf`
+/// bunu `pages: [slots]` ile çağıran ince bir sarmalayıcıdır — davranışı/
+/// imzası DEĞİŞMEDİ).
+Future<Uint8List> buildLabelsPdfMultiPage({
+  required List<List<LabelSlot?>> pages,
+  String? logoDataUrl,
+}) =>
+    _buildGridLabelsPdfMultiPage(
       cols: _kCols,
       rows: _kRows,
-      slots: slots,
+      pages: pages,
       logoDataUrl: logoDataUrl,
     );
 
@@ -60,17 +72,25 @@ Future<Uint8List> buildTelLabelsPdf({
   required List<LabelSlot?> slots,
   String? logoDataUrl,
 }) =>
-    _buildGridLabelsPdf(
+    buildTelLabelsPdfMultiPage(pages: [slots], logoDataUrl: logoDataUrl);
+
+/// Tel Etiketi Havuz sürümü — `buildLabelsPdfMultiPage` ile aynı gerekçe,
+/// yalnız 4×8=32 ızgara.
+Future<Uint8List> buildTelLabelsPdfMultiPage({
+  required List<List<LabelSlot?>> pages,
+  String? logoDataUrl,
+}) =>
+    _buildGridLabelsPdfMultiPage(
       cols: _kTelCols,
       rows: _kTelRows,
-      slots: slots,
+      pages: pages,
       logoDataUrl: logoDataUrl,
     );
 
-Future<Uint8List> _buildGridLabelsPdf({
+Future<Uint8List> _buildGridLabelsPdfMultiPage({
   required int cols,
   required int rows,
-  required List<LabelSlot?> slots,
+  required List<List<LabelSlot?>> pages,
   String? logoDataUrl,
 }) async {
   // Türkçe glif desteği için Roboto gömülür (varsayılan Helvetica ş/ğ/ı/İ'yi
@@ -98,27 +118,29 @@ Future<Uint8List> _buildGridLabelsPdf({
   }
 
   final doc = pw.Document(theme: theme);
-  doc.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      margin: pw.EdgeInsets.all(5 * PdfPageFormat.mm), // ~5mm kenar
-      build: (context) {
-        return pw.Column(
-          children: List.generate(rows, (r) {
-            return pw.Expanded(
-              child: pw.Row(
-                children: List.generate(cols, (c) {
-                  final idx = r * cols + c;
-                  final slot = idx < slots.length ? slots[idx] : null;
-                  return pw.Expanded(child: _cell(slot, logoImage));
-                }),
-              ),
-            );
-          }),
-        );
-      },
-    ),
-  );
+  for (final slots in pages) {
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: pw.EdgeInsets.all(5 * PdfPageFormat.mm), // ~5mm kenar
+        build: (context) {
+          return pw.Column(
+            children: List.generate(rows, (r) {
+              return pw.Expanded(
+                child: pw.Row(
+                  children: List.generate(cols, (c) {
+                    final idx = r * cols + c;
+                    final slot = idx < slots.length ? slots[idx] : null;
+                    return pw.Expanded(child: _cell(slot, logoImage));
+                  }),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
 
   return doc.save();
 }
@@ -283,6 +305,17 @@ const double _kWNameShift =
 /// Dolu/boş 10 haneyi A4 dikey 2×5 Geniş Logo etiketi PDF'ine dönüştürür.
 Future<Uint8List> buildWideLabelsPdf({
   required List<LabelSlot?> slots,
+}) =>
+    buildWideLabelsPdfMultiPage(pages: [slots]);
+
+/// Geniş Logo Havuz sürümü (KARAR — bkz. 0032_label_pool.sql): kapasiteyi
+/// (10) aşan birikimi TEK pdf'te çok sayfaya böler ([pages] — her sayfa
+/// zaten `paginateLabelPoolItems` ile 10'luk parçalara ayrılmış olmalı).
+/// Tema/figür kurulumu PDF başına BİR KEZ yapılır; mevcut tek-sayfalı
+/// `buildWideLabelsPdf` bunu `pages: [slots]` ile çağıran ince bir
+/// sarmalayıcıdır — davranışı/imzası DEĞİŞMEDİ.
+Future<Uint8List> buildWideLabelsPdfMultiPage({
+  required List<List<LabelSlot?>> pages,
 }) async {
   pw.ThemeData theme;
   try {
@@ -303,32 +336,34 @@ Future<Uint8List> buildWideLabelsPdf({
   }
 
   final doc = pw.Document(theme: theme);
-  doc.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      // Kenar boşluğu (KARAR v1.14.4 — hücre 94→88mm): üst/alt 11mm, sol/sağ
-      // 17mm → 2×5 hücre 88×55mm A4'e tam ortalı ((210−2×88)/2 = 17).
-      margin: pw.EdgeInsets.symmetric(
-        vertical: 11 * PdfPageFormat.mm,
-        horizontal: 17 * PdfPageFormat.mm,
+  for (final slots in pages) {
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        // Kenar boşluğu (KARAR v1.14.4 — hücre 94→88mm): üst/alt 11mm, sol/sağ
+        // 17mm → 2×5 hücre 88×55mm A4'e tam ortalı ((210−2×88)/2 = 17).
+        margin: pw.EdgeInsets.symmetric(
+          vertical: 11 * PdfPageFormat.mm,
+          horizontal: 17 * PdfPageFormat.mm,
+        ),
+        build: (context) {
+          return pw.Column(
+            children: List.generate(_kWideRows, (r) {
+              return pw.Expanded(
+                child: pw.Row(
+                  children: List.generate(_kWideCols, (c) {
+                    final idx = r * _kWideCols + c;
+                    final slot = idx < slots.length ? slots[idx] : null;
+                    return pw.Expanded(child: _wideCell(slot, figurImage));
+                  }),
+                ),
+              );
+            }),
+          );
+        },
       ),
-      build: (context) {
-        return pw.Column(
-          children: List.generate(_kWideRows, (r) {
-            return pw.Expanded(
-              child: pw.Row(
-                children: List.generate(_kWideCols, (c) {
-                  final idx = r * _kWideCols + c;
-                  final slot = idx < slots.length ? slots[idx] : null;
-                  return pw.Expanded(child: _wideCell(slot, figurImage));
-                }),
-              ),
-            );
-          }),
-        );
-      },
-    ),
-  );
+    );
+  }
 
   return doc.save();
 }

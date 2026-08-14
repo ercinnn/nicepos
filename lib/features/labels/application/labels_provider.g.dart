@@ -48,6 +48,196 @@ final savedLabelFilesProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef SavedLabelFilesRef = AutoDisposeFutureProviderRef<List<SavedLabelFile>>;
+String _$labelPoolRepositoryHash() =>
+    r'e6b2eae36c9e0df3b4dc844fe624279f606fb8ef';
+
+/// See also [labelPoolRepository].
+@ProviderFor(labelPoolRepository)
+final labelPoolRepositoryProvider = Provider<LabelPoolRepository>.internal(
+  labelPoolRepository,
+  name: r'labelPoolRepositoryProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$labelPoolRepositoryHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LabelPoolRepositoryRef = ProviderRef<LabelPoolRepository>;
+String _$labelPoolPendingHash() => r'37ceac49b1e67c9c4eff551b3446724be00e8033';
+
+/// Copied from Dart SDK
+class _SystemHash {
+  _SystemHash._();
+
+  static int combine(int hash, int value) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + value);
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
+    return hash ^ (hash >> 6);
+  }
+
+  static int finish(int hash) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
+    // ignore: parameter_assignments
+    hash = hash ^ (hash >> 11);
+    return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
+  }
+}
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+///
+/// Copied from [labelPoolPending].
+@ProviderFor(labelPoolPending)
+const labelPoolPendingProvider = LabelPoolPendingFamily();
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+///
+/// Copied from [labelPoolPending].
+class LabelPoolPendingFamily extends Family<AsyncValue<List<LabelPoolItem>>> {
+  /// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+  /// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+  /// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+  /// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+  ///
+  /// Copied from [labelPoolPending].
+  const LabelPoolPendingFamily();
+
+  /// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+  /// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+  /// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+  /// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+  ///
+  /// Copied from [labelPoolPending].
+  LabelPoolPendingProvider call(String labelType) {
+    return LabelPoolPendingProvider(labelType);
+  }
+
+  @override
+  LabelPoolPendingProvider getProviderOverride(
+    covariant LabelPoolPendingProvider provider,
+  ) {
+    return call(provider.labelType);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'labelPoolPendingProvider';
+}
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+///
+/// Copied from [labelPoolPending].
+class LabelPoolPendingProvider
+    extends AutoDisposeFutureProvider<List<LabelPoolItem>> {
+  /// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+  /// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+  /// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+  /// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+  ///
+  /// Copied from [labelPoolPending].
+  LabelPoolPendingProvider(String labelType)
+    : this._internal(
+        (ref) => labelPoolPending(ref as LabelPoolPendingRef, labelType),
+        from: labelPoolPendingProvider,
+        name: r'labelPoolPendingProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$labelPoolPendingHash,
+        dependencies: LabelPoolPendingFamily._dependencies,
+        allTransitiveDependencies:
+            LabelPoolPendingFamily._allTransitiveDependencies,
+        labelType: labelType,
+      );
+
+  LabelPoolPendingProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.labelType,
+  }) : super.internal();
+
+  final String labelType;
+
+  @override
+  Override overrideWith(
+    FutureOr<List<LabelPoolItem>> Function(LabelPoolPendingRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: LabelPoolPendingProvider._internal(
+        (ref) => create(ref as LabelPoolPendingRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        labelType: labelType,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<List<LabelPoolItem>> createElement() {
+    return _LabelPoolPendingProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is LabelPoolPendingProvider && other.labelType == labelType;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, labelType.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin LabelPoolPendingRef on AutoDisposeFutureProviderRef<List<LabelPoolItem>> {
+  /// The parameter `labelType` of this provider.
+  String get labelType;
+}
+
+class _LabelPoolPendingProviderElement
+    extends AutoDisposeFutureProviderElement<List<LabelPoolItem>>
+    with LabelPoolPendingRef {
+  _LabelPoolPendingProviderElement(super.provider);
+
+  @override
+  String get labelType => (origin as LabelPoolPendingProvider).labelType;
+}
+
 String _$labelSheetHash() => r'0841c322011ac99e9ca0ac63999bc3c175acb3d7';
 
 /// Etiket sayfası durumunu tutar. `keepAlive` — kullanıcı başka sekmeye geçip

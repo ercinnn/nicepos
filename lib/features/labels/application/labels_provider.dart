@@ -1,6 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../data/label_pool_repository.dart';
 import '../data/labels_storage_repository.dart';
+import '../data/models/label_pool_item.dart';
 import '../data/models/label_slot.dart';
 import '../data/models/product_label_item.dart';
 
@@ -354,4 +356,26 @@ LabelsStorageRepository labelsStorageRepository(
 @riverpod
 Future<List<SavedLabelFile>> savedLabelFiles(SavedLabelFilesRef ref) {
   return ref.watch(labelsStorageRepositoryProvider).list();
+}
+
+// ─── Etiket Havuzu (0032_label_pool.sql) ─────────────────────────────────────
+// Mobil ürün formundaki "Etiket" butonundan beslenen, kullanıcılar/cihazlar
+// arası PAYLAŞILAN kuyruk (yukarıdaki tüm provider'ların oturum-içi `keepAlive`
+// deseninin AKSİNE — DB'de kalıcı). Etiket sayfasındaki "Havuz" sekmesi bunu
+// kullanır.
+
+@Riverpod(keepAlive: true)
+LabelPoolRepository labelPoolRepository(LabelPoolRepositoryRef ref) =>
+    LabelPoolRepository();
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+@riverpod
+Future<List<LabelPoolItem>> labelPoolPending(
+  LabelPoolPendingRef ref,
+  String labelType,
+) {
+  return ref.watch(labelPoolRepositoryProvider).fetchPending(labelType);
 }

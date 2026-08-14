@@ -23,18 +23,21 @@ import '../../../sales/application/barcode_cache.dart';
 import '../../application/labels_provider.dart';
 import '../../data/label_pdf.dart';
 import '../../data/labels_storage_repository.dart';
+import '../../data/models/label_pool_item.dart';
 import '../../data/models/label_slot.dart';
 import '../../data/models/product_label_item.dart';
 import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
 import '../widgets/label_scan_sheet.dart';
 
-// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.21 / v1.23): Raf Etiketi
-// (eski "Yeni Etiket") 24-hane akışı + Tel Etiketi (Raf ile birebir aynı
-// hücre/yükseklik, yalnız 4×8=32 ızgara) + Geniş Logo 10-hane akışı + Poster
-// (barkod okutulan ürünlerin profesyonel A4 listesi) + Ürün Etiketi
+// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.21 / v1.23 / Etiket Havuzu):
+// Havuz (kullanıcılar/cihazlar arası paylaşılan bekleyen etiket kuyruğu, bkz.
+// 0032_label_pool.sql — mobil ürün formundaki "Etiket" butonu besler) + Raf
+// Etiketi (eski "Yeni Etiket") 24-hane akışı + Tel Etiketi (Raf ile birebir
+// aynı hücre/yükseklik, yalnız 4×8=32 ızgara) + Geniş Logo 10-hane akışı +
+// Poster (barkod okutulan ürünlerin profesyonel A4 listesi) + Ürün Etiketi
 // (adet-tabanlı 6×12) + kayıtlı PDF'ler.
-enum _LabelTab { raf, tel, genis, poster, urun, kayitli }
+enum _LabelTab { havuz, raf, tel, genis, poster, urun, kayitli }
 
 // _InputColumn/_SlotInputRow'un hangi hane provider'ını izleyeceğini seçer
 // (Raf/Geniş Logo/Tel — üçü de aynı giriş-sütunu/satır widget'larını paylaşır).
@@ -1151,6 +1154,136 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Havuz (Etiket Havuzu, bkz. 0032_label_pool.sql) — kullanıcılar/cihazlar
+  // arası PAYLAŞILAN bekleyen etiket kuyruğu. `_savePdf`/`_saveProductPdf`
+  // ile BİREBİR aynı iskelet (boşsa uyar → dosya adı sor → yükleniyor
+  // göstergesi → PDF üret → Storage'a yükle → başarı/hata snackbar'ı), fark:
+  // kaynak Havuz'un o an bekleyen (kontrol=0) satırları, başarıdan sonra
+  // TAM O SATIRLAR `markPrinted` ile kontrol=1 işaretlenir (yeni eklenen bir
+  // satır YANLIŞLIKLA işaretlenmez) ve `labelPoolPendingProvider` invalidate
+  // edilip sayaç sıfırlanır.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Future<void> _saveHavuz({
+    required String labelType,
+    required String namePrefix,
+    required Future<Uint8List> Function(List<LabelPoolItem> pending) buildBytes,
+  }) async {
+    final repo = ref.read(labelPoolRepositoryProvider);
+    final pending = await repo.fetchPending(labelType);
+    if (pending.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Havuzda bu türde etiket yok.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: namePrefix);
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final bytes = await buildBytes(pending);
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      await repo.markPrinted(pending.map((it) => it.id).toList());
+      ref.invalidate(labelPoolPendingProvider(labelType));
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  Future<void> _saveHavuzRaf() => _saveHavuz(
+        labelType: kLabelPoolTypeRaf,
+        namePrefix: 'raf-etiket-havuz',
+        buildBytes: (pending) => buildLabelsPdfMultiPage(
+          pages: paginateLabelPoolItems(pending, kLabelCount),
+          logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+        ),
+      );
+
+  Future<void> _saveHavuzTel() => _saveHavuz(
+        labelType: kLabelPoolTypeTel,
+        namePrefix: 'tel-etiket-havuz',
+        buildBytes: (pending) => buildTelLabelsPdfMultiPage(
+          pages: paginateLabelPoolItems(pending, kTelCount),
+          logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+        ),
+      );
+
+  Future<void> _saveHavuzGenis() => _saveHavuz(
+        labelType: kLabelPoolTypeGenis,
+        namePrefix: 'genis-etiket-havuz',
+        buildBytes: (pending) => buildWideLabelsPdfMultiPage(
+          pages: paginateLabelPoolItems(pending, kWideCount),
+        ),
+      );
+
+  Future<void> _saveHavuzUrun() => _saveHavuz(
+        labelType: kLabelPoolTypeUrun,
+        namePrefix: 'urun-etiket-havuz',
+        buildBytes: (pending) => buildProductLabelsPdf(
+          items: pending
+              .map((it) => ProductLabelItem(
+                    barcode: it.barcode,
+                    productName: it.productName,
+                    quantity: it.quantity,
+                  ))
+              .toList(),
+        ),
+      );
+
+  Widget _buildHavuz(Widget selector) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _HavuzPoolRow(
+            label: 'Raf',
+            labelType: kLabelPoolTypeRaf,
+            onSavePdf: _saveHavuzRaf,
+          ),
+          const SizedBox(height: AppSizes.space12),
+          _HavuzPoolRow(
+            label: 'Tel',
+            labelType: kLabelPoolTypeTel,
+            onSavePdf: _saveHavuzTel,
+          ),
+          const SizedBox(height: AppSizes.space12),
+          _HavuzPoolRow(
+            label: 'Geniş',
+            labelType: kLabelPoolTypeGenis,
+            onSavePdf: _saveHavuzGenis,
+          ),
+          const SizedBox(height: AppSizes.space12),
+          _HavuzPoolRow(
+            label: 'Ürün',
+            labelType: kLabelPoolTypeUrun,
+            onSavePdf: _saveHavuzUrun,
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mobile = context.isMobile;
@@ -1159,6 +1292,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       mobile: mobile,
       onChanged: (t) => setState(() => _tab = t),
     );
+
+    // ── Sekme: Havuz (Etiket Havuzu, bkz. 0032_label_pool.sql) ─────────────
+    if (_tab == _LabelTab.havuz) {
+      return _buildHavuz(selector);
+    }
 
     // ── Sekme 2: Kayıtlı Dosyalar ──────────────────────────────────────────
     if (_tab == _LabelTab.kayitli) {
@@ -3918,11 +4056,12 @@ class _ProductLabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Üst sekme seçici (KARAR v1.14 / v1.21 / v1.23): Yeni Etiket · Geniş Logo ·
-// Poster · Ürün Etiketi · Kayıtlı Dosyalar. Kasa sekme dili (SegmentedButton,
-// aktif sekme token dili). Responsive: mobilde kısa etiketler
-// ("Yeni"·"Geniş"·"Poster"·"Ürün"·"Dosyalar") + ikonsuz, yatay-kaydırılabilir
-// (SingleChildScrollView) → 5 segment dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
+// Üst sekme seçici (KARAR v1.14 / v1.21 / v1.23 / Etiket Havuzu): Havuz ·
+// Raf Etiketi · Tel Etiketi · Geniş Logo · Poster · Ürün Etiketi · Kayıtlı
+// Dosyalar. Kasa sekme dili (SegmentedButton, aktif sekme token dili).
+// Responsive: mobilde kısa etiketler ("Havuz"·"Raf"·"Tel"·"Geniş"·"Poster"·
+// "Ürün"·"Dosyalar") + ikonsuz, yatay-kaydırılabilir (SingleChildScrollView)
+// → 7 segment dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _TabSelector extends StatelessWidget {
@@ -3943,6 +4082,17 @@ class _TabSelector extends StatelessWidget {
       child: SegmentedButton<_LabelTab>(
         showSelectedIcon: false,
         segments: [
+          ButtonSegment(
+            value: _LabelTab.havuz,
+            label: const Text(
+              'Havuz',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile
+                ? null
+                : const Icon(Icons.inventory_2_outlined, size: 18),
+          ),
           ButtonSegment(
             value: _LabelTab.raf,
             label: Text(
@@ -4007,6 +4157,56 @@ class _TabSelector extends StatelessWidget {
         ],
         selected: {tab},
         onSelectionChanged: (s) => onChanged(s.first),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Havuz sekmesi satırı — tür adı + o türde bekleyen (kontrol=0) toplam adet
+// (`Raf(36)` gibi) + "PDF Kaydet". `labelPoolPendingProvider` autoDispose
+// olduğundan bu widget her Havuz sekmesine girişte TAZE veri çeker (başka
+// kullanıcının eklediği görünsün diye, bkz. labels_provider.dart notu).
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _HavuzPoolRow extends ConsumerWidget {
+  final String label;
+  final String labelType;
+  final VoidCallback onSavePdf;
+
+  const _HavuzPoolRow({
+    required this.label,
+    required this.labelType,
+    required this.onSavePdf,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pendingAsync = ref.watch(labelPoolPendingProvider(labelType));
+    final count = pendingAsync.value?.fold<int>(0, (sum, it) => sum + it.quantity);
+    final countLabel = pendingAsync.isLoading ? '…' : '${count ?? 0}';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space16,
+          vertical: AppSizes.space12,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$label ($countLabel)',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: onSavePdf,
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+              label: const Text('PDF Kaydet'),
+            ),
+          ],
+        ),
       ),
     );
   }

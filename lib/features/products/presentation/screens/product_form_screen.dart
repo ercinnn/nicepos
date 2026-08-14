@@ -17,6 +17,8 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../labels/application/labels_provider.dart';
+import '../../../labels/data/models/label_pool_item.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../application/product_sync_service.dart';
 import '../../application/products_provider.dart';
@@ -400,6 +402,32 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           onSelectionChanged: (s) => setState(() => _statusLetter = s.first),
         ),
       ],
+    );
+  }
+
+  /// "Etiket" — Durum kontrolünün yanında; Etiket Havuzu'na (Supabase
+  /// `label_pool_items`, bkz. 0032_label_pool.sql) bu ürünün etiketini
+  /// kuyruğa eklemek için `_LabelPoolDialog`'u açar. Barkod hanesi boşken
+  /// devre dışı — Havuz kalemleri barkod olmadan anlamsız (Code128 gerekir).
+  Widget _buildEtiketButton() {
+    final barcode = _barcodeCtrl.text.trim();
+    return OutlinedButton.icon(
+      onPressed: barcode.isEmpty ? null : _openLabelPoolDialog,
+      icon: const Icon(Icons.local_offer_outlined, size: 18),
+      label: const Text('Etiket'),
+    );
+  }
+
+  Future<void> _openLabelPoolDialog() async {
+    final barcode = _barcodeCtrl.text.trim();
+    if (barcode.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _LabelPoolDialog(
+        barcode: barcode,
+        productName: _nameCtrl.text.trim(),
+        price: _num(_price1Ctrl),
+      ),
     );
   }
 
@@ -1322,7 +1350,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        _buildDurumField(),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(child: _buildDurumField()),
+            const SizedBox(width: 12),
+            _buildEtiketButton(),
+          ],
+        ),
       ],
     );
   }
@@ -1404,10 +1439,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         _buildFirmaField(),
         const SizedBox(height: 12),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(child: _buildTarihField()),
             const SizedBox(width: 12),
             Expanded(child: _buildDurumField()),
+            const SizedBox(width: 12),
+            _buildEtiketButton(),
           ],
         ),
         const SizedBox(height: 12),
@@ -1558,6 +1596,142 @@ class _CenterFetchButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// "Etiket" butonuyla açılan diyalog — Raf/Tel/Geniş/Ürün alt alta, her
+/// birinin yanında onay kutusu + (işaretliyken açılan, varsayılan '1') adet
+/// hanesi. "Ekle" işaretli her tür için Etiket Havuzu'na (Supabase
+/// `label_pool_items`, bkz. 0032_label_pool.sql) bu ürünün [quantity] kadar
+/// kopyasını ekler — kullanıcılar/cihazlar arası PAYLAŞILAN kalıcı kuyruk
+/// (bkz. `labels_provider.dart` `labelPoolRepositoryProvider`). Offline kuyruk
+/// YOK (bilinçli basitleştirme) — bağlantı hatasında snackbar gösterir.
+class _LabelPoolDialog extends ConsumerStatefulWidget {
+  final String barcode;
+  final String productName;
+  final num price;
+
+  const _LabelPoolDialog({
+    required this.barcode,
+    required this.productName,
+    required this.price,
+  });
+
+  @override
+  ConsumerState<_LabelPoolDialog> createState() => _LabelPoolDialogState();
+}
+
+class _LabelPoolDialogState extends ConsumerState<_LabelPoolDialog> {
+  static const _labels = {
+    kLabelPoolTypeRaf: 'Raf',
+    kLabelPoolTypeTel: 'Tel',
+    kLabelPoolTypeGenis: 'Geniş',
+    kLabelPoolTypeUrun: 'Ürün',
+  };
+
+  final Map<String, bool> _checked = {
+    for (final key in _labels.keys) key: false,
+  };
+  final Map<String, TextEditingController> _qtyCtrls = {
+    for (final key in _labels.keys) key: TextEditingController(text: '1'),
+  };
+
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    for (final c in _qtyCtrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _confirm() async {
+    final selected = _labels.keys.where((k) => _checked[k] == true).toList();
+    if (selected.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final repo = ref.read(labelPoolRepositoryProvider);
+      for (final type in selected) {
+        final qty = int.tryParse(_qtyCtrls[type]!.text.trim()) ?? 0;
+        if (qty <= 0) continue;
+        await repo.add(
+          labelType: type,
+          barcode: widget.barcode,
+          productName: widget.productName,
+          price: type == kLabelPoolTypeUrun ? null : widget.price,
+          quantity: qty,
+        );
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Etiket Havuza eklendi.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Havuza eklenemedi: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Etiket Havuzuna Ekle'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: _labels.keys.map((key) {
+          final isChecked = _checked[key] == true;
+          return Row(
+            children: [
+              Checkbox(
+                value: isChecked,
+                onChanged: _saving
+                    ? null
+                    : (v) => setState(() => _checked[key] = v ?? false),
+              ),
+              Expanded(child: Text(_labels[key]!)),
+              if (isChecked)
+                SizedBox(
+                  width: 64,
+                  child: TextField(
+                    controller: _qtyCtrls[key],
+                    enabled: !_saving,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        }).toList(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Vazgeç'),
+        ),
+        ElevatedButton(
+          onPressed: _saving ? null : _confirm,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Ekle'),
+        ),
+      ],
     );
   }
 }
