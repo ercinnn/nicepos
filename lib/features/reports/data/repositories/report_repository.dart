@@ -3,6 +3,7 @@ import '../../../customers/data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
 import '../models/best_seller_record.dart';
 import '../models/daily_report_summary.dart';
+import '../models/product_analysis_record.dart';
 import '../models/product_sale_record.dart';
 
 class ReportRepository {
@@ -229,6 +230,25 @@ class ReportRepository {
         .toList();
     records.sort((a, b) => b.quantity.compareTo(a.quantity));
     return records;
+  }
+
+  /// Ürün Analizi (Raporlar 5. sekme). Seçili tarih aralığındaki dönemsel
+  /// ciro/adet + TÜM ZAMANLARIN son satış tarihini (aralıktan bağımsız)
+  /// birlikte döndürür — durağan gün eşiği istemci tarafında hesaplanır,
+  /// yeniden fetch GEREKTİRMEZ.
+  Future<List<ProductAnalysisRecord>> fetchProductAnalysis({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay = DateTime(end.year, end.month, end.day).add(const Duration(days: 1));
+    final rows = await _client.rpc('product_analysis', params: {
+      'p_start': startDay.toUtc().toIso8601String(),
+      'p_end': endDay.toUtc().toIso8601String(),
+    });
+    return (rows as List)
+        .map((r) => ProductAnalysisRecord.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
   }
 
   Future<List<ProductSaleRecord>> fetchProductSalesHistory(String productId) async {

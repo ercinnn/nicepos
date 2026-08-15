@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/models/best_seller_record.dart';
 import '../data/models/daily_report_summary.dart';
+import '../data/models/product_analysis_record.dart';
 import '../data/models/product_sale_record.dart';
 import '../data/repositories/report_repository.dart';
 
@@ -56,4 +57,14 @@ final productSalesHistoryProvider =
     FutureProvider.autoDispose.family<List<ProductSaleRecord>, String>(
   (ref, productId) =>
       ref.watch(reportRepositoryProvider).fetchProductSalesHistory(productId),
+);
+
+// ─── Ürün Analizi (Raporlar 5. sekme) ────────────────────────────────────────
+// Durağan gün eşiği sunucu parametresi DEĞİL — eşik değişince yeniden fetch
+// TETİKLENMEZ, yalnız istemci tarafında filtre/sıralama değişir.
+final productAnalysisProvider =
+    FutureProvider.autoDispose.family<List<ProductAnalysisRecord>, DateRangeParam>(
+  (ref, param) => ref
+      .watch(reportRepositoryProvider)
+      .fetchProductAnalysis(start: param.start, end: param.end),
 );
