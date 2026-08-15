@@ -796,16 +796,16 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   }
 
   /// Kayıt başarıyla bittikten sonra (tam başarı/yalnız-görsel-hata/offline-
-  /// kuyruk — üçü de bunu çağırır): YENİ ürün kaydıysa `/products`'a
-  /// GİTMEZ — formu boşaltıp (barkod dahil) barkod hanesine odaklanır,
-  /// kullanıcı ekrandan çıkmadan sıradaki ürünü kaydedebilsin diye. Mevcut
-  /// bir ürün düzenlemesiyse eski davranış (listeye dön) AYNEN korunur.
+  /// kuyruk — üçü de bunu çağırır): ARTIK HİÇBİR DURUMDA `/products`'a
+  /// GİTMEZ. YENİ ürün kaydıysa formu boşaltıp (barkod dahil) barkod
+  /// hanesine odaklanır, kullanıcı ekrandan çıkmadan sıradaki ürünü
+  /// kaydedebilsin diye. Mevcut bir ürün düzenlemesiyse form olduğu gibi
+  /// (kaydedilen değerlerle) ekranda kalır — kullanıcı listeye dönmeden
+  /// düzenlemeye devam edebilir, geri dönmek isterse geri okunu kullanır.
   void _afterSaveOrStay({required bool isNew}) {
     if (isNew) {
       setState(() => _resetProductFields(clearBarcode: true));
       _barcodeFocus.requestFocus();
-    } else {
-      context.go('/products');
     }
   }
 

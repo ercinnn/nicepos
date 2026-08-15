@@ -20,6 +20,7 @@ import '../../../products/application/products_provider.dart';
 import '../../../products/data/local/product_local_cache_dao.dart';
 import '../../../products/data/models/product.dart';
 import '../../../sales/application/barcode_cache.dart';
+import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../application/labels_provider.dart';
 import '../../data/label_pdf.dart';
 import '../../data/labels_storage_repository.dart';
@@ -3579,6 +3580,16 @@ class _ProductInputColumn extends StatelessWidget {
     this.shrinkWrap = false,
   });
 
+  /// Kamerayı açar; okunan barkodu alana yazar ve normal Enter akışıyla aynı
+  /// şekilde çözer (yalnız mobil/native — `openBarcodeScanner` web'de no-op).
+  Future<void> _scanBarcode(BuildContext context) async {
+    await openBarcodeScanner(context, (value) {
+      final trimmed = value.trim();
+      barcodeController.text = trimmed;
+      onBarcodeSubmitted(trimmed);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // Aktif hane = ince sol altın şerit + ink kenarlık (§5). Hata → danger.
@@ -3623,6 +3634,15 @@ class _ProductInputColumn extends StatelessWidget {
                 ),
               ),
             ),
+            // Kamera ile barkod tarama — yalnız mobil/native.
+            if (!kIsWeb && context.isMobile)
+              IconButton(
+                onPressed: () => _scanBarcode(context),
+                icon: const Icon(Icons.camera_alt_outlined, size: 20),
+                color: AppColors.primary,
+                tooltip: 'Barkod tara',
+                visualDensity: VisualDensity.compact,
+              ),
           ],
         ),
       ),
