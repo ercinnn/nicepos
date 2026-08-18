@@ -6,6 +6,7 @@ import 'companies_screen.dart';
 import 'liste_gir_screen.dart';
 import 'product_groups_screen.dart';
 import 'products_list_screen.dart';
+import 'stagnant_products_tab.dart';
 
 class ProductsTabsScreen extends StatelessWidget {
   const ProductsTabsScreen({super.key});
@@ -19,12 +20,14 @@ class ProductsTabsScreen extends StatelessWidget {
       const Tab(text: 'Ürünler'),
       const Tab(text: 'Ürün Grupları'),
       const Tab(text: 'Firmalar'),
+      const Tab(text: 'Durağan Ürünler'),
       if (isDesktop) const Tab(text: 'Liste Gir'),
     ];
     final views = [
       const ProductsListScreen(),
       const ProductGroupsScreen(),
       const CompaniesScreen(),
+      const StagnantProductsTab(),
       if (isDesktop) const ListeGirScreen(),
     ];
 
