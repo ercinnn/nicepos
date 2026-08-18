@@ -194,10 +194,18 @@ class LabelTelSheet extends _$LabelTelSheet {
 /// isteği — çok sayfalı YOK). Raf/Tel ile aynı hücre dilini paylaşır; mağaza
 /// logosu ayrı YÜKLENMEZ, Raf'ın kalıcı `LabelSheetState.logoDataUrl`'ü
 /// doğrudan yeniden kullanılır (Tel/Poster'ın zaten yaptığı gibi).
+/// [defaultPercent] — sayfa geneli "ana indirim %"; hane kendi yüzdesini
+/// GİRMEMİŞSE (`DiscountLabelSlot.discountPercent == null`) bu değer geçerli
+/// olur. Hane kendi yüzdesini girdiyse genel yüzde değişse bile o haneyi
+/// ETKİLEMEZ.
 class LabelDiscountSheetState {
   final List<DiscountLabelSlot?> slots;
+  final num defaultPercent;
 
-  const LabelDiscountSheetState({required this.slots});
+  const LabelDiscountSheetState({
+    required this.slots,
+    this.defaultPercent = 0,
+  });
 
   factory LabelDiscountSheetState.initial() => LabelDiscountSheetState(
         slots: List<DiscountLabelSlot?>.filled(kDiscountCount, null),
@@ -205,8 +213,14 @@ class LabelDiscountSheetState {
 
   int get filledCount => slots.where((s) => s != null).length;
 
-  LabelDiscountSheetState copyWith({List<DiscountLabelSlot?>? slots}) {
-    return LabelDiscountSheetState(slots: slots ?? this.slots);
+  LabelDiscountSheetState copyWith({
+    List<DiscountLabelSlot?>? slots,
+    num? defaultPercent,
+  }) {
+    return LabelDiscountSheetState(
+      slots: slots ?? this.slots,
+      defaultPercent: defaultPercent ?? this.defaultPercent,
+    );
   }
 }
 
@@ -226,13 +240,26 @@ class LabelDiscountSheet extends _$LabelDiscountSheet {
 
   /// Yalnız yüzdeyi günceller (barkod/ürün/fiyat AYNI kalır) — "İndirim %"
   /// hanesine yazarken her tuş vuruşunda ürünü yeniden çözmeye gerek yok.
-  void setDiscountPercent(int index, num percent) {
+  /// `null` → hane kendi yüzdesini TEMİZLER (genel yüzdeye geri döner).
+  void setDiscountPercent(int index, num? percent) {
     if (index < 0 || index >= kDiscountCount) return;
     final current = state.slots[index];
     if (current == null) return;
     final next = List<DiscountLabelSlot?>.from(state.slots);
-    next[index] = current.copyWith(discountPercent: percent);
+    next[index] = DiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      discountPercent: percent,
+      createdAt: current.createdAt,
+    );
     state = state.copyWith(slots: next);
+  }
+
+  /// Sayfa geneli "ana indirim %"sini ayarlar — kendi yüzdesi olmayan (`null`)
+  /// tüm haneleri etkiler.
+  void setDefaultPercent(num percent) {
+    state = state.copyWith(defaultPercent: percent);
   }
 
   void clearSlot(int index) {

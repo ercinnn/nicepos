@@ -98,6 +98,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   late final List<FocusNode> _discountBarcodeFocusNodes;
   final Set<int> _discountErrors = {};
   int _discountActiveIndex = 0;
+  // Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneleri
+  // etkiler (bkz. labels_provider.dart LabelDiscountSheetState.defaultPercent).
+  late final TextEditingController _discountDefaultPercentController;
   Uint8List? _niceLogoBytes; // sabit marka logosu (yazdırma için bir kez okunur)
 
   // Poster sekmesi (KARAR v1.23 / v1.24) — barkod VEYA ürün adı ile serbest
@@ -165,6 +168,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       });
       return node;
     });
+    // keepAlive provider'dan mevcut ana yüzdeyi geri yükle (sekme değişince korunur).
+    final initialDefaultPercent =
+        ref.read(labelDiscountSheetProvider).defaultPercent;
+    _discountDefaultPercentController = TextEditingController(
+      text: initialDefaultPercent == 0 ? '' : initialDefaultPercent.toString(),
+    );
     _posterBarcodeController = TextEditingController();
     _posterBarcodeFocus = FocusNode();
     _posterBarcodeFocus.addListener(() {
@@ -231,6 +240,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     for (final n in _discountBarcodeFocusNodes) {
       n.dispose();
     }
+    _discountDefaultPercentController.dispose();
     _posterBarcodeController.dispose();
     _posterBarcodeFocus.dispose();
     _posterTitleController.dispose();
@@ -927,11 +937,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     final code = (product.barcode != null && product.barcode!.isNotEmpty)
         ? product.barcode!
         : query;
-    // Mevcut yüzde varsa korunur (barkod tekrar okutulursa fiyat/ad tazelenir,
-    // kullanıcının zaten girdiği % sıfırlanmaz); yoksa 0'dan başlar.
+    // Hanenin kendi yüzdesi (varsa) korunur (barkod tekrar okutulursa fiyat/ad
+    // tazelenir, kullanıcının zaten girdiği % sıfırlanmaz); yoksa `null`
+    // kalır → sayfa geneli varsayılan yüzde geçerli olur.
     final existingPercent =
-        ref.read(labelDiscountSheetProvider).slots[index]?.discountPercent ??
-            0;
+        ref.read(labelDiscountSheetProvider).slots[index]?.discountPercent;
     notifier.setSlot(
       index,
       DiscountLabelSlot(
@@ -952,10 +962,24 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     }
   }
 
+  // Hane kendi yüzdesini girer/temizler. Boş bırakılırsa `null`'a döner —
+  // sayfa geneli varsayılan yüzde (bkz. `_onDiscountDefaultPercentChanged`)
+  // bu hanede geçerli olur.
   void _onDiscountPercentChanged(int index, String raw) {
+    if (raw.trim().isEmpty) {
+      ref.read(labelDiscountSheetProvider.notifier).setDiscountPercent(index, null);
+      return;
+    }
     final v = num.tryParse(raw.replaceAll(',', '.'));
     if (v == null) return;
     ref.read(labelDiscountSheetProvider.notifier).setDiscountPercent(index, v);
+  }
+
+  // Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneleri
+  // etkiler (bkz. `DiscountLabelSlot.effectivePercent`).
+  void _onDiscountDefaultPercentChanged(String raw) {
+    final v = num.tryParse(raw.replaceAll(',', '.')) ?? 0;
+    ref.read(labelDiscountSheetProvider.notifier).setDefaultPercent(v);
   }
 
   Future<LabelScanFeedback> _handleDiscountCameraScan(String raw) async {
@@ -978,13 +1002,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     final code = (product.barcode != null && product.barcode!.isNotEmpty)
         ? product.barcode!
         : query;
+    // Kamera taramasında yüzde `null` bırakılır — sayfa geneli varsayılan
+    // yüzde geçerli olur (elle girişle aynı desen).
     ref.read(labelDiscountSheetProvider.notifier).setSlot(
           index,
           DiscountLabelSlot(
             barcode: code,
             productName: product.name,
             oldPrice: product.price1,
-            discountPercent: 0,
+            discountPercent: null,
             createdAt: DateTime.now(),
           ),
         );
@@ -1047,7 +1073,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     final bytes = await _loadNiceLogoBytes();
     if (!mounted) return;
     final logoDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
-    printDiscountLabelsA4(slots: state.slots, logoDataUrl: logoDataUrl);
+    printDiscountLabelsA4(
+      slots: state.slots,
+      logoDataUrl: logoDataUrl,
+      defaultPercent: state.defaultPercent,
+    );
   }
 
   Future<void> _saveDiscountPdf() async {
@@ -1067,7 +1097,10 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final bytes = await buildDiscountLabelsPdf(slots: state.slots);
+      final bytes = await buildDiscountLabelsPdf(
+        slots: state.slots,
+        defaultPercent: state.defaultPercent,
+      );
       final saved =
           await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
       ref.invalidate(savedLabelFilesProvider);
@@ -1914,8 +1947,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           onSavePdf: _saveDiscountPdf,
           onCameraScan: kIsWeb ? null : _startDiscountCameraScan,
           subtitle:
-              'Barkod okutun, indirim yüzdesini girin; her hane eski/yeni '
-              'fiyat + indirim rozetiyle A4 İndirim Etiketine dönüşür.',
+              'Barkod okutun (veya kamerayla tarayın); ana indirim %\'sini '
+              'girin — hane boş bırakılırsa bu değer geçerli olur, hane '
+              'kendi %\'sini girerse yalnız o hane için geçerli olur.',
         ),
         const SizedBox(height: AppSizes.space16),
         Expanded(
@@ -1931,6 +1965,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                   focusNodes: _discountBarcodeFocusNodes,
                   errors: _discountErrors,
                   activeIndex: _discountActiveIndex,
+                  defaultPercentController: _discountDefaultPercentController,
+                  onDefaultPercentChanged: _onDiscountDefaultPercentChanged,
                   onBarcodeSubmitted: _onDiscountBarcodeSubmitted,
                   onPercentChanged: _onDiscountPercentChanged,
                   onClear: _clearDiscountSlot,
@@ -1972,6 +2008,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
             compact: true,
           ),
           const SizedBox(height: AppSizes.space16),
+          _DiscountDefaultPercentField(
+            controller: _discountDefaultPercentController,
+            onChanged: _onDiscountDefaultPercentChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
           ...List.generate(kDiscountCount, (i) {
             return _DiscountSlotInputRow(
               index: i,
@@ -2614,6 +2655,8 @@ class _DiscountInputColumn extends StatelessWidget {
   final List<FocusNode> focusNodes;
   final Set<int> errors;
   final int activeIndex;
+  final TextEditingController defaultPercentController;
+  final ValueChanged<String> onDefaultPercentChanged;
   final Future<void> Function(int, String) onBarcodeSubmitted;
   final void Function(int, String) onPercentChanged;
   final void Function(int) onClear;
@@ -2624,6 +2667,8 @@ class _DiscountInputColumn extends StatelessWidget {
     required this.focusNodes,
     required this.errors,
     required this.activeIndex,
+    required this.defaultPercentController,
+    required this.onDefaultPercentChanged,
     required this.onBarcodeSubmitted,
     required this.onPercentChanged,
     required this.onClear,
@@ -2642,6 +2687,11 @@ class _DiscountInputColumn extends StatelessWidget {
                 left: AppSizes.space4, bottom: AppSizes.space8),
             child: _SectionLabel('Barkod + İndirim %'),
           ),
+          _DiscountDefaultPercentField(
+            controller: defaultPercentController,
+            onChanged: onDefaultPercentChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
           Expanded(
             child: ListView.builder(
               itemCount: kDiscountCount,
@@ -2658,6 +2708,70 @@ class _DiscountInputColumn extends StatelessWidget {
                   onClear: () => onClear(i),
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneler bu
+// değeri kullanır (bkz. `DiscountLabelSlot.effectivePercent`). Etiket
+// haneleri listesinin EN ÜSTÜNDE, ayırt edici altın vurgusuyla gösterilir.
+class _DiscountDefaultPercentField extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _DiscountDefaultPercentField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.goldBorder),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.percent, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              'Ana İndirim % (hane boşsa geçerli)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.end,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
+              ],
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: '%',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 4),
+              ),
+              onChanged: onChanged,
             ),
           ),
         ],
@@ -2693,8 +2807,8 @@ class _DiscountSlotInputRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final slot = ref
-        .watch(labelDiscountSheetProvider.select((s) => s.slots[index]));
+    final (slot, defaultPercent) = ref.watch(labelDiscountSheetProvider
+        .select((s) => (s.slots[index], s.defaultPercent)));
 
     final Color borderColor = isError
         ? AppColors.danger
@@ -2789,8 +2903,9 @@ class _DiscountSlotInputRow extends ConsumerWidget {
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Text(
                           '${slot.productName}  ·  ${formatNumber(slot.oldPrice)} TL '
-                          '→ %${slot.discountPercent.round()} → '
-                          '${formatNumber(slot.newPrice)} TL',
+                          '→ %${slot.effectivePercent(defaultPercent).round()}'
+                          '${slot.discountPercent == null ? ' (genel)' : ''} → '
+                          '${formatNumber(slot.newPrice(defaultPercent))} TL',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -2913,7 +3028,10 @@ class _DiscountPreviewPane extends ConsumerWidget {
       child: Center(
         child: FittedBox(
           fit: BoxFit.contain,
-          child: _DiscountA4Canvas(slots: state.slots),
+          child: _DiscountA4Canvas(
+            slots: state.slots,
+            defaultPercent: state.defaultPercent,
+          ),
         ),
       ),
     );
@@ -3113,8 +3231,9 @@ class _LabelCell extends StatelessWidget {
 // YOK). `_A4Canvas`'ın DiscountLabelSlot'lu, sabit-ızgaralı kopyası.
 class _DiscountA4Canvas extends StatelessWidget {
   final List<DiscountLabelSlot?> slots;
+  final num defaultPercent;
 
-  const _DiscountA4Canvas({required this.slots});
+  const _DiscountA4Canvas({required this.slots, required this.defaultPercent});
 
   @override
   Widget build(BuildContext context) {
@@ -3130,7 +3249,12 @@ class _DiscountA4Canvas extends StatelessWidget {
             child: Row(
               children: List.generate(kDiscountCols, (c) {
                 final idx = r * kDiscountCols + c;
-                return Expanded(child: _DiscountLabelCell(slot: slots[idx]));
+                return Expanded(
+                  child: _DiscountLabelCell(
+                    slot: slots[idx],
+                    defaultPercent: defaultPercent,
+                  ),
+                );
               }),
             ),
           );
@@ -3154,8 +3278,9 @@ String _discountDateLabelUi(DateTime d) =>
 // hero) + Code128 + alt satır (barkod no + tarih YYAAGG).
 class _DiscountLabelCell extends StatelessWidget {
   final DiscountLabelSlot? slot;
+  final num defaultPercent;
 
-  const _DiscountLabelCell({required this.slot});
+  const _DiscountLabelCell({required this.slot, required this.defaultPercent});
 
   @override
   Widget build(BuildContext context) {
@@ -3224,7 +3349,7 @@ class _DiscountLabelCell extends StatelessWidget {
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: Text(
-                      '%${s.discountPercent.round()} İNDİRİM',
+                      '%${s.effectivePercent(defaultPercent).round()} İNDİRİM',
                       style: const TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
@@ -3289,7 +3414,7 @@ class _DiscountLabelCell extends StatelessWidget {
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          '${formatNumber(s.newPrice)} TL',
+                          '${formatNumber(s.newPrice(defaultPercent))} TL',
                           style: const TextStyle(
                             fontSize: 76,
                             fontWeight: FontWeight.w900,
@@ -3303,20 +3428,31 @@ class _DiscountLabelCell extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Barkod çizgileri (Code128)
+                // Barkod çizgileri (Code128) — bölge (Expanded) mevcut merkezde
+                // KALIR (kullanıcı isteği); asıl barkod grafiği bu bölgenin
+                // yalnız ORTA 1/3'ünü kaplar (üst/alt eşit boş 1/3 ile
+                // çevrili) → toplam yükseklik mevcudun 1/3'ü, konum sabit.
                 Expanded(
-                  child: Center(
-                    child: FractionallySizedBox(
-                      widthFactor: 0.8,
-                      child: BarcodeWidget(
-                        barcode: bc.Barcode.code128(),
-                        data: s.barcode,
-                        drawText: false,
-                        color: Colors.black,
-                        errorBuilder: (context, error) =>
-                            const SizedBox.shrink(),
+                  child: Column(
+                    children: [
+                      const Expanded(child: SizedBox.shrink()),
+                      Expanded(
+                        child: Center(
+                          child: FractionallySizedBox(
+                            widthFactor: 0.8,
+                            child: BarcodeWidget(
+                              barcode: bc.Barcode.code128(),
+                              data: s.barcode,
+                              drawText: false,
+                              color: Colors.black,
+                              errorBuilder: (context, error) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const Expanded(child: SizedBox.shrink()),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 4),

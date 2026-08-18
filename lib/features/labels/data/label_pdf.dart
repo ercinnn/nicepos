@@ -528,16 +528,20 @@ String _discountDateLabel(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}';
 
 /// Dolu/boş 4 haneyi A4 dikey 2×2 indirim etiketi PDF'ine dönüştürür.
+/// [defaultPercent] sayfa geneli "ana indirim %"si — hane kendi yüzdesini
+/// girmemişse (`discountPercent == null`) bu değer kullanılır.
 Future<Uint8List> buildDiscountLabelsPdf({
   required List<DiscountLabelSlot?> slots,
+  required num defaultPercent,
 }) =>
-    buildDiscountLabelsPdfMultiPage(pages: [slots]);
+    buildDiscountLabelsPdfMultiPage(pages: [slots], defaultPercent: defaultPercent);
 
 /// Çok-sayfalı sürüm — API tutarlılığı için diğer sekmelerle aynı ikili yapı
 /// korunur (kullanıcı isteği tek sayfa 4 etiket; ileride birikim istenirse bu
 /// dosya değişmeden `pages` genişletilebilir).
 Future<Uint8List> buildDiscountLabelsPdfMultiPage({
   required List<List<DiscountLabelSlot?>> pages,
+  required num defaultPercent,
 }) async {
   pw.ThemeData theme;
   try {
@@ -565,7 +569,8 @@ Future<Uint8List> buildDiscountLabelsPdfMultiPage({
                   children: List.generate(_kDiscountCols, (c) {
                     final idx = r * _kDiscountCols + c;
                     final slot = idx < slots.length ? slots[idx] : null;
-                    return pw.Expanded(child: _discountCell(slot, logoImage));
+                    return pw.Expanded(
+                        child: _discountCell(slot, logoImage, defaultPercent));
                   }),
                 ),
               );
@@ -580,7 +585,8 @@ Future<Uint8List> buildDiscountLabelsPdfMultiPage({
 }
 
 // Tek indirim etiketi hücresi. Boş hane → yalnız ince kesim kılavuzu.
-pw.Widget _discountCell(DiscountLabelSlot? slot, pw.MemoryImage logoImage) {
+pw.Widget _discountCell(
+    DiscountLabelSlot? slot, pw.MemoryImage logoImage, num defaultPercent) {
   if (slot == null) {
     return pw.Container(
       decoration: pw.BoxDecoration(
@@ -641,7 +647,7 @@ pw.Widget _discountCell(DiscountLabelSlot? slot, pw.MemoryImage logoImage) {
           ),
           alignment: pw.Alignment.center,
           child: pw.Text(
-            '%${slot.discountPercent.round()} İNDİRİM',
+            '%${slot.effectivePercent(defaultPercent).round()} İNDİRİM',
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(
               fontSize: 22,
@@ -696,7 +702,7 @@ pw.Widget _discountCell(DiscountLabelSlot? slot, pw.MemoryImage logoImage) {
               pw.FittedBox(
                 fit: pw.BoxFit.scaleDown,
                 child: pw.Text(
-                  '${formatNumber(slot.newPrice)} TL',
+                  '${formatNumber(slot.newPrice(defaultPercent))} TL',
                   style: pw.TextStyle(
                     fontSize: 52,
                     fontWeight: pw.FontWeight.bold,
@@ -709,24 +715,35 @@ pw.Widget _discountCell(DiscountLabelSlot? slot, pw.MemoryImage logoImage) {
           ),
         ),
         pw.SizedBox(height: 6),
-        // Barkod çizgileri (Code128; geçersizse boş bırak).
+        // Barkod çizgileri (Code128; geçersizse boş bırak). Bölge (Expanded)
+        // mevcut merkezde KALIR (kullanıcı isteği); asıl barkod grafiği bu
+        // bölgenin yalnız ORTA 1/3'ünü kaplar (üst/alt eşit boş 1/3 ile
+        // çevrili) → toplam yükseklik mevcudun 1/3'ü, konum sabit.
         pw.Expanded(
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
+          child: pw.Column(
             children: [
-              pw.Spacer(flex: 1),
+              pw.Expanded(child: pw.SizedBox()),
               pw.Expanded(
-                flex: 8,
-                child: bc.Barcode.code128().isValid(slot.barcode)
-                    ? pw.BarcodeWidget(
-                        barcode: bc.Barcode.code128(),
-                        data: slot.barcode,
-                        drawText: false,
-                        color: PdfColors.black,
-                      )
-                    : pw.SizedBox(),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Spacer(flex: 1),
+                    pw.Expanded(
+                      flex: 8,
+                      child: bc.Barcode.code128().isValid(slot.barcode)
+                          ? pw.BarcodeWidget(
+                              barcode: bc.Barcode.code128(),
+                              data: slot.barcode,
+                              drawText: false,
+                              color: PdfColors.black,
+                            )
+                          : pw.SizedBox(),
+                    ),
+                    pw.Spacer(flex: 1),
+                  ],
+                ),
               ),
-              pw.Spacer(flex: 1),
+              pw.Expanded(child: pw.SizedBox()),
             ],
           ),
         ),

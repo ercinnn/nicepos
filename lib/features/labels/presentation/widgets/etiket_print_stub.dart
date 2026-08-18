@@ -52,6 +52,7 @@ void printProductLabelsA4({
 void printDiscountLabelsA4({
   required List<DiscountLabelSlot?> slots,
   required String logoDataUrl,
+  required num defaultPercent,
 }) {
   // No-op
 }

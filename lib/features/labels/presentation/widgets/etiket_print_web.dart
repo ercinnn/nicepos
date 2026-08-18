@@ -116,8 +116,13 @@ void printProductLabelsA4({
 void printDiscountLabelsA4({
   required List<DiscountLabelSlot?> slots,
   required String logoDataUrl,
+  required num defaultPercent,
 }) {
-  final html = _buildDiscountHtml(slots: slots, logoDataUrl: logoDataUrl);
+  final html = _buildDiscountHtml(
+    slots: slots,
+    logoDataUrl: logoDataUrl,
+    defaultPercent: defaultPercent,
+  );
 
   final blob = web.Blob(
     [html.toJS].toJS,
@@ -883,7 +888,8 @@ String _discountDateLabelWeb(DateTime d) =>
     '${d.month.toString().padLeft(2, '0')}'
     '${d.day.toString().padLeft(2, '0')}';
 
-String _discountCellHtml(DiscountLabelSlot? slot, String logoDataUrl) {
+String _discountCellHtml(
+    DiscountLabelSlot? slot, String logoDataUrl, num defaultPercent) {
   if (slot == null) {
     return '<div class="dscell empty"></div>';
   }
@@ -898,14 +904,14 @@ String _discountCellHtml(DiscountLabelSlot? slot, String logoDataUrl) {
       <div class="ds-tagline">EV GEREÇLERİ &amp; HIRDAVAT</div>
       <div class="ds-rule"></div>
       <div class="ds-pname">${_esc(slot.productName)}</div>
-      <div class="ds-badge">%${slot.discountPercent.round()} İNDİRİM</div>
+      <div class="ds-badge">%${slot.effectivePercent(defaultPercent).round()} İNDİRİM</div>
       <div class="ds-old-row">
         <span class="ds-old-label">ESKİ FİYAT:&nbsp;</span>
         <span class="ds-old">${_esc(formatNumber(slot.oldPrice))} TL</span>
       </div>
       <div class="ds-new-box">
         <div class="ds-new-label">YENİ FİYAT</div>
-        <div class="ds-new">${_esc(formatNumber(slot.newPrice))} TL</div>
+        <div class="ds-new">${_esc(formatNumber(slot.newPrice(defaultPercent)))} TL</div>
       </div>
       $bcHtml
       <div class="ds-bottom">
@@ -918,10 +924,11 @@ String _discountCellHtml(DiscountLabelSlot? slot, String logoDataUrl) {
 String _buildDiscountHtml({
   required List<DiscountLabelSlot?> slots,
   required String logoDataUrl,
+  required num defaultPercent,
 }) {
   final cells = StringBuffer();
   for (final slot in slots) {
-    cells.writeln(_discountCellHtml(slot, logoDataUrl));
+    cells.writeln(_discountCellHtml(slot, logoDataUrl, defaultPercent));
   }
 
   // A4 portrait 210×297mm, kenar 10mm → yazdırılabilir 190×277mm.
@@ -1047,12 +1054,18 @@ String _buildDiscountHtml({
     font-variant-numeric: tabular-nums;
   }
   .ds-bc {
+    /* Bölge mevcut merkezde KALIR (flex:1 1 auto değişmedi); asıl barkod
+       grafiği yalnız bu bölgenin 1/3 yüksekliğini kaplar, dikey ortalı
+       (align-items:center) — kullanıcı isteği, konum sabit. */
     flex: 1 1 auto;
     min-height: 0;
     width: 75%;
     margin: 1.5mm auto 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  .ds-bc svg { width: 100%; height: 100%; display: block; }
+  .ds-bc svg { width: 100%; height: 33%; display: block; }
   .ds-bottom {
     display: flex;
     align-items: flex-end;
