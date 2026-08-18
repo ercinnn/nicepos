@@ -297,6 +297,26 @@ final labelTelSheetProvider =
     );
 
 typedef _$LabelTelSheet = Notifier<LabelTelSheetState>;
+String _$labelDiscountSheetHash() =>
+    r'cffe8da7e7e80be0e5ec411a9e5db421e7d7d456';
+
+/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4
+/// hane korunur (diğer etiket provider'larıyla KARIŞMAZ).
+///
+/// Copied from [LabelDiscountSheet].
+@ProviderFor(LabelDiscountSheet)
+final labelDiscountSheetProvider =
+    NotifierProvider<LabelDiscountSheet, LabelDiscountSheetState>.internal(
+      LabelDiscountSheet.new,
+      name: r'labelDiscountSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelDiscountSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelDiscountSheet = Notifier<LabelDiscountSheetState>;
 String _$labelPosterSheetHash() => r'4b298861d1dfb0c92c553a95aa5c189c0eb0685d';
 
 /// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste/

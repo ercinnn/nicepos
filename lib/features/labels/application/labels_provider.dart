@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../data/label_pool_repository.dart';
 import '../data/labels_storage_repository.dart';
+import '../data/models/discount_label_slot.dart';
 import '../data/models/label_pool_item.dart';
 import '../data/models/label_slot.dart';
 import '../data/models/product_label_item.dart';
@@ -184,6 +185,66 @@ class LabelTelSheet extends _$LabelTelSheet {
 
   void clearAll() {
     state = state.copyWith(slots: List<LabelSlot?>.filled(kTelCount, null));
+  }
+}
+
+// ─── İndirim Etiketi sayfası ──────────────────────────────────────────────────
+
+/// İndirim Etiketi sayfasının durumu: 4 hanelik SABİT liste (2×2 A4, kullanıcı
+/// isteği — çok sayfalı YOK). Raf/Tel ile aynı hücre dilini paylaşır; mağaza
+/// logosu ayrı YÜKLENMEZ, Raf'ın kalıcı `LabelSheetState.logoDataUrl`'ü
+/// doğrudan yeniden kullanılır (Tel/Poster'ın zaten yaptığı gibi).
+class LabelDiscountSheetState {
+  final List<DiscountLabelSlot?> slots;
+
+  const LabelDiscountSheetState({required this.slots});
+
+  factory LabelDiscountSheetState.initial() => LabelDiscountSheetState(
+        slots: List<DiscountLabelSlot?>.filled(kDiscountCount, null),
+      );
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  LabelDiscountSheetState copyWith({List<DiscountLabelSlot?>? slots}) {
+    return LabelDiscountSheetState(slots: slots ?? this.slots);
+  }
+}
+
+/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4
+/// hane korunur (diğer etiket provider'larıyla KARIŞMAZ).
+@Riverpod(keepAlive: true)
+class LabelDiscountSheet extends _$LabelDiscountSheet {
+  @override
+  LabelDiscountSheetState build() => LabelDiscountSheetState.initial();
+
+  void setSlot(int index, DiscountLabelSlot slot) {
+    if (index < 0 || index >= kDiscountCount) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots);
+    next[index] = slot;
+    state = state.copyWith(slots: next);
+  }
+
+  /// Yalnız yüzdeyi günceller (barkod/ürün/fiyat AYNI kalır) — "İndirim %"
+  /// hanesine yazarken her tuş vuruşunda ürünü yeniden çözmeye gerek yok.
+  void setDiscountPercent(int index, num percent) {
+    if (index < 0 || index >= kDiscountCount) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots);
+    next[index] = current.copyWith(discountPercent: percent);
+    state = state.copyWith(slots: next);
+  }
+
+  void clearSlot(int index) {
+    if (index < 0 || index >= kDiscountCount) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots);
+    next[index] = null;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(
+        slots: List<DiscountLabelSlot?>.filled(kDiscountCount, null));
   }
 }
 

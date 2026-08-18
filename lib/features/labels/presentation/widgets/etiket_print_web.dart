@@ -4,6 +4,7 @@ import 'package:barcode/barcode.dart';
 import 'package:web/web.dart' as web;
 
 import '../../../../core/utils/formatters.dart';
+import '../../data/models/discount_label_slot.dart';
 import '../../data/models/label_slot.dart';
 import '../../data/models/product_label_item.dart';
 
@@ -96,6 +97,25 @@ void printProductLabelsA4({
   required List<ProductLabelItem> items,
 }) {
   final html = _buildProductHtml(items: items);
+
+  final blob = web.Blob(
+    [html.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/html'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.window.open(url, '_blank');
+}
+
+/// Dolu İndirim Etiketlerini A4 dikey (2 sütun × 2 satır = 4) olarak yeni bir
+/// tarayıcı penceresinde açar ve otomatik yazdırma diyaloğunu tetikler. Eski
+/// fiyat üzeri çizili, yeni (indirimli) fiyat hero, sağ üst köşede indirim
+/// yüzdesi rozeti. Mağaza logosu Raf'ın kalıcı logoDataUrl'i çağıran taraftan
+/// geçirilir.
+void printDiscountLabelsA4({
+  required List<DiscountLabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  final html = _buildDiscountHtml(slots: slots, logoDataUrl: logoDataUrl);
 
   final blob = web.Blob(
     [html.toJS].toJS,
@@ -845,6 +865,177 @@ String _buildProductHtml({
 </head>
 <body onload="window.focus(); window.print();">
   $sheets
+</body>
+</html>''';
+}
+
+// ─── İndirim Etiketi — 2 sütun × 2 satır = 4 etiket ───────────────────────────
+// Eski fiyat üzeri çizili + yeni (indirimli) fiyat hero + sağ üst köşede
+// indirim yüzdesi rozeti. Kalanı (logo/ad/barkod/alt satır) Raf/Tel'in
+// `_cellHtml` diliyle aynı.
+
+String _discountCellHtml(DiscountLabelSlot? slot, String? logoDataUrl) {
+  if (slot == null) {
+    return '<div class="dscell empty"></div>';
+  }
+
+  final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
+      ? '<img class="ds-logo-img" src="${_esc(logoDataUrl)}" alt="logo">'
+      : _storeIconSvg;
+
+  final bc = _barcodeSvg(slot.barcode);
+  final bcHtml = bc.isEmpty ? '' : '<div class="ds-bc">$bc</div>';
+  final bcNo = _esc(slot.barcode);
+
+  return '''
+    <div class="dscell">
+      <div class="ds-badge">%${slot.discountPercent.round()}</div>
+      <div class="ds-top">
+        <div class="ds-logo">$logoHtml</div>
+        <div class="ds-prices">
+          <div class="ds-old">${_esc(formatNumber(slot.oldPrice))} TL</div>
+          <div class="ds-new">${_esc(formatNumber(slot.newPrice))} TL</div>
+        </div>
+      </div>
+      <div class="ds-pname">${_esc(slot.productName)}</div>
+      $bcHtml
+      <div class="ds-bottom">
+        <span class="ds-bcno">$bcNo</span>
+        <span class="ds-cdate">${_esc(formatShortDate(slot.createdAt))}</span>
+      </div>
+    </div>''';
+}
+
+String _buildDiscountHtml({
+  required List<DiscountLabelSlot?> slots,
+  String? logoDataUrl,
+}) {
+  final cells = StringBuffer();
+  for (final slot in slots) {
+    cells.writeln(_discountCellHtml(slot, logoDataUrl));
+  }
+
+  // A4 portrait 210×297mm, kenar 10mm → yazdırılabilir 190×277mm.
+  // 2 sütun → 95mm, 2 satır → ~138.5mm hücre (4 etiket → ferah, profesyonel).
+  return '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>İndirim Etiketleri</title>
+<style>
+  @page { size: A4 portrait; margin: 10mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    width: 190mm;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 138.5mm;
+    gap: 0;
+  }
+  .dscell {
+    position: relative;
+    border: 0.2mm solid #b8b8b8;
+    padding: 3mm 4mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .dscell.empty { border-color: #e0e0e0; }
+  .ds-badge {
+    position: absolute;
+    right: 3mm;
+    top: 3mm;
+    width: 13mm;
+    height: 13mm;
+    border-radius: 50%;
+    background: #C0392B;
+    color: #fff;
+    font-weight: 800;
+    font-size: 13pt;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ds-top {
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    flex: 0 0 auto;
+  }
+  .ds-logo {
+    width: 24mm;
+    height: 16mm;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ds-logo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .ds-prices {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .ds-old {
+    font-size: 15pt;
+    color: #6b7280;
+    text-decoration: line-through;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-new {
+    font-weight: 800;
+    font-size: 34pt;
+    line-height: 1.1;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-pname {
+    font-size: 13pt;
+    font-weight: 700;
+    line-height: 1.15;
+    text-transform: uppercase;
+    text-align: center;
+    flex: 0 0 auto;
+    margin-top: 2mm;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ds-bc {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 75%;
+    margin: 0 auto;
+  }
+  .ds-bc svg { width: 100%; height: 100%; display: block; }
+  .ds-bottom {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-bcno { font-size: 15pt; letter-spacing: 0.5px; text-align: center; }
+  .ds-cdate { font-size: 7pt; color: #444; }
+</style>
+</head>
+<body onload="window.focus(); window.print();">
+  <div class="sheet">
+    $cells
+  </div>
 </body>
 </html>''';
 }

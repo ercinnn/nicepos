@@ -1,3 +1,4 @@
+import '../../data/models/discount_label_slot.dart';
 import '../../data/models/label_slot.dart';
 import '../../data/models/product_label_item.dart';
 
@@ -43,6 +44,14 @@ void printPosterA4({
 /// (KARAR v1.21).
 void printProductLabelsA4({
   required List<ProductLabelItem> items,
+}) {
+  // No-op
+}
+
+/// İndirim Etiketi (2×2 = 4/sayfa) yazdırma — web dışı platformlarda no-op.
+void printDiscountLabelsA4({
+  required List<DiscountLabelSlot?> slots,
+  String? logoDataUrl,
 }) {
   // No-op
 }
