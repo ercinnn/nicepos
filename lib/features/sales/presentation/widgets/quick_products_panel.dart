@@ -11,7 +11,12 @@ import '../../../../features/products/data/models/product_group.dart';
 import '../../application/sales_cart_notifier.dart';
 
 class QuickProductsPanel extends ConsumerStatefulWidget {
-  const QuickProductsPanel({super.key});
+  /// Bir ürün sepete eklendiğinde çağrılır (opsiyonel) — diyalog içinde
+  /// kullanıldığında diyaloğu kapatmak için kullanılır (bkz.
+  /// quick_products_dialog.dart). Masaüstündeki inline kullanımda verilmez.
+  final VoidCallback? onProductSelected;
+
+  const QuickProductsPanel({super.key, this.onProductSelected});
 
   @override
   ConsumerState<QuickProductsPanel> createState() => _QuickProductsPanelState();
@@ -73,7 +78,10 @@ class _QuickProductsPanelState extends ConsumerState<QuickProductsPanel> {
             Expanded(
               child: _selectedGroup == null
                   ? const SizedBox()
-                  : _ProductList(groupId: _selectedGroup!.id),
+                  : _ProductList(
+                      groupId: _selectedGroup!.id,
+                      onProductSelected: widget.onProductSelected,
+                    ),
             ),
           ],
         );
@@ -123,7 +131,8 @@ class _GroupChip extends StatelessWidget {
 
 class _ProductList extends ConsumerWidget {
   final String groupId;
-  const _ProductList({required this.groupId});
+  final VoidCallback? onProductSelected;
+  const _ProductList({required this.groupId, this.onProductSelected});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -148,6 +157,7 @@ class _ProductList extends ConsumerWidget {
               onTap: () {
                 HapticFeedback.lightImpact();
                 ref.read(salesCartProvider.notifier).addProduct(product);
+                onProductSelected?.call();
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(

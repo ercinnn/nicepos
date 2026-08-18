@@ -23,6 +23,7 @@ import '../widgets/cart_table.dart';
 import '../widgets/customer_tabs.dart';
 import '../widgets/payment_panel.dart';
 import '../widgets/product_search_dialog.dart';
+import '../widgets/quick_products_dialog.dart';
 import '../widgets/quick_products_panel.dart';
 
 /// Masaüstü sağ sütunda Hızlı Ürünler paneline garanti edilen en az yükseklik
@@ -337,8 +338,6 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
           ),
         ],
         const SizedBox(height: 8),
-        const CustomerTabs(),
-        const SizedBox(height: 8),
         // Sepet tablosu — tam genişlik
         Expanded(
           child: Card(
@@ -349,29 +348,20 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
             ),
           ),
         ),
-        // Hızlı ürünler — sabit yükseklik
+        // Ödeme satırının bir üstü: solda Müşteri Seç, sağda Hızlı Ürünler
+        // (diyalog olarak açılır, bkz. quick_products_dialog.dart)
         const SizedBox(height: 12),
         Row(
           children: [
-            // Altın ekonomisi (§5): bu ekranda altın yalnız hero rayı + reticle
-            // köşelerde yaşar — bölüm ikonu nötr.
-            const Icon(Icons.bolt_rounded, size: 16, color: AppColors.textSecondary),
-            const SizedBox(width: 4),
-            Text(
-              'Hızlı Ürünler',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+            const Expanded(child: CustomerSelectButton()),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () => showDialog(
+                  context: context, builder: (_) => const QuickProductsDialog()),
+              icon: const Icon(Icons.bolt_rounded, size: 18),
+              label: const Text('Hızlı Ürünler'),
             ),
           ],
-        ),
-        const SizedBox(height: 6),
-        SizedBox(
-          height: 196,
-          child: Card(
-            margin: EdgeInsets.zero,
-            child: const QuickProductsPanel(),
-          ),
         ),
         const SizedBox(height: 10),
         // Ödeme çubuğu
