@@ -112,6 +112,13 @@ flutter:
     # sekmede logo yükleme yoktur.
     - genis_logo_figur.png
 
+    # İndirim Etiketi sekmesi — sabit "DİDİM NiCE" marka logosu (tente + NiCE
+    # kutusu), kaynak Nice.png'den tagline metni kırpılmış (etiket kendi
+    # kod-render'lı "EV GEREÇLERİ & HIRDAVAT" satırını kullanır, çift metin
+    # olmasın diye). RENKLİ basılır. Tek firma, hep aynı; bu sekmede de logo
+    # yükleme yoktur (Geniş Logo ile aynı desen).
+    - nice_logo_indirim.png
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

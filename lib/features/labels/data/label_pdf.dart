@@ -508,30 +508,36 @@ pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? figurImage) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // İndirim Etiketi PDF üretimi — A4 dikey 2 sütun × 2 satır = 4 etiket/sayfa
-// (kullanıcı isteği, çok sayfalı YOK). Hücre-içi: logo + eski fiyat (üzeri
-// çizili, küçük) + yeni fiyat (hero, büyük) + sağ üst köşede indirim yüzdesi
-// rozeti + ürün adı + Code128 + alt satır (barkod no + tarih) — Raf/Tel'in
-// `_cell` dilinin indirim-alanlı genişletilmesi.
+// (kullanıcı isteği, çok sayfalı YOK). Logo SABİT marka figürü
+// (`nice_logo_indirim.png`, Geniş Logo'nun `genis_logo_figur.png` deseniyle
+// birebir aynı — kendi içinde yüklenir, çağıran taraf logo geçirmez).
+// Hücre-içi (kullanıcı referans mockup'ına göre, KARAR): logo + "EV
+// GEREÇLERİ & HIRDAVAT" (siyah) + ince ayraç + ürün adı (BÜYÜK HARF) + tek
+// satır kırmızı "%X İNDİRİM" bandı + "ESKİ FİYAT: " (siyah, üzeri KIRMIZI
+// çizili) + kutulu "YENİ FİYAT" (kırmızı, hero) + Code128 + alt satır
+// (barkod no + tarih, YYAAGG — örn. 260819).
 // ═══════════════════════════════════════════════════════════════════════════
 
 const int _kDiscountCols = 2;
 const int _kDiscountRows = 2;
-const PdfColor _discountBadge = PdfColor.fromInt(0xFFC0392B); // AppColors.danger
+const PdfColor _discountRed = PdfColor.fromInt(0xFFC0392B); // AppColors.danger
 
-/// Dolu/boş 4 haneyi A4 dikey 2×2 indirim etiketi PDF'ine dönüştürür. Mağaza
-/// logosu Raf'ın kalıcı `logoDataUrl`'i çağıran taraftan geçirilir.
+String _discountDateLabel(DateTime d) =>
+    '${(d.year % 100).toString().padLeft(2, '0')}'
+    '${d.month.toString().padLeft(2, '0')}'
+    '${d.day.toString().padLeft(2, '0')}';
+
+/// Dolu/boş 4 haneyi A4 dikey 2×2 indirim etiketi PDF'ine dönüştürür.
 Future<Uint8List> buildDiscountLabelsPdf({
   required List<DiscountLabelSlot?> slots,
-  String? logoDataUrl,
 }) =>
-    buildDiscountLabelsPdfMultiPage(pages: [slots], logoDataUrl: logoDataUrl);
+    buildDiscountLabelsPdfMultiPage(pages: [slots]);
 
 /// Çok-sayfalı sürüm — API tutarlılığı için diğer sekmelerle aynı ikili yapı
 /// korunur (kullanıcı isteği tek sayfa 4 etiket; ileride birikim istenirse bu
 /// dosya değişmeden `pages` genişletilebilir).
 Future<Uint8List> buildDiscountLabelsPdfMultiPage({
   required List<List<DiscountLabelSlot?>> pages,
-  String? logoDataUrl,
 }) async {
   pw.ThemeData theme;
   try {
@@ -542,17 +548,8 @@ Future<Uint8List> buildDiscountLabelsPdfMultiPage({
     theme = pw.ThemeData.base();
   }
 
-  pw.MemoryImage? logoImage;
-  if (logoDataUrl != null && logoDataUrl.isNotEmpty) {
-    final i = logoDataUrl.indexOf(',');
-    if (i >= 0) {
-      try {
-        logoImage = pw.MemoryImage(base64Decode(logoDataUrl.substring(i + 1)));
-      } catch (_) {
-        logoImage = null;
-      }
-    }
-  }
+  final logoImage =
+      pw.MemoryImage((await rootBundle.load('nice_logo_indirim.png')).buffer.asUint8List());
 
   final doc = pw.Document(theme: theme);
   for (final slots in pages) {
@@ -583,7 +580,7 @@ Future<Uint8List> buildDiscountLabelsPdfMultiPage({
 }
 
 // Tek indirim etiketi hücresi. Boş hane → yalnız ince kesim kılavuzu.
-pw.Widget _discountCell(DiscountLabelSlot? slot, pw.MemoryImage? logoImage) {
+pw.Widget _discountCell(DiscountLabelSlot? slot, pw.MemoryImage logoImage) {
   if (slot == null) {
     return pw.Container(
       decoration: pw.BoxDecoration(
@@ -592,142 +589,169 @@ pw.Widget _discountCell(DiscountLabelSlot? slot, pw.MemoryImage? logoImage) {
     );
   }
 
-  final logo = logoImage != null
-      ? pw.Image(logoImage, fit: pw.BoxFit.contain)
-      : pw.SvgImage(svg: _storeIconSvg);
-
   return pw.Container(
     decoration: pw.BoxDecoration(
       border: pw.Border.all(color: _hairline, width: 0.5),
     ),
-    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    child: pw.Stack(
+    padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      mainAxisAlignment: pw.MainAxisAlignment.start,
       children: [
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          mainAxisAlignment: pw.MainAxisAlignment.start,
-          children: [
-            // Üst bant: logo (sol) + eski/yeni fiyat sütunu (sağ)
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
-              children: [
-                pw.SizedBox(width: 60, height: 40, child: logo),
-                pw.SizedBox(width: 6),
-                pw.Expanded(
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      // Eski fiyat — üzeri çizili, küçük, gri
-                      pw.Text(
-                        '${formatNumber(slot.oldPrice)} TL',
-                        style: pw.TextStyle(
-                          fontSize: 13,
-                          color: _dateGrey,
-                          decoration: pw.TextDecoration.lineThrough,
-                        ),
-                      ),
-                      // Yeni (indirimli) fiyat — hero, büyük, siyah
-                      pw.FittedBox(
-                        fit: pw.BoxFit.scaleDown,
-                        alignment: pw.Alignment.centerRight,
-                        child: pw.Text(
-                          '${formatNumber(slot.newPrice)} TL',
-                          style: pw.TextStyle(
-                            fontSize: 26,
-                            fontWeight: pw.FontWeight.bold,
-                            letterSpacing: -0.5,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+        // Logo — sabit marka figürü (tagline metni kırpılmış, aşağıda kod-render)
+        pw.SizedBox(height: 68, child: pw.Image(logoImage, fit: pw.BoxFit.contain)),
+        pw.SizedBox(height: 3),
+        pw.Text(
+          'EV GEREÇLERİ & HIRDAVAT',
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: 8,
+            fontWeight: pw.FontWeight.bold,
+            letterSpacing: 0.3,
+            color: PdfColors.black,
+          ),
+        ),
+        pw.SizedBox(height: 5),
+        pw.Container(height: 0.6, color: _hairline),
+        pw.SizedBox(height: 5),
+        // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
+        pw.SizedBox(
+          width: double.infinity,
+          child: pw.Text(
+            slot.productName.toUpperCase(),
+            textAlign: pw.TextAlign.center,
+            maxLines: 2,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(
+              fontSize: 11.5,
+              fontWeight: pw.FontWeight.bold,
+              lineSpacing: 0.5,
+              color: PdfColors.black,
             ),
-            // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
-            pw.SizedBox(
-              width: double.infinity,
-              child: pw.Text(
-                slot.productName.toUpperCase(),
-                textAlign: pw.TextAlign.center,
-                maxLines: 2,
-                overflow: pw.TextOverflow.clip,
+          ),
+        ),
+        pw.SizedBox(height: 6),
+        // %X İndirim — tek satır, kırmızı bant (2x eski rozet boyutu)
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.symmetric(vertical: 4),
+          decoration: pw.BoxDecoration(
+            color: _discountRed,
+            borderRadius: pw.BorderRadius.circular(3),
+          ),
+          alignment: pw.Alignment.center,
+          child: pw.Text(
+            '%${slot.discountPercent.round()} İNDİRİM',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              fontSize: 22,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.white,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+        pw.SizedBox(height: 6),
+        // Eski fiyat — siyah metin, üzeri KIRMIZI çizili (2x eski font boyutu)
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            pw.Text(
+              'ESKİ FİYAT: ',
+              style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+            ),
+            pw.Text(
+              '${formatNumber(slot.oldPrice)} TL',
+              style: pw.TextStyle(
+                fontSize: 26,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.black,
+                decoration: pw.TextDecoration.lineThrough,
+                decorationColor: _discountRed,
+                decorationThickness: 2,
+              ),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 4),
+        // Yeni fiyat — kutulu, kırmızı hero (2x eski font boyutu)
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.symmetric(vertical: 3),
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: _discountRed, width: 1),
+            borderRadius: pw.BorderRadius.circular(3),
+          ),
+          child: pw.Column(
+            children: [
+              pw.Text(
+                'YENİ FİYAT',
                 style: pw.TextStyle(
                   fontSize: 9,
                   fontWeight: pw.FontWeight.bold,
-                  lineSpacing: 0.5,
+                  color: _discountRed,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              pw.FittedBox(
+                fit: pw.BoxFit.scaleDown,
+                child: pw.Text(
+                  '${formatNumber(slot.newPrice)} TL',
+                  style: pw.TextStyle(
+                    fontSize: 52,
+                    fontWeight: pw.FontWeight.bold,
+                    letterSpacing: -0.5,
+                    color: _discountRed,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 6),
+        // Barkod çizgileri (Code128; geçersizse boş bırak).
+        pw.Expanded(
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Spacer(flex: 1),
+              pw.Expanded(
+                flex: 8,
+                child: bc.Barcode.code128().isValid(slot.barcode)
+                    ? pw.BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: slot.barcode,
+                        drawText: false,
+                        color: PdfColors.black,
+                      )
+                    : pw.SizedBox(),
+              ),
+              pw.Spacer(flex: 1),
+            ],
+          ),
+        ),
+        // En alt: barkod no (sol) + tarih YYAAGG (sağ)
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            pw.Expanded(
+              child: pw.Text(
+                slot.barcode,
+                textAlign: pw.TextAlign.center,
+                maxLines: 1,
+                overflow: pw.TextOverflow.clip,
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  letterSpacing: 0.5,
                   color: PdfColors.black,
                 ),
               ),
             ),
-            // Barkod çizgileri (Code128; geçersizse boş bırak).
-            pw.Expanded(
-              child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Spacer(flex: 1),
-                  pw.Expanded(
-                    flex: 8,
-                    child: bc.Barcode.code128().isValid(slot.barcode)
-                        ? pw.BarcodeWidget(
-                            barcode: bc.Barcode.code128(),
-                            data: slot.barcode,
-                            drawText: false,
-                            color: PdfColors.black,
-                          )
-                        : pw.SizedBox(),
-                  ),
-                  pw.Spacer(flex: 1),
-                ],
-              ),
-            ),
-            // En alt: barkod no (sol) + oluşturma tarihi (sağ)
-            pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
-              children: [
-                pw.Expanded(
-                  child: pw.Text(
-                    slot.barcode,
-                    textAlign: pw.TextAlign.center,
-                    maxLines: 1,
-                    overflow: pw.TextOverflow.clip,
-                    style: pw.TextStyle(
-                      fontSize: 12,
-                      letterSpacing: 0.5,
-                      color: PdfColors.black,
-                    ),
-                  ),
-                ),
-                pw.Text(
-                  formatShortDate(slot.createdAt),
-                  style: const pw.TextStyle(fontSize: 5, color: _dateGrey),
-                ),
-              ],
+            pw.Text(
+              _discountDateLabel(slot.createdAt),
+              style: const pw.TextStyle(fontSize: 6, color: _dateGrey),
             ),
           ],
-        ),
-        // İndirim yüzdesi rozeti — sağ üst köşe (logo sol üstte, çakışma yok).
-        pw.Positioned(
-          right: 0,
-          top: 0,
-          child: pw.Container(
-            width: 30,
-            height: 30,
-            decoration: const pw.BoxDecoration(
-              color: _discountBadge,
-              shape: pw.BoxShape.circle,
-            ),
-            alignment: pw.Alignment.center,
-            child: pw.Text(
-              '%${slot.discountPercent.round()}',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.white,
-              ),
-            ),
-          ),
         ),
       ],
     ),

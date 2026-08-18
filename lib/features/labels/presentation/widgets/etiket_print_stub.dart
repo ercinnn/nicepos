@@ -51,7 +51,7 @@ void printProductLabelsA4({
 /// İndirim Etiketi (2×2 = 4/sayfa) yazdırma — web dışı platformlarda no-op.
 void printDiscountLabelsA4({
   required List<DiscountLabelSlot?> slots,
-  String? logoDataUrl,
+  required String logoDataUrl,
 }) {
   // No-op
 }

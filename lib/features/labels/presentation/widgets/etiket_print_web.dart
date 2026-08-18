@@ -108,12 +108,14 @@ void printProductLabelsA4({
 
 /// Dolu İndirim Etiketlerini A4 dikey (2 sütun × 2 satır = 4) olarak yeni bir
 /// tarayıcı penceresinde açar ve otomatik yazdırma diyaloğunu tetikler. Eski
-/// fiyat üzeri çizili, yeni (indirimli) fiyat hero, sağ üst köşede indirim
-/// yüzdesi rozeti. Mağaza logosu Raf'ın kalıcı logoDataUrl'i çağıran taraftan
-/// geçirilir.
+/// fiyat siyah (üzeri KIRMIZI çizili), yeni fiyat kırmızı hero, tek satır
+/// kırmızı "%X İNDİRİM" bandı. Logo SABİT marka figürü (`nice_logo_indirim.
+/// png`) — çağıran taraf bunu önceden base64 data URL'e çevirip geçirir
+/// (Geniş Logo'nun `figurDataUrl` deseniyle aynı, web'de rootBundle senkron
+/// erişilemediği için).
 void printDiscountLabelsA4({
   required List<DiscountLabelSlot?> slots,
-  String? logoDataUrl,
+  required String logoDataUrl,
 }) {
   final html = _buildDiscountHtml(slots: slots, logoDataUrl: logoDataUrl);
 
@@ -870,18 +872,21 @@ String _buildProductHtml({
 }
 
 // ─── İndirim Etiketi — 2 sütun × 2 satır = 4 etiket ───────────────────────────
-// Eski fiyat üzeri çizili + yeni (indirimli) fiyat hero + sağ üst köşede
-// indirim yüzdesi rozeti. Kalanı (logo/ad/barkod/alt satır) Raf/Tel'in
-// `_cellHtml` diliyle aynı.
+// Logo (sabit `nice_logo_indirim.png`, tagline'sız) + "EV GEREÇLERİ &
+// HIRDAVAT" (siyah) + ince ayraç + ürün adı (BÜYÜK HARF) + tek satır kırmızı
+// "%X İNDİRİM" bandı + "ESKİ FİYAT: " (siyah, üzeri KIRMIZI çizili) + kutulu
+// "YENİ FİYAT" (kırmızı hero) + Code128 + alt satır (barkod no + tarih
+// YYAAGG). Kullanıcı referans mockup'ına göre tasarlanmıştır.
 
-String _discountCellHtml(DiscountLabelSlot? slot, String? logoDataUrl) {
+String _discountDateLabelWeb(DateTime d) =>
+    '${(d.year % 100).toString().padLeft(2, '0')}'
+    '${d.month.toString().padLeft(2, '0')}'
+    '${d.day.toString().padLeft(2, '0')}';
+
+String _discountCellHtml(DiscountLabelSlot? slot, String logoDataUrl) {
   if (slot == null) {
     return '<div class="dscell empty"></div>';
   }
-
-  final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
-      ? '<img class="ds-logo-img" src="${_esc(logoDataUrl)}" alt="logo">'
-      : _storeIconSvg;
 
   final bc = _barcodeSvg(slot.barcode);
   final bcHtml = bc.isEmpty ? '' : '<div class="ds-bc">$bc</div>';
@@ -889,26 +894,30 @@ String _discountCellHtml(DiscountLabelSlot? slot, String? logoDataUrl) {
 
   return '''
     <div class="dscell">
-      <div class="ds-badge">%${slot.discountPercent.round()}</div>
-      <div class="ds-top">
-        <div class="ds-logo">$logoHtml</div>
-        <div class="ds-prices">
-          <div class="ds-old">${_esc(formatNumber(slot.oldPrice))} TL</div>
-          <div class="ds-new">${_esc(formatNumber(slot.newPrice))} TL</div>
-        </div>
-      </div>
+      <img class="ds-logo-img" src="${_esc(logoDataUrl)}" alt="logo">
+      <div class="ds-tagline">EV GEREÇLERİ &amp; HIRDAVAT</div>
+      <div class="ds-rule"></div>
       <div class="ds-pname">${_esc(slot.productName)}</div>
+      <div class="ds-badge">%${slot.discountPercent.round()} İNDİRİM</div>
+      <div class="ds-old-row">
+        <span class="ds-old-label">ESKİ FİYAT:&nbsp;</span>
+        <span class="ds-old">${_esc(formatNumber(slot.oldPrice))} TL</span>
+      </div>
+      <div class="ds-new-box">
+        <div class="ds-new-label">YENİ FİYAT</div>
+        <div class="ds-new">${_esc(formatNumber(slot.newPrice))} TL</div>
+      </div>
       $bcHtml
       <div class="ds-bottom">
         <span class="ds-bcno">$bcNo</span>
-        <span class="ds-cdate">${_esc(formatShortDate(slot.createdAt))}</span>
+        <span class="ds-cdate">${_esc(_discountDateLabelWeb(slot.createdAt))}</span>
       </div>
     </div>''';
 }
 
 String _buildDiscountHtml({
   required List<DiscountLabelSlot?> slots,
-  String? logoDataUrl,
+  required String logoDataUrl,
 }) {
   final cells = StringBuffer();
   for (final slot in slots) {
@@ -947,84 +956,108 @@ String _buildDiscountHtml({
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
+    align-items: center;
   }
   .dscell.empty { border-color: #e0e0e0; }
-  .ds-badge {
-    position: absolute;
-    right: 3mm;
-    top: 3mm;
-    width: 13mm;
-    height: 13mm;
-    border-radius: 50%;
-    background: #C0392B;
-    color: #fff;
-    font-weight: 800;
-    font-size: 13pt;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .ds-top {
-    display: flex;
-    align-items: center;
-    gap: 3mm;
+  .ds-logo-img {
+    max-width: 60%;
+    max-height: 17mm;
+    object-fit: contain;
     flex: 0 0 auto;
   }
-  .ds-logo {
-    width: 24mm;
-    height: 16mm;
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .ds-logo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .ds-prices {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-  }
-  .ds-old {
-    font-size: 15pt;
-    color: #6b7280;
-    text-decoration: line-through;
-    font-variant-numeric: tabular-nums;
-  }
-  .ds-new {
+  .ds-tagline {
+    font-size: 7.5pt;
     font-weight: 800;
-    font-size: 34pt;
-    line-height: 1.1;
-    letter-spacing: -0.5px;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.3px;
+    color: #000;
+    text-align: center;
+    flex: 0 0 auto;
+    margin-top: 0.5mm;
+  }
+  .ds-rule {
+    width: 100%;
+    height: 0.2mm;
+    background: #ccc;
+    margin: 1.5mm 0;
+    flex: 0 0 auto;
   }
   .ds-pname {
-    font-size: 13pt;
-    font-weight: 700;
+    font-size: 12pt;
+    font-weight: 800;
     line-height: 1.15;
     text-transform: uppercase;
     text-align: center;
     flex: 0 0 auto;
-    margin-top: 2mm;
+    width: 100%;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  .ds-badge {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 1.5mm;
+    padding: 1.2mm 0;
+    border-radius: 1.2mm;
+    background: #C0392B;
+    color: #fff;
+    font-weight: 800;
+    font-size: 17pt;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+  .ds-old-row {
+    margin-top: 1.5mm;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .ds-old-label { font-size: 9pt; font-weight: 700; color: #000; }
+  .ds-old {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #000;
+    text-decoration: line-through;
+    text-decoration-color: #C0392B;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-new-box {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 1mm;
+    padding: 0.8mm 0;
+    border: 0.3mm solid #C0392B;
+    border-radius: 1.2mm;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+  .ds-new-label {
+    font-size: 7.5pt;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    color: #C0392B;
+  }
+  .ds-new {
+    font-weight: 800;
+    font-size: 40pt;
+    line-height: 1.1;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+    color: #C0392B;
+    font-variant-numeric: tabular-nums;
+  }
   .ds-bc {
     flex: 1 1 auto;
     min-height: 0;
     width: 75%;
-    margin: 0 auto;
+    margin: 1.5mm auto 0;
   }
   .ds-bc svg { width: 100%; height: 100%; display: block; }
   .ds-bottom {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
+    width: 100%;
     flex: 0 0 auto;
     font-variant-numeric: tabular-nums;
   }

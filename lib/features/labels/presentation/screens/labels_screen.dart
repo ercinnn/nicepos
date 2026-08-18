@@ -90,13 +90,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   int _telActiveIndex = 0;
 
   // İndirim Etiketi sekmesi — 4 haneli SABİT giriş (2×2). Her hane: barkod
-  // input'u + (ürün çözülünce görünen) indirim yüzdesi input'u; mağaza
-  // logosu Raf'ın kalıcı logoDataUrl'ini paylaşır.
+  // input'u + (ürün çözülünce görünen) indirim yüzdesi input'u; logo SABİT
+  // marka figürü (`nice_logo_indirim.png`, Geniş Logo'nun `_figurBytes`
+  // deseniyle aynı — bu sekmede logo yükleme YOK).
   late final List<TextEditingController> _discountBarcodeControllers;
   late final List<TextEditingController> _discountPercentControllers;
   late final List<FocusNode> _discountBarcodeFocusNodes;
   final Set<int> _discountErrors = {};
   int _discountActiveIndex = 0;
+  Uint8List? _niceLogoBytes; // sabit marka logosu (yazdırma için bir kez okunur)
 
   // Poster sekmesi (KARAR v1.23 / v1.24) — barkod VEYA ürün adı ile serbest
   // liste; sabit hane sayısı YOK, tek giriş satırı (satış ekranı
@@ -1027,7 +1029,14 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     setState(() => _discountErrors.clear());
   }
 
-  void _printDiscount() {
+  // Sabit marka logosunu (nice_logo_indirim.png) yazdırma için bir kez okur
+  // (Geniş Logo'nun `_loadFigurBytes` deseniyle aynı).
+  Future<Uint8List> _loadNiceLogoBytes() async {
+    return _niceLogoBytes ??=
+        (await rootBundle.load('nice_logo_indirim.png')).buffer.asUint8List();
+  }
+
+  Future<void> _printDiscount() async {
     final state = ref.read(labelDiscountSheetProvider);
     if (state.filledCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1035,7 +1044,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
       return;
     }
-    final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+    final bytes = await _loadNiceLogoBytes();
+    if (!mounted) return;
+    final logoDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
     printDiscountLabelsA4(slots: state.slots, logoDataUrl: logoDataUrl);
   }
 
@@ -1056,11 +1067,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
-      final bytes = await buildDiscountLabelsPdf(
-        slots: state.slots,
-        logoDataUrl: logoDataUrl,
-      );
+      final bytes = await buildDiscountLabelsPdf(slots: state.slots);
       final saved =
           await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
       ref.invalidate(savedLabelFilesProvider);
@@ -1890,10 +1897,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   }
 
   // ─── İndirim Etiketi — masaüstü (sol 4-hane giriş · sağ A4 önizleme) ──────
-  // Tel Etiketi ile aynı akış (mağaza logosu Raf'ın kalıcı logoDataUrl'inden
-  // paylaşılır), yalnız 2×2 sabit ızgara + hane başına ek yüzde input'u.
+  // Geniş Logo ile aynı akış (logo SABİT marka figürü, yükleme YOK), yalnız
+  // 2×2 sabit ızgara + hane başına ek yüzde input'u.
   Widget _buildDiscountDesktop(Widget selector) {
-    final logoState = ref.watch(labelSheetProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1902,9 +1908,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         _Header(
           filledCount: ref.watch(labelDiscountSheetProvider).filledCount,
           totalCount: kDiscountCount,
-          hasLogo: logoState.logoDataUrl != null,
-          onPickLogo: _pickLogo,
-          onRemoveLogo: _removeLogo,
+          showLogoActions: false,
           onClearAll: _clearDiscountAll,
           onPrint: _printDiscount,
           onSavePdf: _saveDiscountPdf,
@@ -1948,7 +1952,6 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // ─── İndirim Etiketi — mobil (tek kolon) ──────────────────────────────────
   Widget _buildDiscountMobile(Widget selector) {
     final state = ref.watch(labelDiscountSheetProvider);
-    final logoState = ref.watch(labelSheetProvider);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1958,9 +1961,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           _Header(
             filledCount: state.filledCount,
             totalCount: kDiscountCount,
-            hasLogo: logoState.logoDataUrl != null,
-            onPickLogo: _pickLogo,
-            onRemoveLogo: _removeLogo,
+            showLogoActions: false,
             onClearAll: _clearDiscountAll,
             onPrint: _printDiscount,
             onSavePdf: _saveDiscountPdf,
@@ -2902,7 +2903,6 @@ class _DiscountPreviewPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(labelDiscountSheetProvider);
-    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.pageBg,
@@ -2913,10 +2913,7 @@ class _DiscountPreviewPane extends ConsumerWidget {
       child: Center(
         child: FittedBox(
           fit: BoxFit.contain,
-          child: _DiscountA4Canvas(
-            slots: state.slots,
-            logoDataUrl: logoDataUrl,
-          ),
+          child: _DiscountA4Canvas(slots: state.slots),
         ),
       ),
     );
@@ -3116,25 +3113,12 @@ class _LabelCell extends StatelessWidget {
 // YOK). `_A4Canvas`'ın DiscountLabelSlot'lu, sabit-ızgaralı kopyası.
 class _DiscountA4Canvas extends StatelessWidget {
   final List<DiscountLabelSlot?> slots;
-  final String? logoDataUrl;
 
-  const _DiscountA4Canvas({required this.slots, required this.logoDataUrl});
+  const _DiscountA4Canvas({required this.slots});
 
   @override
   Widget build(BuildContext context) {
     const margin = 19.0; // ~5mm @96dpi
-    Uint8List? logoBytes;
-    if (logoDataUrl != null) {
-      final i = logoDataUrl!.indexOf(',');
-      if (i >= 0) {
-        try {
-          logoBytes = base64Decode(logoDataUrl!.substring(i + 1));
-        } catch (_) {
-          logoBytes = null;
-        }
-      }
-    }
-
     return Container(
       width: _kA4Width,
       height: _kA4Height,
@@ -3146,12 +3130,7 @@ class _DiscountA4Canvas extends StatelessWidget {
             child: Row(
               children: List.generate(kDiscountCols, (c) {
                 final idx = r * kDiscountCols + c;
-                return Expanded(
-                  child: _DiscountLabelCell(
-                    slot: slots[idx],
-                    logoBytes: logoBytes,
-                  ),
-                );
+                return Expanded(child: _DiscountLabelCell(slot: slots[idx]));
               }),
             ),
           );
@@ -3161,13 +3140,22 @@ class _DiscountA4Canvas extends StatelessWidget {
   }
 }
 
-// Tek indirim etiketi hücresi: `_LabelCell`'in eski/yeni fiyat + indirim
-// rozeti eklenmiş genişletmesi. Kalanı (logo/ad/barkod/alt satır) birebir aynı.
+// Etiket başına tarih — YYAAGG (kullanıcı isteği, örn. 260819). Bilerek
+// `formatShortDate`'ten (dd MMM yyyy) ayrı — yalnız bu sekmede kullanılır.
+String _discountDateLabelUi(DateTime d) =>
+    '${(d.year % 100).toString().padLeft(2, '0')}'
+    '${d.month.toString().padLeft(2, '0')}'
+    '${d.day.toString().padLeft(2, '0')}';
+
+// Tek indirim etiketi hücresi (kullanıcı referans mockup'ına göre KARAR):
+// logo (sabit `nice_logo_indirim.png`) + "EV GEREÇLERİ & HIRDAVAT" (siyah) +
+// ince ayraç + ürün adı (BÜYÜK HARF) + tek satır kırmızı "%X İNDİRİM" bandı +
+// "ESKİ FİYAT: " (siyah, üzeri KIRMIZI çizili) + kutulu "YENİ FİYAT" (kırmızı
+// hero) + Code128 + alt satır (barkod no + tarih YYAAGG).
 class _DiscountLabelCell extends StatelessWidget {
   final DiscountLabelSlot? slot;
-  final Uint8List? logoBytes;
 
-  const _DiscountLabelCell({required this.slot, required this.logoBytes});
+  const _DiscountLabelCell({required this.slot});
 
   @override
   Widget build(BuildContext context) {
@@ -3181,154 +3169,184 @@ class _DiscountLabelCell extends StatelessWidget {
           width: 0.6,
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: s == null
           ? const SizedBox.expand()
-          : Stack(
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    // Üst bant: logo (sol) + eski/yeni fiyat sütunu (sağ)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 60,
-                          height: 42,
-                          child: logoBytes != null
-                              ? Image.memory(logoBytes!, fit: BoxFit.contain)
-                              : const Icon(Icons.storefront,
-                                  color: AppColors.primary, size: 34),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Eski fiyat — üzeri çizili, küçük, gri
-                              Text(
-                                '${formatNumber(s.oldPrice)} TL',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Color(0xFF6B7280),
-                                  decoration: TextDecoration.lineThrough,
-                                  decorationColor: Color(0xFF6B7280),
-                                  decorationThickness: 1.4,
-                                  fontFeatures: [FontFeature.tabularFigures()],
-                                ),
-                              ),
-                              // Yeni (indirimli) fiyat — hero, büyük, siyah
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerRight,
-                                child: Text(
-                                  '${formatNumber(s.newPrice)} TL',
-                                  style: const TextStyle(
-                                    fontSize: 38,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.5,
-                                    height: 1,
-                                    color: Colors.black,
-                                    fontFeatures: [
-                                      FontFeature.tabularFigures()
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
-                    SizedBox(
-                      width: double.infinity,
-                      child: Text(
-                        s.productName.toUpperCase(),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          height: 1.15,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
-                    // Barkod çizgileri (Code128)
-                    Expanded(
-                      child: Center(
-                        child: FractionallySizedBox(
-                          widthFactor: 0.8,
-                          child: BarcodeWidget(
-                            barcode: bc.Barcode.code128(),
-                            data: s.barcode,
-                            drawText: false,
-                            color: Colors.black,
-                            errorBuilder: (context, error) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ),
-                      ),
-                    ),
-                    // En alt: barkod no (sol) + oluşturma tarihi (sağ)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            s.barcode,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              letterSpacing: 0.5,
-                              color: Colors.black,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                        ),
-                        Text(
-                          formatShortDate(s.createdAt),
-                          style: const TextStyle(
-                            fontSize: 6.5,
-                            color: Color(0xFF555555),
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                // Logo — sabit marka figürü (tagline metni kırpılmış, altında
+                // kod-render "EV GEREÇLERİ & HIRDAVAT" ile devam eder).
+                SizedBox(
+                  height: 84,
+                  child: Image.asset('nice_logo_indirim.png', fit: BoxFit.contain),
                 ),
-                // İndirim yüzdesi rozeti — sağ üst köşe (logo sol üstte, çakışma yok).
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: const BoxDecoration(
-                      color: AppColors.danger,
-                      shape: BoxShape.circle,
+                const SizedBox(height: 4),
+                const Text(
+                  'EV GEREÇLERİ & HIRDAVAT',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Container(height: 1, color: const Color(0xFFCCCCCC)),
+                const SizedBox(height: 7),
+                // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    s.productName.toUpperCase(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                      color: Colors.black,
                     ),
-                    alignment: Alignment.center,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '%${s.discountPercent.round()}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // %X İndirim — tek satır, kırmızı bant (2x eski rozet boyutu)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '%${s.discountPercent.round()} İNDİRİM',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ),
+                ),
+                const SizedBox(height: 10),
+                // Eski fiyat — siyah metin, üzeri KIRMIZI çizili (2x eski boyut)
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      const Text(
+                        'ESKİ FİYAT: ',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black,
+                        ),
+                      ),
+                      Text(
+                        '${formatNumber(s.oldPrice)} TL',
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black,
+                          decoration: TextDecoration.lineThrough,
+                          decorationColor: AppColors.danger,
+                          decorationThickness: 2.4,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                // Yeni fiyat — kutulu, kırmızı hero (2x eski boyut)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.danger, width: 1.4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'YENİ FİYAT',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.danger,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${formatNumber(s.newPrice)} TL',
+                          style: const TextStyle(
+                            fontSize: 76,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.danger,
+                            height: 1,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Barkod çizgileri (Code128)
+                Expanded(
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.8,
+                      child: BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: s.barcode,
+                        drawText: false,
+                        color: Colors.black,
+                        errorBuilder: (context, error) =>
+                            const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // En alt: barkod no (sol) + tarih YYAAGG (sağ)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        s.barcode,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          letterSpacing: 0.5,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _discountDateLabelUi(s.createdAt),
+                      style: const TextStyle(
+                        fontSize: 8,
+                        color: Color(0xFF555555),
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
