@@ -60,11 +60,20 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
 
   // Bulunan ürünü sepete ekler + başarı bipi/haptic + alanı temizler (dört
   // farklı bulma yolundan da — bellek/ağ/yerel önbellek — çağrılan ortak kuyruk).
+  //
+  // Ayrıca (fire-and-forget) `label_scan_activity`'e işaretlenir — "Stok"
+  // sayfasındaki aktif-ürün sayacı satış EKRANINDA barkodu okutulan her ürünü
+  // de kapsasın diye (satış TAMAMLANMASA bile "okutuldu" sayılır; satış
+  // gerçekten tamamlanırsa zaten `sale_items` üzerinden ayrıca aktif sayılır
+  // — bkz. `ProductRepository.markLabelScanned`, 0034 migration).
   void _addFoundProduct(BarcodeCache cache, Product product) {
     cache.put(product);
     HapticFeedback.lightImpact();
     playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
     ref.read(salesCartProvider.notifier).addProduct(product);
+    unawaited(ref
+        .read(productRepositoryProvider)
+        .markLabelScanned(product.id, product.barcode ?? ''));
     _barcodeController.clear();
     _barcodeFocusNode.requestFocus();
   }
