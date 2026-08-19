@@ -70,7 +70,14 @@ void _showTopRightToast(BuildContext context, String message) {
 // ── Ekran ─────────────────────────────────────────────────────────────────────
 
 class ProductsListScreen extends ConsumerStatefulWidget {
-  const ProductsListScreen({super.key});
+  /// `true` iken (Stok sayfası, `/stok`) yalnız "aktif" ürünler listelenir —
+  /// satış geçmişi VEYA etiket taraması VEYA Havuz kaydı olan ürünler (bkz.
+  /// 0034 migration `p_active_only`). Geri kalan HER ŞEY (arama, sütun
+  /// filtreleri, sıralama, sayfalama, sütun seçici, satır içi düzenleme,
+  /// toplu seçim/silme, Excel) Ürünler sayfasıyla BİREBİR aynı davranır.
+  final bool activeOnly;
+
+  const ProductsListScreen({super.key, this.activeOnly = false});
 
   @override
   ConsumerState<ProductsListScreen> createState() => _ProductsListScreenState();
@@ -113,6 +120,10 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   // Yalnız bir gruba ait ürünler burada anahtar içerir (bkz. 0021 migration).
   Map<String, EquivalentAggregate> _equivalents = {};
 
+  // "Stok" sayfası (widget.activeOnly) başlık rozeti — bkz. `_loadActiveCounts`.
+  int? _activeCount;
+  int? _totalCount;
+
   // Arama kutusu debounce'u (250ms) — projedeki diğer canlı aramalarla aynı
   // desen (bkz. sales_screen.dart `_LiveProductSearchField`). Durum sütunu
   // eklendiğinden beri her yükleme 2 ardışık sorgu attığı için (ürünler +
@@ -123,6 +134,25 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   void initState() {
     super.initState();
     _loadProducts();
+    if (widget.activeOnly) _loadActiveCounts();
+  }
+
+  // "Stok" sayfası başlık rozeti — genel (arama/filtreden bağımsız) aktif/
+  // toplam sayaç. `_loadStatuses`/`_loadEquivalents` ile aynı desen: ana
+  // listeyi YAVAŞLATMAZ, ayrı ve best-effort (hata sessizce yoksayılır).
+  Future<void> _loadActiveCounts() async {
+    try {
+      final repo = ref.read(productRepositoryProvider);
+      final results =
+          await Future.wait([repo.countActiveProducts(), repo.countAllProducts()]);
+      if (!mounted) return;
+      setState(() {
+        _activeCount = results[0];
+        _totalCount = results[1];
+      });
+    } catch (_) {
+      // İkincil bilgi — sessizce yoksay, liste yine çalışır.
+    }
   }
 
   @override
@@ -208,6 +238,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             sortAscending: _sortAscending,
             page: _page,
             pageSize: kProductPageSize,
+            activeOnly: widget.activeOnly,
           ));
       if (!mounted) return;
       setState(() {
@@ -310,6 +341,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         query: _query,
         groupId: _selectedGroupId,
         filters: _filters,
+        activeOnly: widget.activeOnly,
       ),
     );
   }
@@ -485,7 +517,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         // Başlık + Ürün Özet + Yeni Ürün
         Row(
           children: [
-            Text('Ürünler', style: Theme.of(context).textTheme.titleLarge),
+            Text(widget.activeOnly ? 'Aktif Ürünler' : 'Ürünler',
+                style: Theme.of(context).textTheme.titleLarge),
             const Spacer(),
             // Ürün Özet butonu — sunucu-only, offline'da pasif.
             IconButton(
@@ -501,9 +534,17 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             ),
           ],
         ),
+        if (widget.activeOnly) ...[
+          const SizedBox(height: AppSizes.space8),
+          _ActiveCountBadge(
+            activeCount: _activeCount,
+            totalCount: _totalCount,
+            onRefresh: _loadActiveCounts,
+          ),
+        ],
         const SizedBox(height: AppSizes.space12),
         if (_offline) ...[
-          const _OfflineBanner(),
+          _OfflineBanner(activeOnly: widget.activeOnly),
           const SizedBox(height: AppSizes.space8),
         ],
         // Arama
@@ -561,10 +602,12 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               : _error != null
                   ? Center(child: Text('Hata: $_error'))
                   : _displayProducts.isEmpty
-                      ? const EmptyState(
+                      ? EmptyState(
                           icon: Icons.inventory_2_outlined,
-                          title: 'Ürün bulunamadı',
-                          message: 'Aramanızı değiştirin veya yeni ürün ekleyin',
+                          title: widget.activeOnly ? 'Aktif ürün bulunamadı' : 'Ürün bulunamadı',
+                          message: widget.activeOnly
+                              ? 'Barkod okutup satış/etiket yaptıkça ürünler burada birikir.'
+                              : 'Aramanızı değiştirin veya yeni ürün ekleyin',
                         )
                       : ListView.separated(
                           itemCount: _displayProducts.length,
@@ -595,7 +638,16 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
       children: [
         Row(
           children: [
-            Text('Ürünler', style: Theme.of(context).textTheme.titleLarge),
+            Text(widget.activeOnly ? 'Aktif Ürünler' : 'Ürünler',
+                style: Theme.of(context).textTheme.titleLarge),
+            if (widget.activeOnly) ...[
+              const SizedBox(width: AppSizes.space12),
+              _ActiveCountBadge(
+                activeCount: _activeCount,
+                totalCount: _totalCount,
+                onRefresh: _loadActiveCounts,
+              ),
+            ],
             const Spacer(),
             OutlinedButton.icon(
               onPressed: _offline
@@ -603,7 +655,8 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                   : () async {
                       final all = await ref.read(productRepositoryProvider).fetchAll(
                             query: _query, groupId: _selectedGroupId, filters: _filters,
-                            sortColumn: _sortColumn, sortAscending: _sortAscending);
+                            sortColumn: _sortColumn, sortAscending: _sortAscending,
+                            activeOnly: widget.activeOnly);
                       final result = await exportProductsToExcel(all);
                       if (result != null && mounted) {
                         // ignore: use_build_context_synchronously
@@ -638,7 +691,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
         ),
         const SizedBox(height: AppSizes.space12),
         if (_offline) ...[
-          const _OfflineBanner(),
+          _OfflineBanner(activeOnly: widget.activeOnly),
           const SizedBox(height: AppSizes.space8),
         ],
         Row(
@@ -755,10 +808,12 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                 : _error != null
                     ? Center(child: Text('Hata: $_error'))
                     : _displayProducts.isEmpty
-                        ? const EmptyState(
+                        ? EmptyState(
                             icon: Icons.inventory_2_outlined,
-                            title: 'Ürün bulunamadı',
-                            message: 'Aramanızı değiştirin veya yeni ürün ekleyin',
+                            title: widget.activeOnly ? 'Aktif ürün bulunamadı' : 'Ürün bulunamadı',
+                            message: widget.activeOnly
+                                ? 'Barkod okutup satış/etiket yaptıkça ürünler burada birikir.'
+                                : 'Aramanızı değiştirin veya yeni ürün ekleyin',
                           )
                         : _ProductsTable(
                             products: _displayProducts,
@@ -900,8 +955,14 @@ class _ProductSummaryDialog extends ConsumerStatefulWidget {
   final String query;
   final String? groupId;
   final ProductFilters filters;
+  final bool activeOnly;
 
-  const _ProductSummaryDialog({required this.query, this.groupId, required this.filters});
+  const _ProductSummaryDialog({
+    required this.query,
+    this.groupId,
+    required this.filters,
+    this.activeOnly = false,
+  });
 
   @override
   ConsumerState<_ProductSummaryDialog> createState() =>
@@ -929,6 +990,7 @@ class _ProductSummaryDialogState extends ConsumerState<_ProductSummaryDialog> {
             query: widget.query,
             groupId: widget.groupId,
             filters: widget.filters,
+            activeOnly: widget.activeOnly,
           );
       // Eşlenik Barkod: gruplu ürünler Ürün Özet'te TEKİL sayılır (grubun
       // toplam stoğu + en-son-satır fiyatı, çift sayım YOK) — bkz.
@@ -1080,7 +1142,13 @@ class _SummaryRow extends StatelessWidget {
 // filtresi aktif" pill'iyle aynı görsel dilde, yalnız nötr (danger değil,
 // bu bir hata değil bilinçli bir mod).
 class _OfflineBanner extends StatelessWidget {
-  const _OfflineBanner();
+  // "Stok" sayfasında (widget.activeOnly) çevrimdışıyken aktif-ürün filtresi
+  // UYGULANMAZ (offline yol `filters`'ı hiç görmez, bkz. `_loadProductsOffline`)
+  // — önbellekteki TÜM ürünler gösterilir; bu bilinçli bir sınırlama, yalnız
+  // kullanıcıyı bilgilendiren ek bir satır eklenir, davranış DEĞİŞMEZ.
+  final bool activeOnly;
+
+  const _OfflineBanner({this.activeOnly = false});
 
   @override
   Widget build(BuildContext context) {
@@ -1092,15 +1160,79 @@ class _OfflineBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSizes.radiusSm),
         border: Border.all(color: AppColors.textMuted.withValues(alpha: 0.3)),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.textSecondary),
-          SizedBox(width: AppSizes.space8),
+          const Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: AppSizes.space8),
           Expanded(
             child: Text(
-              'Çevrimdışı görünüm — yerel önbellekten listeleniyor. Arama ve grup filtresi çalışır; '
-              'düzenlemek için bir ürüne dokunun.',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              activeOnly
+                  ? 'Çevrimdışı görünüm — yerel önbellekten listeleniyor. Aktif ürün filtresi '
+                      'çevrimdışıyken uygulanmaz, önbellekteki TÜM ürünler gösterilir. Arama ve '
+                      'grup filtresi çalışır; düzenlemek için bir ürüne dokunun.'
+                  : 'Çevrimdışı görünüm — yerel önbellekten listeleniyor. Arama ve grup filtresi çalışır; '
+                      'düzenlemek için bir ürüne dokunun.',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// "Stok" sayfası (widget.activeOnly) başlık rozeti — genel aktif/toplam
+// sayaç. Sayılar henüz gelmemişse (null) küçük bir yükleniyor göstergesi;
+// gelince "5.234 aktif ürün · 8.412 toplam" pill'i + tekrar-hesapla ikonu.
+class _ActiveCountBadge extends StatelessWidget {
+  final int? activeCount;
+  final int? totalCount;
+  final VoidCallback onRefresh;
+
+  const _ActiveCountBadge({
+    required this.activeCount,
+    required this.totalCount,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = activeCount;
+    final total = totalCount;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space8, vertical: AppSizes.space4),
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        border: Border.all(color: AppColors.goldBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (active == null || total == null)
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 1.6),
+            )
+          else
+            Text(
+              '${formatNumber(active)} aktif ürün · ${formatNumber(total)} toplam',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
+          const SizedBox(width: AppSizes.space4),
+          InkWell(
+            onTap: onRefresh,
+            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(Icons.refresh, size: 14, color: AppColors.textSecondary),
             ),
           ),
         ],

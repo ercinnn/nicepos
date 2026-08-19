@@ -257,6 +257,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // internetsiz), miss ise ağ fallback (fetchByBarcode → fetchAll, tam barkod
   // eşleşmesi tercih). Ağ hatası/offline → cache miss'te null döner. Bulunan
   // ürün cache'e yazılır (sonraki okutmalar da hızlı/offline olur).
+  //
+  // Ürün başarıyla çözüldüğünde ayrıca (fire-and-forget) `label_scan_activity`
+  // tablosuna işaretlenir — "Stok" sayfasındaki aktif-ürün sayacının kaynağı
+  // (bkz. `ProductRepository.markLabelScanned`, 0034 migration). Bu fonksiyon
+  // TÜM etiket sekmelerinin (Raf/Tel/Geniş/Poster/Ürün/İndirim) paylaştığı TEK
+  // barkod-çözme noktası olduğundan tek bir yerden enstrümante edilmesi yeter.
   Future<Product?> _resolveBarcode(String query) async {
     final cache = ref.read(barcodeCacheProvider);
     Product? product = cache.lookup(query);
@@ -278,6 +284,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       } catch (_) {
         // Offline / ağ hatası — cache miss ise çözülemez (null).
       }
+    }
+    if (product != null) {
+      unawaited(ref
+          .read(productRepositoryProvider)
+          .markLabelScanned(product.id, product.barcode ?? query));
     }
     return product;
   }

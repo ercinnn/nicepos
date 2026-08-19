@@ -38,6 +38,7 @@ const _navItems = [
   _NavItem('Online Satış', Icons.shopping_bag_outlined, Icons.shopping_bag, '/online-satis'),
   _NavItem('Müşteriler', Icons.people_outline, Icons.people, '/customers'),
   _NavItem('Ürünler', Icons.inventory_2_outlined, Icons.inventory_2, '/products'),
+  _NavItem('Stok', Icons.playlist_add_check_outlined, Icons.playlist_add_check, '/stok'),
 ];
 
 int _selectedNavIndex(String currentPath) {

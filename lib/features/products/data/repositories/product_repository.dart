@@ -97,6 +97,7 @@ class ProductRepository {
     required ProductFilters filters,
     required String sortColumn,
     required bool sortAscending,
+    bool activeOnly = false,
   }) {
     return {
       'p_query': (query != null && query.trim().isNotEmpty) ? query.trim() : null,
@@ -104,6 +105,7 @@ class ProductRepository {
       'p_status': filters.status,
       'p_sort_column': sortableColumns.contains(sortColumn) ? sortColumn : 'name',
       'p_sort_ascending': sortAscending,
+      'p_active_only': activeOnly,
       'p_barcode': filters.barcode,
       'p_stock_code': filters.stockCode,
       'p_unit': filters.unit,
@@ -130,15 +132,22 @@ class ProductRepository {
     ProductFilters? filters,
     String sortColumn = 'name',
     bool sortAscending = true,
+    bool activeOnly = false,
   }) async {
     final sortCol = sortableColumns.contains(sortColumn) ? sortColumn : 'name';
-    if (filters != null && filters.status != null) {
+    if (activeOnly || (filters != null && filters.status != null)) {
       const batch = 1000;
       final all = <Product>[];
       var page = 0;
       while (true) {
         final rows = await _client.rpc('search_products', params: {
-          ..._searchProductsParams(query: query, groupId: groupId, filters: filters, sortColumn: sortCol, sortAscending: sortAscending),
+          ..._searchProductsParams(
+              query: query,
+              groupId: groupId,
+              filters: filters ?? ProductFilters(),
+              sortColumn: sortCol,
+              sortAscending: sortAscending,
+              activeOnly: activeOnly),
           'p_limit': batch,
           'p_offset': page * batch,
         });
@@ -183,15 +192,22 @@ class ProductRepository {
     bool sortAscending = true,
     int page = 0,
     int pageSize = 50,
+    bool activeOnly = false,
   }) async {
     final sortCol = sortableColumns.contains(sortColumn) ? sortColumn : 'name';
-    if (filters != null && filters.status != null) {
+    if (activeOnly || (filters != null && filters.status != null)) {
       // +1 üst sınır: ekran "sonraki sayfa var mı" kontrolünü
       // `_products.length > kProductPageSize` ile yapıyor (bkz.
       // products_list_screen.dart `_hasMore`) — eski `.range()` deseniyle
       // aynı "1 fazla çek" yaklaşımı.
       final rows = await _client.rpc('search_products', params: {
-        ..._searchProductsParams(query: query, groupId: groupId, filters: filters, sortColumn: sortCol, sortAscending: sortAscending),
+        ..._searchProductsParams(
+            query: query,
+            groupId: groupId,
+            filters: filters ?? ProductFilters(),
+            sortColumn: sortCol,
+            sortAscending: sortAscending,
+            activeOnly: activeOnly),
         'p_limit': pageSize + 1,
         'p_offset': page * pageSize,
       });
@@ -442,6 +458,38 @@ class ProductRepository {
       for (final row in (rows as List))
         (row as Map)['product_id'] as String: row['status'] as String?,
     };
+  }
+
+  /// Etiket sekmelerinden (Raf/Tel/Geniş/Poster/Ürün/İndirim — hepsi
+  /// `labels_screen.dart` `_resolveBarcode()`'unu paylaşır) bir ürün
+  /// çözüldüğünde çağrılır; ürün başına TEK satır işaretler (0034 migration,
+  /// `label_scan_activity` — log DEĞİL, "en az bir kez oldu mu" bayrağı).
+  /// Fire-and-forget — çağıran taraf beklemeden devam eder, hata yutulur
+  /// (ikincil sinyal, tarama akışını YAVAŞLATMAMALI/DURDURMAMALI; tekrar
+  /// taramada unique-violation BEKLENEN durum).
+  Future<void> markLabelScanned(String productId, String barcode) async {
+    try {
+      await _client.from('label_scan_activity').insert({
+        'product_id': productId,
+        'barcode': barcode,
+      });
+    } catch (_) {
+      // Sessizce yoksay.
+    }
+  }
+
+  /// "Stok" sayfası başlık rozeti — satış geçmişi VEYA etiket taraması VEYA
+  /// Havuz kaydı olan ürün sayısı (bkz. 0034 `count_active_products`).
+  Future<int> countActiveProducts() async {
+    final result = await _client.rpc('count_active_products');
+    return (result as num).toInt();
+  }
+
+  /// Katalogdaki toplam ürün sayısı (bkz. 0034 `count_all_products`) — "Stok"
+  /// sayfasında aktif/toplam oranını göstermek için.
+  Future<int> countAllProducts() async {
+    final result = await _client.rpc('count_all_products');
+    return (result as num).toInt();
   }
 
   Future<void> delete(String id) async {

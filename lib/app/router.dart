@@ -16,6 +16,7 @@ import '../features/kasa/presentation/screens/kasa_screen.dart';
 import '../features/labels/presentation/screens/labels_screen.dart';
 import '../features/online_satis/presentation/screens/online_satis_screen.dart';
 import '../features/products/presentation/screens/product_form_screen.dart';
+import '../features/products/presentation/screens/products_list_screen.dart';
 import '../features/products/presentation/screens/products_tabs_screen.dart';
 import '../features/reports/presentation/screens/reports_screen.dart';
 import '../features/sales/presentation/screens/sales_screen.dart';
@@ -128,6 +129,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     ProductFormScreen(productId: state.pathParameters['id']),
               ),
             ],
+          ),
+          GoRoute(
+            path: '/stok',
+            pageBuilder: (context, state) => _fadeThroughPage(
+                state, const ProductsListScreen(activeOnly: true)),
           ),
           GoRoute(
             path: '/customers',
