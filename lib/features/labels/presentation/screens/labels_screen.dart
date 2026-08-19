@@ -2819,7 +2819,7 @@ class _DiscountInputColumn extends StatelessWidget {
 // Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneler bu
 // değeri kullanır (bkz. `DiscountLabelSlot.effectivePercent`). Etiket
 // haneleri listesinin EN ÜSTÜNDE, ayırt edici altın vurgusuyla gösterilir.
-class _DiscountDefaultPercentField extends StatelessWidget {
+class _DiscountDefaultPercentField extends ConsumerWidget {
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
 
@@ -2829,7 +2829,14 @@ class _DiscountDefaultPercentField extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Toplu logo tiki — o an DOLU olan haneler varsa ve HEPSİ tikliyse
+    // kendisi de tikli görünür (klasik "tümünü seç" checkbox'ı deseni);
+    // değiştirildiğinde TÜM dolu haneleri aynı değere çeker.
+    final filled = ref.watch(labelDiscountSheetProvider
+        .select((s) => s.slots.whereType<DiscountLabelSlot>().toList()));
+    final allChecked = filled.isNotEmpty && filled.every((s) => s.showLogo);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -2872,6 +2879,20 @@ class _DiscountDefaultPercentField extends StatelessWidget {
                 contentPadding: EdgeInsets.symmetric(vertical: 4),
               ),
               onChanged: onChanged,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Tüm haneler için logoyu göster/gizle',
+            child: Checkbox(
+              value: allChecked,
+              onChanged: filled.isEmpty
+                  ? null
+                  : (v) => ref
+                      .read(labelDiscountSheetProvider.notifier)
+                      .setAllShowLogo(v ?? false),
+              visualDensity: VisualDensity.compact,
+              activeColor: AppColors.primary,
             ),
           ),
         ],

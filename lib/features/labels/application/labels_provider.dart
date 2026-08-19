@@ -289,6 +289,16 @@ class LabelDiscountSheet extends _$LabelDiscountSheet {
     state = state.copyWith(defaultPercent: percent);
   }
 
+  /// "Ana İndirim %" satırındaki toplu tik — o anda DOLU olan TÜM hanelerin
+  /// `showLogo`'sunu tek seferde [value] yapar (yalnız o an var olan haneleri
+  /// etkiler, sonradan taranacak yeni haneler yine tiksiz başlar).
+  void setAllShowLogo(bool value) {
+    final next = [
+      for (final s in state.slots) s?.copyWith(showLogo: value),
+    ];
+    state = state.copyWith(slots: next);
+  }
+
   /// [index] zaten boşsa (trailing hane) no-op. DOLU bir haneyse listeden
   /// tamamen ÇIKARIR (sonraki haneler bir yukarı kayar) — liste her zaman
   /// tek bir trailing `null` ile bitecek şekilde korunur.
