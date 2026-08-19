@@ -897,10 +897,15 @@ String _discountCellHtml(
   final bc = _barcodeSvg(slot.barcode);
   final bcHtml = bc.isEmpty ? '' : '<div class="ds-bc">$bc</div>';
   final bcNo = _esc(slot.barcode);
+  // Hane-başı tik — tiksizse logo alanı BOŞ bırakılır (slot yüksekliği
+  // .ds-logo-slot ile korunur, satır kaymaz).
+  final logoHtml = slot.showLogo
+      ? '<img class="ds-logo-img" src="${_esc(logoDataUrl)}" alt="logo">'
+      : '';
 
   return '''
     <div class="dscell">
-      <img class="ds-logo-img" src="${_esc(logoDataUrl)}" alt="logo">
+      <div class="ds-logo-slot">$logoHtml</div>
       <div class="ds-tagline">EV GEREÇLERİ &amp; HIRDAVAT</div>
       <div class="ds-rule"></div>
       <div class="ds-pname">${_esc(slot.productName)}</div>
@@ -926,13 +931,19 @@ String _buildDiscountHtml({
   required String logoDataUrl,
   required num defaultPercent,
 }) {
-  final cells = StringBuffer();
-  for (final slot in slots) {
-    cells.writeln(_discountCellHtml(slot, logoDataUrl, defaultPercent));
+  final pages = paginateDiscountSlots(slots);
+  final sheets = StringBuffer();
+  for (final page in pages) {
+    final cells = StringBuffer();
+    for (final slot in page) {
+      cells.writeln(_discountCellHtml(slot, logoDataUrl, defaultPercent));
+    }
+    sheets.writeln('<div class="sheet">$cells</div>');
   }
 
   // A4 portrait 210×297mm, kenar 10mm → yazdırılabilir 190×277mm.
-  // 2 sütun → 95mm, 2 satır → ~138.5mm hücre (4 etiket → ferah, profesyonel).
+  // 2 sütun → 95mm, 2 satır → ~138.5mm hücre (4 etiket/sayfa, ferah,
+  // profesyonel); toplam > 4 ise 2., 3. sayfaya taşar (`page-break-after`).
   return '''
 <!DOCTYPE html>
 <html lang="tr">
@@ -955,7 +966,9 @@ String _buildDiscountHtml({
     grid-template-columns: repeat(2, 1fr);
     grid-auto-rows: 138.5mm;
     gap: 0;
+    page-break-after: always;
   }
+  .sheet:last-child { page-break-after: auto; }
   .dscell {
     position: relative;
     border: 0.2mm solid #b8b8b8;
@@ -966,11 +979,18 @@ String _buildDiscountHtml({
     align-items: center;
   }
   .dscell.empty { border-color: #e0e0e0; }
+  .ds-logo-slot {
+    height: 17mm;
+    width: 100%;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   .ds-logo-img {
     max-width: 60%;
-    max-height: 17mm;
+    max-height: 100%;
     object-fit: contain;
-    flex: 0 0 auto;
   }
   .ds-tagline {
     font-size: 7.5pt;
@@ -1079,9 +1099,7 @@ String _buildDiscountHtml({
 </style>
 </head>
 <body onload="window.focus(); window.print();">
-  <div class="sheet">
-    $cells
-  </div>
+  $sheets
 </body>
 </html>''';
 }

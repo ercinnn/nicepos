@@ -190,10 +190,14 @@ class LabelTelSheet extends _$LabelTelSheet {
 
 // ─── İndirim Etiketi sayfası ──────────────────────────────────────────────────
 
-/// İndirim Etiketi sayfasının durumu: 4 hanelik SABİT liste (2×2 A4, kullanıcı
-/// isteği — çok sayfalı YOK). Raf/Tel ile aynı hücre dilini paylaşır; mağaza
-/// logosu ayrı YÜKLENMEZ, Raf'ın kalıcı `LabelSheetState.logoDataUrl`'ü
-/// doğrudan yeniden kullanılır (Tel/Poster'ın zaten yaptığı gibi).
+/// İndirim Etiketi sayfasının durumu: sınırsız büyüyebilen hane listesi (2×2
+/// A4 ızgara, 4/sayfa — barkod okutuldukça 2., 3. sayfaya taşar, bkz.
+/// `paginateDiscountSlots`). `slots` her zaman TEK bir trailing `null`
+/// (henüz taranmamış hane) ile biter; doldurulunca yeni bir `null` eklenir
+/// (büyüme), dolu bir hane silinince liste küçülür. Raf/Tel ile aynı hücre
+/// dilini paylaşır; mağaza logosu ayrı YÜKLENMEZ, sabit marka figürü
+/// (`nice_logo_indirim.png`) kullanılır — hane başı `DiscountLabelSlot.showLogo`
+/// tiki bu logonun o etikette basılıp basılmayacağını belirler.
 /// [defaultPercent] — sayfa geneli "ana indirim %"; hane kendi yüzdesini
 /// GİRMEMİŞSE (`DiscountLabelSlot.discountPercent == null`) bu değer geçerli
 /// olur. Hane kendi yüzdesini girdiyse genel yüzde değişse bile o haneyi
@@ -207,11 +211,16 @@ class LabelDiscountSheetState {
     this.defaultPercent = 0,
   });
 
-  factory LabelDiscountSheetState.initial() => LabelDiscountSheetState(
-        slots: List<DiscountLabelSlot?>.filled(kDiscountCount, null),
-      );
+  factory LabelDiscountSheetState.initial() =>
+      LabelDiscountSheetState(slots: [null]);
 
   int get filledCount => slots.where((s) => s != null).length;
+
+  /// Baskıda oluşacak A4 sayfa sayısı (en az 1) — Ürün Etiketi'nin
+  /// `pageCount` deseniyle aynı.
+  int get pageCount => filledCount == 0
+      ? 1
+      : (filledCount + kDiscountCount - 1) ~/ kDiscountCount;
 
   LabelDiscountSheetState copyWith({
     List<DiscountLabelSlot?>? slots,
@@ -224,17 +233,23 @@ class LabelDiscountSheetState {
   }
 }
 
-/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4
-/// hane korunur (diğer etiket provider'larıyla KARIŞMAZ).
+/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde
+/// hane listesi korunur (diğer etiket provider'larıyla KARIŞMAZ). Liste
+/// sınırsız büyür (4/sayfa taşan A4, bkz. `paginateDiscountSlots`).
 @Riverpod(keepAlive: true)
 class LabelDiscountSheet extends _$LabelDiscountSheet {
   @override
   LabelDiscountSheetState build() => LabelDiscountSheetState.initial();
 
+  /// [index]'teki haneyi ayarlar. Doldurulan hane listenin SON (boş) hanesiyse
+  /// büyüme için yeni bir boş hane EKLENİR — liste her zaman tek bir boş
+  /// hane ile biter (bir sonraki taramaya hazır, ekran tarafı bunu
+  /// `_syncDiscountControllers` ile ayna görür).
   void setSlot(int index, DiscountLabelSlot slot) {
-    if (index < 0 || index >= kDiscountCount) return;
+    if (index < 0 || index >= state.slots.length) return;
     final next = List<DiscountLabelSlot?>.from(state.slots);
     next[index] = slot;
+    if (index == next.length - 1) next.add(null);
     state = state.copyWith(slots: next);
   }
 
@@ -242,7 +257,7 @@ class LabelDiscountSheet extends _$LabelDiscountSheet {
   /// hanesine yazarken her tuş vuruşunda ürünü yeniden çözmeye gerek yok.
   /// `null` → hane kendi yüzdesini TEMİZLER (genel yüzdeye geri döner).
   void setDiscountPercent(int index, num? percent) {
-    if (index < 0 || index >= kDiscountCount) return;
+    if (index < 0 || index >= state.slots.length) return;
     final current = state.slots[index];
     if (current == null) return;
     final next = List<DiscountLabelSlot?>.from(state.slots);
@@ -251,8 +266,20 @@ class LabelDiscountSheet extends _$LabelDiscountSheet {
       productName: current.productName,
       oldPrice: current.oldPrice,
       discountPercent: percent,
+      showLogo: current.showLogo,
       createdAt: current.createdAt,
     );
+    state = state.copyWith(slots: next);
+  }
+
+  /// Hane-başı "logo göster" tiki (varsayılan false — bkz.
+  /// `DiscountLabelSlot.showLogo`).
+  void setShowLogo(int index, bool value) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots);
+    next[index] = current.copyWith(showLogo: value);
     state = state.copyWith(slots: next);
   }
 
@@ -262,16 +289,19 @@ class LabelDiscountSheet extends _$LabelDiscountSheet {
     state = state.copyWith(defaultPercent: percent);
   }
 
-  void clearSlot(int index) {
-    if (index < 0 || index >= kDiscountCount) return;
-    final next = List<DiscountLabelSlot?>.from(state.slots);
-    next[index] = null;
+  /// [index] zaten boşsa (trailing hane) no-op. DOLU bir haneyse listeden
+  /// tamamen ÇIKARIR (sonraki haneler bir yukarı kayar) — liste her zaman
+  /// tek bir trailing `null` ile bitecek şekilde korunur.
+  void removeSlot(int index) {
+    if (index < 0 || index >= state.slots.length) return;
+    if (state.slots[index] == null) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots)..removeAt(index);
+    if (next.isEmpty || next.last != null) next.add(null);
     state = state.copyWith(slots: next);
   }
 
   void clearAll() {
-    state = state.copyWith(
-        slots: List<DiscountLabelSlot?>.filled(kDiscountCount, null));
+    state = state.copyWith(slots: [null]);
   }
 }
 

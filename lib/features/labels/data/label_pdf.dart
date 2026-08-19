@@ -534,11 +534,11 @@ Future<Uint8List> buildDiscountLabelsPdf({
   required List<DiscountLabelSlot?> slots,
   required num defaultPercent,
 }) =>
-    buildDiscountLabelsPdfMultiPage(pages: [slots], defaultPercent: defaultPercent);
+    buildDiscountLabelsPdfMultiPage(
+        pages: paginateDiscountSlots(slots), defaultPercent: defaultPercent);
 
-/// Çok-sayfalı sürüm — API tutarlılığı için diğer sekmelerle aynı ikili yapı
-/// korunur (kullanıcı isteği tek sayfa 4 etiket; ileride birikim istenirse bu
-/// dosya değişmeden `pages` genişletilebilir).
+/// Çok-sayfalı sürüm — `buildDiscountLabelsPdf` `paginateDiscountSlots` ile
+/// böldüğü sayfaları buraya geçirir; her sayfa 2×2 ızgara olarak basılır.
 Future<Uint8List> buildDiscountLabelsPdfMultiPage({
   required List<List<DiscountLabelSlot?>> pages,
   required num defaultPercent,
@@ -604,8 +604,15 @@ pw.Widget _discountCell(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       mainAxisAlignment: pw.MainAxisAlignment.start,
       children: [
-        // Logo — sabit marka figürü (tagline metni kırpılmış, aşağıda kod-render)
-        pw.SizedBox(height: 68, child: pw.Image(logoImage, fit: pw.BoxFit.contain)),
+        // Logo — hane başı `showLogo` tikliyse sabit marka figürü (tagline
+        // metni kırpılmış, aşağıda kod-render); tiksizse alan BOŞ (yükseklik
+        // korunur, yalnız görsel basılmaz).
+        pw.SizedBox(
+          height: 68,
+          child: slot.showLogo
+              ? pw.Image(logoImage, fit: pw.BoxFit.contain)
+              : pw.SizedBox(),
+        ),
         pw.SizedBox(height: 3),
         pw.Text(
           'EV GEREÇLERİ & HIRDAVAT',
