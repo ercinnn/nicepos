@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/link.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -15,6 +16,7 @@ import '../core/constants/app_sizes.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/responsive.dart';
 import '../features/auth/application/auth_provider.dart';
+import '../features/gorevler/application/gorevler_provider.dart' show gorevlerTarihAnahtari;
 import '../features/products/application/product_sync_service.dart';
 import '../features/products/application/sync_status.dart';
 import '../features/products/presentation/widgets/sync_status_badge.dart';
@@ -31,6 +33,8 @@ class _NavItem {
 
 const _navItems = [
   _NavItem('Anasayfa', Icons.dashboard_outlined, Icons.dashboard, '/home'),
+  _NavItem('Görevler', Icons.checklist_outlined, Icons.checklist, '/gorevler'),
+  _NavItem('Analiz', Icons.query_stats_outlined, Icons.query_stats, '/analiz'),
   _NavItem('Satış Yap', Icons.point_of_sale_outlined, Icons.point_of_sale, '/sales'),
   _NavItem('Raporlar', Icons.bar_chart_outlined, Icons.insert_chart, '/reports'),
   _NavItem('Kasa', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, '/kasa'),
@@ -82,6 +86,22 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
         ref.read(connectivityStatusServiceProvider.notifier).probeAndNotify();
       });
     }
+    // Görevler (dünkü satışların raf-kontrol listesi) uygulama o gün ilk
+    // açıldığında otomatik gösterilir — `AppScaffold` bir oturumda yalnız bir
+    // kez kurulduğundan bu da oturum başına yalnız bir kez tetiklenir; tarih
+    // anahtarı SharedPreferences'ta saklandığından aynı gün içinde tekrar
+    // açılış/route değişimi yeniden yönlendirmez. Tüm platformlarda (web dahil)
+    // geçerli — "uygulama" burada cihaz/platform ayrımı gözetmez.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRedirectToGorevler());
+  }
+
+  Future<void> _maybeRedirectToGorevler() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bugun = gorevlerTarihAnahtari();
+    final sonAcilis = prefs.getString('gorevler_son_acilis_tarihi');
+    if (sonAcilis == bugun) return;
+    await prefs.setString('gorevler_son_acilis_tarihi', bugun);
+    if (mounted) context.go('/gorevler');
   }
 
   @override
@@ -218,18 +238,61 @@ class _MobileScaffold extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Mobil alt navigasyon — Material 3 NavigationBar (lacivert zemin, altın
-// seçili "pill" göstergesi + haptic). Yatay-scroll anti-pattern'inden çıkış.
+// Mobil alt navigasyon — yatay kaydırılabilir şerit. 9 madde sabit-genişlikli
+// `NavigationBar` içinde sığmıyordu (etiketler sıkışıp okunaksızlaşıyordu);
+// bunun yerine her öğe sabit genişlikte, taşan kısım yana kaydırılarak
+// erişilir. Seçili öğe rota değişince görünür alana otomatik kaydırılır.
 // ---------------------------------------------------------------------------
 
-class _MobileBottomNav extends StatelessWidget {
+class _MobileBottomNav extends StatefulWidget {
   final String currentPath;
 
   const _MobileBottomNav({required this.currentPath});
 
   @override
+  State<_MobileBottomNav> createState() => _MobileBottomNavState();
+}
+
+class _MobileBottomNavState extends State<_MobileBottomNav> {
+  static const _itemWidth = 76.0;
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected(animate: false));
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileBottomNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentPath != widget.currentPath) {
+      _scrollToSelected(animate: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToSelected({required bool animate}) {
+    if (!_scrollController.hasClients) return;
+    final index = _selectedNavIndex(widget.currentPath);
+    final viewport = _scrollController.position.viewportDimension;
+    final target = (index * _itemWidth) - (viewport / 2) + (_itemWidth / 2);
+    final clamped = target.clamp(0.0, _scrollController.position.maxScrollExtent);
+    if (animate) {
+      _scrollController.animateTo(clamped, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    } else {
+      _scrollController.jumpTo(clamped);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final selectedIndex = _selectedNavIndex(currentPath);
+    final selectedIndex = _selectedNavIndex(widget.currentPath);
 
     return Container(
       decoration: const BoxDecoration(
@@ -244,48 +307,79 @@ class _MobileBottomNav extends StatelessWidget {
           ),
         ],
       ),
-      child: NavigationBarTheme(
-        data: NavigationBarThemeData(
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          indicatorColor: AppColors.goldLight.withValues(alpha: 0.18),
-          indicatorShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-          ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
           height: 64,
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return TextStyle(
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
-            );
-          }),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return IconThemeData(
-              size: 24,
-              color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
-            );
-          }),
-        ),
-        child: SafeArea(
-          top: false,
-          child: NavigationBar(
-            selectedIndex: selectedIndex,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            onDestinationSelected: (index) {
-              HapticFeedback.selectionClick();
-              context.go(_navItems[index].route);
-            },
-            destinations: _navItems.map((item) {
-              return NavigationDestination(
-                icon: Icon(item.icon),
-                selectedIcon: Icon(item.selectedIcon),
-                label: item.label,
+          child: ListView.builder(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            itemCount: _navItems.length,
+            itemBuilder: (context, index) {
+              final item = _navItems[index];
+              final selected = index == selectedIndex;
+              return _BottomNavItem(
+                item: item,
+                selected: selected,
+                width: _itemWidth,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  context.go(item.route);
+                },
               );
-            }).toList(),
+            },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavItem extends StatelessWidget {
+  final _NavItem item;
+  final bool selected;
+  final double width;
+  final VoidCallback onTap;
+
+  const _BottomNavItem({
+    required this.item,
+    required this.selected,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.sidebarTextActive : AppColors.sidebarText;
+
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.goldLight.withValues(alpha: 0.18) : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+              ),
+              child: Icon(selected ? item.selectedIcon : item.icon, color: color, size: 22),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ),
     );

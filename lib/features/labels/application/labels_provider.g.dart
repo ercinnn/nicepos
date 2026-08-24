@@ -298,10 +298,11 @@ final labelTelSheetProvider =
 
 typedef _$LabelTelSheet = Notifier<LabelTelSheetState>;
 String _$labelDiscountSheetHash() =>
-    r'cffe8da7e7e80be0e5ec411a9e5db421e7d7d456';
+    r'733219c893571be24f6e8ee95ada9e5c1ece3ae3';
 
-/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 4
-/// hane korunur (diğer etiket provider'larıyla KARIŞMAZ).
+/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde
+/// hane listesi korunur (diğer etiket provider'larıyla KARIŞMAZ). Liste
+/// sınırsız büyür (4/sayfa taşan A4, bkz. `paginateDiscountSlots`).
 ///
 /// Copied from [LabelDiscountSheet].
 @ProviderFor(LabelDiscountSheet)

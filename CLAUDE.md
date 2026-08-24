@@ -104,12 +104,14 @@ lib/
   features/
     auth/          # Login, ConfigMissingScreen
     home/          # Anasayfa — kısayol kart grid + Dashboard (stat kartları + grafikler)
+    gorevler/      # Görevler — dünkü satışların raf-kontrol listesi, günde bir kez otomatik açılır
     products/      # Ürünler, Ürün Grupları, Liste Gir
     customers/     # Müşteri listesi, detay (geçmiş işlem yönetimi + toplu yazdırma), ödeme
     sales/         # Satış ekranı — 5 sekme, sepet, ödeme paneli, hızlı ürünler
     reports/       # Günlük / Tarihsel / Ürün raporları (3 sekme)
     labels/        # Etiket — raf etiketi A4 yazdırma
     kasa/          # Kasa — gelir-gider defteri + mutabakat + firma giderleri
+    online_satis/  # Online Satış kontrol paneli — bkz. "Online Satış (Storefront)" bölümü
 ```
 
 ### Tasarım Sistemi
@@ -168,6 +170,16 @@ Rapor ekranlarından ve müşteri detayından açılır; kalem/iskonto/ödeme t�
   - `test/dashboard_render_test.dart` bu ikisini regresyon olarak test eder.
 - **Yıllık Ciro / Son 365 Gün kartları** sunucu tarafı tek `SUM()` RPC'si (`sales_revenue_between`) kullanır — istemci tarafı sayfalı toplama değil.
 
+## Görevler
+
+`/gorevler` — dün satılan ürünlerin raf-kontrol listesi ("dünkü satışları kontrol edip rafları tamamla"). Kalıcı bir menü öğesi, AYRICA **uygulama o gün ilk açıldığında otomatik gösterilir**: `AppScaffold` her build'de bir `SharedPreferences` anahtarını (`gorevler_son_acilis_tarihi`) bugünün tarihiyle (`gorevlerTarihAnahtari()`) karşılaştırır, farklıysa `/gorevler`'e yönlendirip anahtarı günceller — bir oturumda yalnız bir kez tetiklenir, aynı gün tekrar route değişse de yeniden yönlendirmez. Tüm platformlarda (web dahil) geçerli.
+
+- **Liste kaynağı:** `GorevlerRepository.fetchYesterdaySoldProducts()` — dünün (takvim günü) `sale_items`'ını sayfalı çekip (`ReportRepository.fetchBestSellers` ile birebir aynı desen) ürün bazında Dart tarafında toplar, adede göre azalan sıralar. Silinmiş ürün (join'de `products` null gelirse) atlanır.
+- **Tamamlanma sunucuda paylaşılır:** `gorev_tamamlamalar` tablosu (`0035_gorev_tamamlamalar.sql`, **Supabase SQL Editor'da elle uygulanmış olmalı**) — `(product_id, gorev_tarihi)` unique, `upsert`/`delete` ile işaretlenir/geri alınır. Aynı (paylaşılan) kullanıcı başka bir cihazdan girdiğinde aynı tamamlanma durumunu görür — önceki yerel/SharedPreferences tabanlı sürümün yerini alır.
+- **Provider (`gorevlerControllerProvider`) autoDispose** — Dashboard provider'larıyla aynı KARAR: sayfaya her dönüşte taze sorgu, kalıcı-yanlış-veri riski yok.
+- **UI:** Yapılacaklar/Tamamlananlar iki sekmesi AYNI provider'ı paylaşır, yalnız `GorevItem.tamamlandi` süzgeci ters çevrilir. Bir satırı tikleyince kısa bir sönme animasyonundan (`AnimatedOpacity`, 260ms) sonra gerçek sunucu güncellemesi (`tamamla`/`geriAl`) tetiklenir. Hero, Dashboard/Raporlar ile BİREBİR aynı `todaySummaryProvider` rakamını gösterir (nakit-esaslı günlük ciro).
+- **⚠️ Mobil alt nav yatay-kaydırmalı:** `Görevler` eklenince alt navigasyon 9 öğeye çıktı ve sabit-genişlikli Material 3 `NavigationBar`'a sığmadı (etiketler sıkışıp okunaksızlaşıyordu) — `_MobileBottomNav` bu yüzden yatay kaydırılabilir sabit-genişlikli (`76px`) bir şeride çevrildi (`ListView.builder` + seçili öğeyi görünür alana otomatik kaydıran `ScrollController`). Yeni bir menü öğesi eklenirse bu davranış korunur, `NavigationBar`'a dönülmez.
+
 ## Müşteri Detayı
 
 `customer_detail_screen.dart` — Alışverişler ve Ödeme/Borç Hareketleri listelerinde tekil + toplu silme. **Toplu yazdırma:** her satışın solunda seçim kutucuğu; seçiliyken (yalnız web) "Seçilenleri Yazdır" butonu, seçilen tüm satışları TEK bir A4 dokümanında (her satış kendi bölümü + genel toplam) yazdırır (`sale_print_web.dart` → `printMultipleSalesA4`).
@@ -224,6 +236,7 @@ Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, S
 - **⚠️ RPC migration dersi:** Bir RPC'nin parametre listesini değiştiren migration'da ÖNCE `DO $$ ... DROP FUNCTION ... $$` ile eski overload'ları temizle — aksi halde `CREATE OR REPLACE` parametre tipi farklıysa yeni bir overload yaratır, "function name is not unique" hatası çıkar.
 - **⚠️ Sorgu planlayıcı dersi:** Bir view'ı büyük bir tabloya JOIN edip window/agregasyon fonksiyonu kullanıyorsan CTE'yi `MATERIALIZED` işaretle — aksi halde planlayıcı satır başına yeniden hesaplayıp statement timeout (57014) verebilir.
 - Eşlenik Barkod: `products.equivalent_group_id` + `product_equivalent_aggregate` view (detay: Ürünler Sayfası notu).
+- `gorev_tamamlamalar` (`0035_gorev_tamamlamalar.sql`) — Görevler raf-kontrol tamamlanma kayıtları, `(product_id, gorev_tarihi)` unique (detay: Görevler bölümü).
 - **Online Satış** (`0028_online_satis.sql`, `0029_online_categories_public_read.sql`): `online_products` view (public-safe sütunlar, `is_online_active=true` filtresi, `anon` okur) + `online_orders`/`online_order_items` tabloları + `create_online_order()` RPC (SECURITY DEFINER, atomik — `complete_sale_offline` ile aynı desen, fiyat/stok/aktiflik sunucuda doğrulanır). `product_groups`'a `anon` için ek public-read policy (kategori navigasyonu). Detay: aşağıdaki "Online Satış (Storefront)" bölümü.
 
 ## Online Satış (Storefront)

@@ -73,6 +73,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late TextEditingController _weightCtrl;
   late TextEditingController _quickOrderCtrl;
 
+  // Mobil "Ürün Bilgisi" sekmesinde Alış/Kâr%/Satış/Stok hanelerinden birine
+  // odaklanınca tüm ekranı kaplayan (app bar + alt menü dahil) büyük-puntolu
+  // onay overlay'i tetikler — kullanıcı hangi haneye girdiğinden emin olsun
+  // diye (Alış=kıpkırmızı/Satış=yemyeşil, `_colorCodedDecoration`'daki aynı
+  // semantik renk burada arka plana taşınır). `Overlay.of(rootOverlay: true)`
+  // ile eklenir ki AppScaffold'un app bar'ı/alt menüsü de gizlensin.
+  late FocusNode _purchasePriceFocus;
+  late FocusNode _price1Focus;
+  late FocusNode _profitMarginFocus;
+  late FocusNode _stockFocus;
+  OverlayEntry? _bigValueOverlay;
+  TextEditingController? _bigValueOverlayCtrl;
+
   // "Diğer Detaylar" → Firma / Tarih / Durum.
   // Ürün Detayı (description) alanı bu üç parçayı ' & ' ayracıyla saklar:
   //   "$firma & $ggaayy & $statusLetter"  (ör. "PALA & 01/07/26 & Y")
@@ -163,6 +176,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _quickOrderCtrl = TextEditingController();
     _companyCtrl = TextEditingController();
     _companyFocus = FocusNode();
+
+    _purchasePriceFocus = FocusNode();
+    _price1Focus = FocusNode();
+    _profitMarginFocus = FocusNode();
+    _stockFocus = FocusNode();
+    _bindBigValueFocus(_purchasePriceFocus,
+        label: 'ALIŞ FİYATI', controller: _purchasePriceCtrl, background: const Color(0xFFD50000), prefix: '₺');
+    _bindBigValueFocus(_price1Focus,
+        label: 'SATIŞ FİYATI', controller: _price1Ctrl, background: const Color(0xFF00C853), prefix: '₺');
+    _bindBigValueFocus(_profitMarginFocus,
+        label: 'KÂR ORANI', controller: _profitMargin1Ctrl, background: AppColors.primaryDeep, suffix: '%');
+    _bindBigValueFocus(_stockFocus,
+        label: 'STOK', controller: _stockCtrl, background: AppColors.primaryDeep);
 
     if (widget.productId != null) {
       _loadProduct(widget.productId!);
@@ -319,6 +345,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   @override
   void dispose() {
     if (_isListening) _speech.stop();
+    _hideBigValueOverlay();
+    _purchasePriceFocus.dispose();
+    _price1Focus.dispose();
+    _profitMarginFocus.dispose();
+    _stockFocus.dispose();
     _barcodeCtrl.dispose();
     _barcodeFocus.dispose();
     _nameCtrl.dispose();
@@ -337,6 +368,62 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _companyCtrl.dispose();
     _companyFocus.dispose();
     super.dispose();
+  }
+
+  /// [node] odak aldığında/kaybettiğinde büyük-puntolu onay overlay'ini
+  /// açıp/kapatan dinleyiciyi bağlar (bkz. `_purchasePriceFocus` notu).
+  void _bindBigValueFocus(
+    FocusNode node, {
+    required String label,
+    required TextEditingController controller,
+    required Color background,
+    String prefix = '',
+    String suffix = '',
+  }) {
+    node.addListener(() {
+      if (node.hasFocus) {
+        _showBigValueOverlay(
+          label: label,
+          controller: controller,
+          background: background,
+          prefix: prefix,
+          suffix: suffix,
+        );
+      } else {
+        _hideBigValueOverlay();
+      }
+    });
+  }
+
+  void _showBigValueOverlay({
+    required String label,
+    required TextEditingController controller,
+    required Color background,
+    String prefix = '',
+    String suffix = '',
+  }) {
+    _hideBigValueOverlay();
+    _bigValueOverlayCtrl = controller;
+    controller.addListener(_rebuildBigValueOverlay);
+    _bigValueOverlay = OverlayEntry(
+      builder: (_) => _BigValueOverlay(
+        label: label,
+        controller: controller,
+        background: background,
+        prefix: prefix,
+        suffix: suffix,
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(_bigValueOverlay!);
+  }
+
+  void _rebuildBigValueOverlay() => _bigValueOverlay?.markNeedsBuild();
+
+  void _hideBigValueOverlay() {
+    _bigValueOverlayCtrl?.removeListener(_rebuildBigValueOverlay);
+    _bigValueOverlayCtrl = null;
+    _bigValueOverlay?.remove();
+    _bigValueOverlay = null;
   }
 
   num _num(TextEditingController c) => num.tryParse(c.text.replaceAll(',', '.')) ?? 0;
@@ -1407,6 +1494,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _purchasePriceCtrl,
+                focusNode: _purchasePriceFocus,
                 decoration: _colorCodedDecoration('Alış', AppColors.danger),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -1421,6 +1509,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _profitMargin1Ctrl,
+                focusNode: _profitMarginFocus,
                 decoration:
                     const InputDecoration(labelText: 'Kar %', suffixText: '%'),
                 keyboardType:
@@ -1440,6 +1529,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _price1Ctrl,
+                focusNode: _price1Focus,
                 decoration: _colorCodedDecoration('Satış', AppColors.success),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -1454,6 +1544,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _stockCtrl,
+                focusNode: _stockFocus,
                 decoration: const InputDecoration(labelText: 'Stok'),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -1675,6 +1766,74 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           onChanged: (v) => setState(() => _isOnlineActive = v),
         ),
       ],
+    );
+  }
+}
+
+/// Alış/Kâr%/Satış/Stok hanelerinden birine odaklanınca tüm ekranı kaplayan
+/// büyük-puntolu onay overlay'i (bkz. `_ProductFormScreenState._bindBigValueFocus`).
+/// Controller değiştikçe (`markNeedsBuild` ile) canlı güncellenir; herhangi
+/// bir yere dokunmak odağı kaldırıp overlay'i kapatır.
+class _BigValueOverlay extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final Color background;
+  final String prefix;
+  final String suffix;
+
+  const _BigValueOverlay({
+    required this.label,
+    required this.controller,
+    required this.background,
+    this.prefix = '',
+    this.suffix = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = controller.text.trim();
+    final display = raw.isEmpty ? '0' : raw;
+
+    return Positioned.fill(
+      child: GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: Material(
+          color: background,
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '$prefix$display$suffix',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 64,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    'Devam etmek için dokun',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

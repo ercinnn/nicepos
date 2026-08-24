@@ -7,10 +7,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/supabase/supabase_config.dart';
 import '../core/supabase/supabase_client_provider.dart';
+import '../features/analiz/presentation/screens/analiz_screen.dart';
 import '../features/auth/presentation/screens/config_missing_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/customers/presentation/screens/customer_detail_screen.dart';
 import '../features/customers/presentation/screens/customers_list_screen.dart';
+import '../features/gorevler/presentation/screens/gorevler_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
 import '../features/kasa/presentation/screens/kasa_screen.dart';
 import '../features/labels/presentation/screens/labels_screen.dart';
@@ -167,6 +169,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/online-satis',
             pageBuilder: (context, state) =>
                 _fadeThroughPage(state, const OnlineSatisScreen()),
+          ),
+          GoRoute(
+            path: '/gorevler',
+            pageBuilder: (context, state) =>
+                _fadeThroughPage(state, const GorevlerScreen()),
+          ),
+          GoRoute(
+            path: '/analiz',
+            pageBuilder: (context, state) =>
+                _fadeThroughPage(state, const AnalizScreen()),
           ),
         ],
       ),
