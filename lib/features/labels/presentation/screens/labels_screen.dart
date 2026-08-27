@@ -3513,39 +3513,53 @@ class _TelDiscountSlotInputRow extends ConsumerWidget {
                           TextStyle(fontSize: 11.5, color: AppColors.textMuted),
                     ),
                     const SizedBox(width: 8),
-                    if (!slot.useGeneral) ...[
-                      _KindToggle(
-                        value: slot.ownKind ?? TelDiscountKind.percent,
-                        onChanged: onOwnKindChanged,
-                      ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        width: 64,
-                        child: TextField(
-                          controller: ownValueController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          textAlign: TextAlign.end,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            hintText:
-                                (slot.ownKind ?? TelDiscountKind.percent) ==
-                                        TelDiscountKind.percent
-                                    ? '%'
-                                    : '₺',
-                            border: InputBorder.none,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 4),
-                          ),
-                          onChanged: onOwnValueChanged,
+                    // Kendi %/₺ kontrolü HER ZAMAN görünür (yaşanmış hata:
+                    // önceden yalnız "Genel" tiki kaldırılınca görünüyordu,
+                    // kullanıcı bunu fark edemiyordu) — "Genel" tikliyken
+                    // soluk/pasif gösterilir, tik kaldırılınca aktifleşir.
+                    Opacity(
+                      opacity: slot.useGeneral ? 0.4 : 1,
+                      child: IgnorePointer(
+                        ignoring: slot.useGeneral,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _KindToggle(
+                              value: slot.ownKind ?? TelDiscountKind.percent,
+                              onChanged: onOwnKindChanged,
+                            ),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 64,
+                              child: TextField(
+                                controller: ownValueController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                textAlign: TextAlign.end,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: (slot.ownKind ??
+                                              TelDiscountKind.percent) ==
+                                          TelDiscountKind.percent
+                                      ? '%'
+                                      : '₺',
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 4),
+                                ),
+                                onChanged: onOwnValueChanged,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
