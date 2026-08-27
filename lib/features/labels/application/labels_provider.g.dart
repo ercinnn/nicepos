@@ -297,6 +297,30 @@ final labelTelSheetProvider =
     );
 
 typedef _$LabelTelSheet = Notifier<LabelTelSheetState>;
+String _$labelTelDiscountSheetHash() =>
+    r'60fedf1412272c1b1807fe436572e3272669ed17';
+
+/// Tel İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme
+/// değişiminde 32 hane + genel indirim korunur (diğer etiket
+/// provider'larıyla KARIŞMAZ).
+///
+/// Copied from [LabelTelDiscountSheet].
+@ProviderFor(LabelTelDiscountSheet)
+final labelTelDiscountSheetProvider =
+    NotifierProvider<
+      LabelTelDiscountSheet,
+      LabelTelDiscountSheetState
+    >.internal(
+      LabelTelDiscountSheet.new,
+      name: r'labelTelDiscountSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelTelDiscountSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelTelDiscountSheet = Notifier<LabelTelDiscountSheetState>;
 String _$labelDiscountSheetHash() =>
     r'733219c893571be24f6e8ee95ada9e5c1ece3ae3';
 

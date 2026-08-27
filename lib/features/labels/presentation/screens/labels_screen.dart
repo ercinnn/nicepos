@@ -28,6 +28,7 @@ import '../../data/models/discount_label_slot.dart';
 import '../../data/models/label_pool_item.dart';
 import '../../data/models/label_slot.dart';
 import '../../data/models/product_label_item.dart';
+import '../../data/models/tel_discount_label_slot.dart';
 import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
 import '../widgets/label_scan_sheet.dart';
@@ -40,7 +41,17 @@ import '../widgets/label_scan_sheet.dart';
 // Poster (barkod okutulan ürünlerin profesyonel A4 listesi) + Ürün Etiketi
 // (adet-tabanlı 6×12) + İndirim Etiketi (4 hane, 2×2 — eski/yeni fiyat +
 // indirim rozeti) + kayıtlı PDF'ler.
-enum _LabelTab { havuz, raf, tel, genis, poster, urun, indirim, kayitli }
+enum _LabelTab {
+  havuz,
+  raf,
+  tel,
+  telIndirim,
+  genis,
+  poster,
+  urun,
+  indirim,
+  kayitli,
+}
 
 // _InputColumn/_SlotInputRow'un hangi hane provider'ını izleyeceğini seçer
 // (Raf/Geniş Logo/Tel — üçü de aynı giriş-sütunu/satır widget'larını paylaşır).
@@ -88,6 +99,18 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   late final List<FocusNode> _telFocusNodes;
   final Set<int> _telErrors = {};
   int _telActiveIndex = 0;
+
+  // Tel İndirim Etiketi sekmesi — Tel ile AYNI sabit 32 haneli giriş
+  // (mağaza logosu da Tel/Raf'la aynı kaynaktan paylaşılır). Her hanenin
+  // barkod alanının yanında kendi %/₺ değeri için ayrı bir controller +
+  // sayfa geneli tek bir "Genel %/₺" değeri (bkz. labels_provider.dart
+  // LabelTelDiscountSheetState.generalKind/generalValue).
+  late final List<TextEditingController> _telDiscountControllers;
+  late final List<FocusNode> _telDiscountFocusNodes;
+  late final List<TextEditingController> _telDiscountOwnValueControllers;
+  final Set<int> _telDiscountErrors = {};
+  int _telDiscountActiveIndex = 0;
+  late final TextEditingController _telDiscountGeneralValueController;
 
   // İndirim Etiketi sekmesi — sınırsız büyüyen giriş listesi (2×2 ızgara,
   // 4/sayfa — bkz. labels_provider.dart LabelDiscountSheetState). Her hane:
@@ -158,6 +181,27 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       });
       return node;
     });
+    _telDiscountControllers =
+        List.generate(kTelCount, (_) => TextEditingController());
+    _telDiscountFocusNodes = List.generate(kTelCount, (i) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus && mounted) {
+          setState(() => _telDiscountActiveIndex = i);
+        }
+      });
+      return node;
+    });
+    _telDiscountOwnValueControllers =
+        List.generate(kTelCount, (_) => TextEditingController());
+    // keepAlive provider'dan mevcut genel değeri geri yükle (sekme değişince korunur).
+    final initialTelDiscountValue =
+        ref.read(labelTelDiscountSheetProvider).generalValue;
+    _telDiscountGeneralValueController = TextEditingController(
+      text: initialTelDiscountValue == 0
+          ? ''
+          : initialTelDiscountValue.toString(),
+    );
     // Ekran yeniden mount olursa (ör. sekmeler arası navigasyon) `keepAlive`
     // provider'daki mevcut hane sayısına göre başlar — metin içeriği restore
     // EDİLMEZ (diğer etiket sekmeleriyle aynı mevcut davranış), yalnız liste
@@ -233,6 +277,16 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     for (final n in _telFocusNodes) {
       n.dispose();
     }
+    for (final c in _telDiscountControllers) {
+      c.dispose();
+    }
+    for (final n in _telDiscountFocusNodes) {
+      n.dispose();
+    }
+    for (final c in _telDiscountOwnValueControllers) {
+      c.dispose();
+    }
+    _telDiscountGeneralValueController.dispose();
     for (final c in _discountBarcodeControllers) {
       c.dispose();
     }
@@ -896,6 +950,230 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       final bytes = await buildTelLabelsPdf(
         slots: state.slots,
         logoDataUrl: logoDataUrl,
+      );
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Tel İndirim Etiketi sekmesi — Tel Etiketi ile AYNI sabit 32 hane, yalnız
+  // her hane eski (çizili) fiyat + kırmızı/büyük yeni fiyat basar. Barkod
+  // çözümü Tel ile birebir aynı (_resolveBarcode, product.price1). İndirim
+  // türü/değeri hem sayfa geneli (Genel %/₺) hem hane-özel olabilir (bkz.
+  // labels_provider.dart LabelTelDiscountSheetState).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  int _nextTelDiscountEmptyIndex() {
+    final slots = ref.read(labelTelDiscountSheetProvider).slots;
+    for (var i = 0; i < kTelCount; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  Future<void> _onTelDiscountSubmitted(int index, String raw) async {
+    final query = raw.trim();
+    final notifier = ref.read(labelTelDiscountSheetProvider.notifier);
+    if (query.isEmpty) {
+      notifier.clearSlot(index);
+      _telDiscountOwnValueControllers[index].clear();
+      setState(() => _telDiscountErrors.remove(index));
+      return;
+    }
+
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      notifier.clearSlot(index);
+      setState(() => _telDiscountErrors.add(index));
+      playScanBeep(success: false); // danger uyarı sesi
+      return;
+    }
+
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    notifier.setSlot(
+      index,
+      TelDiscountLabelSlot(
+        barcode: code,
+        productName: product.name,
+        oldPrice: product.price1,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _telDiscountControllers[index].text = code;
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true);
+    setState(() => _telDiscountErrors.remove(index));
+
+    if (index + 1 < kTelCount) {
+      _telDiscountFocusNodes[index + 1].requestFocus();
+      _telDiscountControllers[index + 1].selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _telDiscountControllers[index + 1].text.length,
+      );
+    }
+  }
+
+  Future<LabelScanFeedback> _handleTelDiscountCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelTelDiscountSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextTelDiscountEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    ref.read(labelTelDiscountSheetProvider.notifier).setSlot(
+          index,
+          TelDiscountLabelSlot(
+            barcode: code,
+            productName: product.name,
+            oldPrice: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+    _telDiscountControllers[index].text = code;
+    setState(() => _telDiscountErrors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  Future<void> _startTelDiscountCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleTelDiscountCameraScan,
+      totalCount: kTelCount,
+      initialFilled: ref.read(labelTelDiscountSheetProvider).filledCount,
+    );
+  }
+
+  void _clearTelDiscountSlot(int index) {
+    _telDiscountControllers[index].clear();
+    _telDiscountOwnValueControllers[index].clear();
+    ref.read(labelTelDiscountSheetProvider.notifier).clearSlot(index);
+    setState(() => _telDiscountErrors.remove(index));
+    _telDiscountFocusNodes[index].requestFocus();
+  }
+
+  void _clearTelDiscountAll() {
+    for (final c in _telDiscountControllers) {
+      c.clear();
+    }
+    for (final c in _telDiscountOwnValueControllers) {
+      c.clear();
+    }
+    ref.read(labelTelDiscountSheetProvider.notifier).clearAll();
+    setState(() => _telDiscountErrors.clear());
+  }
+
+  // [index] hanesinin "genel indirimi kullan" tikini değiştirir.
+  void _toggleTelDiscountUseGeneral(int index, bool value) {
+    ref
+        .read(labelTelDiscountSheetProvider.notifier)
+        .setSlotUseGeneral(index, value);
+  }
+
+  void _onTelDiscountOwnKindChanged(int index, TelDiscountKind kind) {
+    ref
+        .read(labelTelDiscountSheetProvider.notifier)
+        .setSlotOwnKind(index, kind);
+  }
+
+  // Hane kendi %/₺ değerini girer/temizler. Boş bırakılırsa `null`'a döner.
+  void _onTelDiscountOwnValueChanged(int index, String raw) {
+    if (raw.trim().isEmpty) {
+      ref
+          .read(labelTelDiscountSheetProvider.notifier)
+          .setSlotOwnValue(index, null);
+      return;
+    }
+    final v = num.tryParse(raw.replaceAll(',', '.'));
+    if (v == null) return;
+    ref.read(labelTelDiscountSheetProvider.notifier).setSlotOwnValue(index, v);
+  }
+
+  void _onTelDiscountGeneralKindChanged(TelDiscountKind kind) {
+    ref.read(labelTelDiscountSheetProvider.notifier).setGeneralKind(kind);
+  }
+
+  void _onTelDiscountGeneralValueChanged(String raw) {
+    final v = num.tryParse(raw.replaceAll(',', '.')) ?? 0;
+    ref.read(labelTelDiscountSheetProvider.notifier).setGeneralValue(v);
+  }
+
+  void _printTelDiscount() {
+    final state = ref.read(labelTelDiscountSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+    printTelDiscountLabelsA4(
+      slots: state.slots,
+      logoDataUrl: logoDataUrl,
+      generalKind: state.generalKind,
+      generalValue: state.generalValue,
+    );
+  }
+
+  Future<void> _saveTelDiscountPdf() async {
+    final state = ref.read(labelTelDiscountSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'tel-indirim-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+      final bytes = await buildTelDiscountLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: logoDataUrl,
+        generalKind: state.generalKind,
+        generalValue: state.generalValue,
       );
       final saved =
           await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
@@ -1696,6 +1974,13 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return mobile ? _buildTelMobile(selector) : _buildTelDesktop(selector);
     }
 
+    // ── Sekme: Tel İndirim (Tel Etiketi ile aynı 4×8 ızgara, indirimli) ─────
+    if (_tab == _LabelTab.telIndirim) {
+      return mobile
+          ? _buildTelDiscountMobile(selector)
+          : _buildTelDiscountDesktop(selector);
+    }
+
     // ── Sekme 2: Geniş Logo (KARAR v1.14) ──────────────────────────────────
     if (_tab == _LabelTab.genis) {
       return mobile ? _buildWideMobile(selector) : _buildWideDesktop(selector);
@@ -2026,6 +2311,131 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               width: c.maxWidth,
               height: c.maxWidth * (_kA4Height / _kA4Width),
               child: _TelPreviewPane(),
+            ),
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tel İndirim Etiketi — masaüstü (sol 32 hane girişi · sağ tek-sayfalı
+  //     A4 önizleme) ────────────────────────────────────────────────────────
+  Widget _buildTelDiscountDesktop(Widget selector) {
+    final logoState = ref.watch(labelSheetProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: ref.watch(labelTelDiscountSheetProvider).filledCount,
+          totalCount: kTelCount,
+          showLogoActions: false,
+          hasLogo: logoState.logoDataUrl != null,
+          onClearAll: _clearTelDiscountAll,
+          onPrint: _printTelDiscount,
+          onSavePdf: _saveTelDiscountPdf,
+          onCameraScan: kIsWeb ? null : _startTelDiscountCameraScan,
+          subtitle:
+              'Barkod okutun; genel %/₺\'yi girin — hane "Genel" tikliyse bu '
+              'değerden etkilenir, tiki kaldırıp kendi %/₺\'sini de '
+              'girebilirsiniz. Tel Etiketi ile aynı hücre/boyut.',
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // SOL: 32 haneli barkod + %/₺ giriş sütunu
+              Expanded(
+                flex: 5,
+                child: _TelDiscountInputColumn(
+                  barcodeControllers: _telDiscountControllers,
+                  ownValueControllers: _telDiscountOwnValueControllers,
+                  focusNodes: _telDiscountFocusNodes,
+                  errors: _telDiscountErrors,
+                  activeIndex: _telDiscountActiveIndex,
+                  generalValueController: _telDiscountGeneralValueController,
+                  onSubmitted: _onTelDiscountSubmitted,
+                  onToggleUseGeneral: _toggleTelDiscountUseGeneral,
+                  onOwnKindChanged: _onTelDiscountOwnKindChanged,
+                  onOwnValueChanged: _onTelDiscountOwnValueChanged,
+                  onGeneralKindChanged: _onTelDiscountGeneralKindChanged,
+                  onGeneralValueChanged: _onTelDiscountGeneralValueChanged,
+                  onClear: _clearTelDiscountSlot,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              // SAĞ: canlı A4 önizleme
+              Expanded(
+                flex: 6,
+                child: _TelDiscountPreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Tel İndirim Etiketi — mobil (tek kolon) ───────────────────────────────
+  Widget _buildTelDiscountMobile(Widget selector) {
+    final state = ref.watch(labelTelDiscountSheetProvider);
+    final logoState = ref.watch(labelSheetProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.filledCount,
+            totalCount: kTelCount,
+            showLogoActions: false,
+            hasLogo: logoState.logoDataUrl != null,
+            onClearAll: _clearTelDiscountAll,
+            onPrint: _printTelDiscount,
+            onSavePdf: _saveTelDiscountPdf,
+            onCameraScan: kIsWeb ? null : _startTelDiscountCameraScan,
+            subtitle:
+                'Barkod okutun; genel %/₺\'yi girin — hane "Genel" tikliyse bu '
+                'değerden etkilenir, tiki kaldırıp kendi %/₺\'sini de '
+                'girebilirsiniz.',
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          _TelDiscountGeneralField(
+            kind: state.generalKind,
+            valueController: _telDiscountGeneralValueController,
+            onKindChanged: _onTelDiscountGeneralKindChanged,
+            onValueChanged: _onTelDiscountGeneralValueChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          // Giriş haneleri (iç scroll yok — sayfa scroll'una gömülü)
+          ...List.generate(kTelCount, (i) {
+            return _TelDiscountSlotInputRow(
+              index: i,
+              barcodeController: _telDiscountControllers[i],
+              ownValueController: _telDiscountOwnValueControllers[i],
+              focusNode: _telDiscountFocusNodes[i],
+              isActive: _telDiscountActiveIndex == i,
+              isError: _telDiscountErrors.contains(i),
+              onSubmitted: (v) => _onTelDiscountSubmitted(i, v),
+              onToggleUseGeneral: (v) => _toggleTelDiscountUseGeneral(i, v),
+              onOwnKindChanged: (k) => _onTelDiscountOwnKindChanged(i, k),
+              onOwnValueChanged: (v) => _onTelDiscountOwnValueChanged(i, v),
+              onClear: () => _clearTelDiscountSlot(i),
+            );
+          }),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          LayoutBuilder(
+            builder: (ctx, c) => SizedBox(
+              width: c.maxWidth,
+              height: c.maxWidth * (_kA4Height / _kA4Width),
+              child: _TelDiscountPreviewPane(),
             ),
           ),
           const SizedBox(height: AppSizes.space20),
@@ -2752,6 +3162,401 @@ class _SlotInputRow extends ConsumerWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Tel İndirim Etiketi giriş sütunu — Tel ile AYNI sabit 32 hane, satır başına
+// barkod + "Genel indirimi kullan" tiki + (tik kapalıyken) kendi %/₺ değeri.
+// Sayfa geneli tek bir %/₺ anahtarı en üstte (`_TelDiscountGeneralField`).
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _TelDiscountInputColumn extends ConsumerWidget {
+  final List<TextEditingController> barcodeControllers;
+  final List<TextEditingController> ownValueControllers;
+  final List<FocusNode> focusNodes;
+  final Set<int> errors;
+  final int activeIndex;
+  final TextEditingController generalValueController;
+  final Future<void> Function(int, String) onSubmitted;
+  final void Function(int, bool) onToggleUseGeneral;
+  final void Function(int, TelDiscountKind) onOwnKindChanged;
+  final void Function(int, String) onOwnValueChanged;
+  final ValueChanged<TelDiscountKind> onGeneralKindChanged;
+  final ValueChanged<String> onGeneralValueChanged;
+  final void Function(int) onClear;
+
+  const _TelDiscountInputColumn({
+    required this.barcodeControllers,
+    required this.ownValueControllers,
+    required this.focusNodes,
+    required this.errors,
+    required this.activeIndex,
+    required this.generalValueController,
+    required this.onSubmitted,
+    required this.onToggleUseGeneral,
+    required this.onOwnKindChanged,
+    required this.onOwnValueChanged,
+    required this.onGeneralKindChanged,
+    required this.onGeneralValueChanged,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final generalKind = ref
+        .watch(labelTelDiscountSheetProvider.select((s) => s.generalKind));
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(
+                left: AppSizes.space4, bottom: AppSizes.space8),
+            child: _SectionLabel('Barkod + %/₺ İndirim'),
+          ),
+          _TelDiscountGeneralField(
+            kind: generalKind,
+            valueController: generalValueController,
+            onKindChanged: onGeneralKindChanged,
+            onValueChanged: onGeneralValueChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          Expanded(
+            child: ListView.builder(
+              itemCount: barcodeControllers.length,
+              itemBuilder: (context, i) {
+                return _TelDiscountSlotInputRow(
+                  index: i,
+                  barcodeController: barcodeControllers[i],
+                  ownValueController: ownValueControllers[i],
+                  focusNode: focusNodes[i],
+                  isActive: activeIndex == i,
+                  isError: errors.contains(i),
+                  onSubmitted: (v) => onSubmitted(i, v),
+                  onToggleUseGeneral: (v) => onToggleUseGeneral(i, v),
+                  onOwnKindChanged: (k) => onOwnKindChanged(i, k),
+                  onOwnValueChanged: (v) => onOwnValueChanged(i, v),
+                  onClear: () => onClear(i),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Sayfa geneli "genel indirim" — kendi %/₺'sini girmemiş (tikli) TÜM haneler
+// bu tür+değeri kullanır (bkz. `TelDiscountLabelSlot.effectiveKind/Value`).
+class _TelDiscountGeneralField extends StatelessWidget {
+  final TelDiscountKind kind;
+  final TextEditingController valueController;
+  final ValueChanged<TelDiscountKind> onKindChanged;
+  final ValueChanged<String> onValueChanged;
+
+  const _TelDiscountGeneralField({
+    required this.kind,
+    required this.valueController,
+    required this.onKindChanged,
+    required this.onValueChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.goldBorder),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.sell_outlined,
+              size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              'Genel İndirim (Genel tikli haneler)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          _KindToggle(value: kind, onChanged: onKindChanged),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 60,
+            child: TextField(
+              controller: valueController,
+              keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true),
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: kind == TelDiscountKind.percent ? '%' : '₺',
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              ),
+              onChanged: onValueChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Kompakt % / ₺ seçici — sayfa geneli VE hane-özel alanlarda paylaşılır.
+class _KindToggle extends StatelessWidget {
+  final TelDiscountKind value;
+  final ValueChanged<TelDiscountKind> onChanged;
+
+  const _KindToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: SegmentedButton<TelDiscountKind>(
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 8)),
+        ),
+        segments: const [
+          ButtonSegment(
+            value: TelDiscountKind.percent,
+            label: Text('%', style: TextStyle(fontSize: 12)),
+          ),
+          ButtonSegment(
+            value: TelDiscountKind.amount,
+            label: Text('₺', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+        selected: {value},
+        onSelectionChanged: (s) => onChanged(s.first),
+      ),
+    );
+  }
+}
+
+// Tek Tel İndirim hanesi satırı: [# no] [barkod input] [✕] + altında
+// [Genel tiki] + (tik kapalıyken) [%/₺ seçici] [değer input]. Çözülen ürün
+// adı + eski fiyat alanın altında minik gösterilir.
+class _TelDiscountSlotInputRow extends ConsumerWidget {
+  final int index;
+  final TextEditingController barcodeController;
+  final TextEditingController ownValueController;
+  final FocusNode focusNode;
+  final bool isActive;
+  final bool isError;
+  final Future<void> Function(String) onSubmitted;
+  final void Function(bool) onToggleUseGeneral;
+  final void Function(TelDiscountKind) onOwnKindChanged;
+  final void Function(String) onOwnValueChanged;
+  final VoidCallback onClear;
+
+  const _TelDiscountSlotInputRow({
+    required this.index,
+    required this.barcodeController,
+    required this.ownValueController,
+    required this.focusNode,
+    required this.isActive,
+    required this.isError,
+    required this.onSubmitted,
+    required this.onToggleUseGeneral,
+    required this.onOwnKindChanged,
+    required this.onOwnValueChanged,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final slot = ref
+        .watch(labelTelDiscountSheetProvider.select((s) => s.slots[index]));
+
+    final Color borderColor = isError
+        ? AppColors.danger
+        : isActive
+            ? AppColors.primary
+            : AppColors.divider;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSizes.space6),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: borderColor, width: isActive ? 1.4 : 1),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 3,
+                  height: 46,
+                  color: isActive ? AppColors.gold : Colors.transparent,
+                ),
+                Container(
+                  width: 28,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    '${index + 1}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          isActive ? AppColors.primary : AppColors.textMuted,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: barcodeController,
+                          focusNode: focusNode,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Barkod okut / gir',
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 8),
+                          ),
+                          onSubmitted: onSubmitted,
+                        ),
+                        if (slot != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              '${slot.productName}  ·  '
+                              '${formatNumber(slot.oldPrice)} TL',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.success,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          )
+                        else if (isError)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'Ürün bulunamadı.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.danger,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close, size: 16),
+                  color: AppColors.textMuted,
+                  tooltip: 'Haneyi temizle',
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 44),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            if (slot != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(31, 0, 8, 8),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      height: 28,
+                      width: 28,
+                      child: Checkbox(
+                        value: slot.useGeneral,
+                        onChanged: (v) => onToggleUseGeneral(v ?? true),
+                        visualDensity: VisualDensity.compact,
+                        activeColor: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    const Text(
+                      'Genel',
+                      style:
+                          TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+                    ),
+                    const SizedBox(width: 8),
+                    if (!slot.useGeneral) ...[
+                      _KindToggle(
+                        value: slot.ownKind ?? TelDiscountKind.percent,
+                        onChanged: onOwnKindChanged,
+                      ),
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        width: 64,
+                        child: TextField(
+                          controller: ownValueController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText:
+                                (slot.ownKind ?? TelDiscountKind.percent) ==
+                                        TelDiscountKind.percent
+                                    ? '%'
+                                    : '₺',
+                            border: InputBorder.none,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 4),
+                          ),
+                          onChanged: onOwnValueChanged,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // İndirim Etiketi giriş sütunu — sınırsız hane, satır başına barkod + yüzde
 // iki ayrı input + logo tiki (mevcut _SlotInputRow tek-input varsayımıyla
 // uyuşmadığından ayrı). Liste her zaman tek bir trailing boş haneyle biter.
@@ -3168,6 +3973,37 @@ class _TelPreviewPane extends ConsumerWidget {
   }
 }
 
+// Tel İndirim Etiketi önizlemesi — `_TelPreviewPane`'in TelDiscountLabelSlot'lu
+// kopyası (tek sayfa, sabit 32 ızgara — çok-sayfalı YOK).
+class _TelDiscountPreviewPane extends ConsumerWidget {
+  const _TelDiscountPreviewPane();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(labelTelDiscountSheetProvider);
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: _TelDiscountA4Canvas(
+            slots: state.slots,
+            logoDataUrl: logoDataUrl,
+            generalKind: state.generalKind,
+            generalValue: state.generalValue,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // İndirim Etiketi önizlemesi — Poster'ın `_PosterPreviewPane` çok-sayfalı
 // deseniyle aynı (masaüstü: kendi dikey scroll'u; mobil: `scrollable:false` →
 // dış sayfa scroll'una gömülü). `paginateDiscountSlots` ile 4'lük sayfalara
@@ -3403,6 +4239,250 @@ class _LabelCell extends StatelessWidget {
                       formatShortDate(s.createdAt),
                       style: const TextStyle(
                         fontSize: 6.5,
+                        color: Color(0xFF555555),
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// Tel İndirim Etiketi A4 tuvali — Tel Etiketi ile AYNI 4×8 ızgara.
+// `_A4Canvas`'ın TelDiscountLabelSlot'lu kopyası.
+class _TelDiscountA4Canvas extends StatelessWidget {
+  final List<TelDiscountLabelSlot?> slots;
+  final String? logoDataUrl;
+  final TelDiscountKind generalKind;
+  final num generalValue;
+
+  const _TelDiscountA4Canvas({
+    required this.slots,
+    required this.logoDataUrl,
+    required this.generalKind,
+    required this.generalValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const margin = 19.0; // ~5mm @96dpi
+    Uint8List? logoBytes;
+    if (logoDataUrl != null) {
+      final i = logoDataUrl!.indexOf(',');
+      if (i >= 0) {
+        try {
+          logoBytes = base64Decode(logoDataUrl!.substring(i + 1));
+        } catch (_) {
+          logoBytes = null;
+        }
+      }
+    }
+
+    return Container(
+      width: _kA4Width,
+      height: _kA4Height,
+      color: Colors.white,
+      padding: const EdgeInsets.all(margin),
+      child: Column(
+        children: List.generate(kTelRows, (r) {
+          return Expanded(
+            child: Row(
+              children: List.generate(kTelColumns, (c) {
+                final idx = r * kTelColumns + c;
+                return Expanded(
+                  child: _TelDiscountLabelCell(
+                    slot: slots[idx],
+                    logoBytes: logoBytes,
+                    generalKind: generalKind,
+                    generalValue: generalValue,
+                  ),
+                );
+              }),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Tek Tel İndirim etiketi hücresi — Tel Etiketi'nin `_LabelCell`'iyle aynı
+// çerçeve/dolgu, yalnız fiyat bandı yerine ÇİZİLİ eski fiyat + KIRMIZI/1.5×
+// büyük yeni fiyat basar (kullanıcı isteği — "%X İNDİRİM" rozeti YOK, ürün
+// adı yer kısıtından TEK satıra indirildi, alt satır Tel'le AYNI format).
+class _TelDiscountLabelCell extends StatelessWidget {
+  final TelDiscountLabelSlot? slot;
+  final Uint8List? logoBytes;
+  final TelDiscountKind generalKind;
+  final num generalValue;
+
+  const _TelDiscountLabelCell({
+    required this.slot,
+    required this.logoBytes,
+    required this.generalKind,
+    required this.generalValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = slot;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: s == null
+              ? const Color(0xFFE0E0E0)
+              : const Color(0xFFB8B8B8),
+          width: 0.6,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      child: s == null
+          ? const SizedBox.expand()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                // Üst satır (logo + ÇİZİLİ eski fiyat), yeni fiyat, ürün adı,
+                // barkod — DÖRDÜ birlikte flex ORANLI paylaşır (KARAR:
+                // kullanıcı canlı gözden geçirmede logo/eski fiyatı 2×,
+                // barkod yüksekliğini 4×, ürün adını 2× büyütüp yeni fiyatı
+                // yarıya indirmeyi istedi — bu dört isteğin TOPLAMI dar Tel
+                // hücresine (~130px) mutlak pikselde sığmıyor, 40+30+28+80>130
+                // — bu yüzden SABİT piksel yerine bu ORANLARI koruyan flex
+                // ağırlığı kullanılır: hücreye göre ölçeklenir, ASLA taşmaz,
+                // göreli büyüklük isteği korunur. Oran şu an 40:73:19:40 —
+                // kullanıcı barkodu yarıya indirip (80→40) açılan payı yeni
+                // fiyata (33→73) eklemeyi istedi, toplam 172 SABİT kaldı.
+                // Alt satır (barkod no + tarih) DIŞARIDA — sabit/değişmedi.
+                Expanded(
+                  flex: 40,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 60,
+                        child: logoBytes != null
+                            ? Image.memory(logoBytes!, fit: BoxFit.contain)
+                            : const Center(
+                                child: Icon(Icons.storefront,
+                                    color: AppColors.primary, size: 20),
+                              ),
+                      ),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '${formatNumber(s.oldPrice)} TL',
+                            textAlign: TextAlign.right,
+                            maxLines: 1,
+                            overflow: TextOverflow.visible,
+                            style: const TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                              color: Colors.black,
+                              decoration: TextDecoration.lineThrough,
+                              decorationColor: AppColors.danger,
+                              decorationThickness: 2.2,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Yeni fiyat hero'su — kırmızı (kullanıcı isteğiyle barkod
+                // yarıya inince (80→40) açılan pay buraya eklendi: 33 → 73).
+                Expanded(
+                  flex: 73,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: Text(
+                        '${formatNumber(s.newPrice(generalKind, generalValue))} TL',
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.visible,
+                        style: const TextStyle(
+                          fontSize: 73,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                          height: 1,
+                          color: AppColors.danger,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Ürün adı — TEK satır (kullanıcı isteğiyle 2× — 9.5 → 19).
+                Expanded(
+                  flex: 19,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        s.productName.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.visible,
+                        style: const TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w600,
+                          height: 1.1,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Barkod çizgileri (Code128) — kullanıcı isteğiyle yarıya
+                // indirildi (80 → 40), açılan pay yeni fiyata eklendi.
+                Expanded(
+                  flex: 40,
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.8,
+                      child: BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: s.barcode,
+                        drawText: false,
+                        color: Colors.black,
+                        errorBuilder: (context, error) =>
+                            const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+                // En alt: barkod no (sol) + oluşturma tarihi (sağ) — Tel'le
+                // AYNI format, SABİT/doğal yükseklik (değişmedi).
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        s.barcode,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          letterSpacing: 0.3,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    Text(
+                      formatShortDate(s.createdAt),
+                      style: const TextStyle(
+                        fontSize: 6,
                         color: Color(0xFF555555),
                         fontFeatures: [FontFeature.tabularFigures()],
                       ),
@@ -5300,6 +6380,15 @@ class _TabSelector extends StatelessWidget {
             ),
             icon:
                 mobile ? null : const Icon(Icons.view_column_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.telIndirim,
+            label: Text(
+              mobile ? 'Tel İnd.' : 'Tel İndirim',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile ? null : const Icon(Icons.sell_outlined, size: 18),
           ),
           ButtonSegment(
             value: _LabelTab.genis,

@@ -6,6 +6,7 @@ import '../data/models/discount_label_slot.dart';
 import '../data/models/label_pool_item.dart';
 import '../data/models/label_slot.dart';
 import '../data/models/product_label_item.dart';
+import '../data/models/tel_discount_label_slot.dart';
 
 part 'labels_provider.g.dart';
 
@@ -185,6 +186,141 @@ class LabelTelSheet extends _$LabelTelSheet {
 
   void clearAll() {
     state = state.copyWith(slots: List<LabelSlot?>.filled(kTelCount, null));
+  }
+}
+
+// ─── Tel İndirim Etiketi sayfası ──────────────────────────────────────────────
+
+/// Tel İndirim Etiketi sayfasının durumu: Tel Etiketi ile AYNI sabit 32 hane
+/// (`kTelCount`/`kTelColumns`/`kTelRows` yeniden kullanılır — yeni bir ızgara
+/// sabiti YOK, aynı fiziksel boyut). Sayfa geneli bir indirim türü+değeri
+/// (`generalKind`/`generalValue`) tutar; hane kendi `useGeneral`'ı false ise
+/// bu genelden etkilenmez (bkz. `TelDiscountLabelSlot`). Mağaza logosu ayrı
+/// YÜKLENMEZ, Tel/Raf'ın kalıcı `LabelSheetState.logoDataUrl`'i paylaşılır.
+class LabelTelDiscountSheetState {
+  final List<TelDiscountLabelSlot?> slots;
+  final TelDiscountKind generalKind;
+  final num generalValue;
+
+  const LabelTelDiscountSheetState({
+    required this.slots,
+    this.generalKind = TelDiscountKind.percent,
+    this.generalValue = 0,
+  });
+
+  factory LabelTelDiscountSheetState.initial() => LabelTelDiscountSheetState(
+        slots: List<TelDiscountLabelSlot?>.filled(kTelCount, null),
+      );
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  LabelTelDiscountSheetState copyWith({
+    List<TelDiscountLabelSlot?>? slots,
+    TelDiscountKind? generalKind,
+    num? generalValue,
+  }) {
+    return LabelTelDiscountSheetState(
+      slots: slots ?? this.slots,
+      generalKind: generalKind ?? this.generalKind,
+      generalValue: generalValue ?? this.generalValue,
+    );
+  }
+}
+
+/// Tel İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme
+/// değişiminde 32 hane + genel indirim korunur (diğer etiket
+/// provider'larıyla KARIŞMAZ).
+@Riverpod(keepAlive: true)
+class LabelTelDiscountSheet extends _$LabelTelDiscountSheet {
+  @override
+  LabelTelDiscountSheetState build() => LabelTelDiscountSheetState.initial();
+
+  void setSlot(int index, TelDiscountLabelSlot slot) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = slot;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearSlot(int index) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = null;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(
+      slots: List<TelDiscountLabelSlot?>.filled(kTelCount, null),
+    );
+  }
+
+  /// [index] hanesinin "genel indirimi kullan" tikini ayarlar (barkod/ürün/
+  /// fiyat AYNI kalır).
+  void setSlotUseGeneral(int index, bool value) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = TelDiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      createdAt: current.createdAt,
+      useGeneral: value,
+      ownKind: current.ownKind,
+      ownValue: current.ownValue,
+    );
+    state = state.copyWith(slots: next);
+  }
+
+  /// [index] hanesinin kendi indirim türünü ayarlar (yalnız `useGeneral`
+  /// false iken etkilidir).
+  void setSlotOwnKind(int index, TelDiscountKind kind) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = TelDiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      createdAt: current.createdAt,
+      useGeneral: current.useGeneral,
+      ownKind: kind,
+      ownValue: current.ownValue,
+    );
+    state = state.copyWith(slots: next);
+  }
+
+  /// [index] hanesinin kendi indirim değerini ayarlar (yalnız `useGeneral`
+  /// false iken etkilidir).
+  void setSlotOwnValue(int index, num? value) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = TelDiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      createdAt: current.createdAt,
+      useGeneral: current.useGeneral,
+      ownKind: current.ownKind,
+      ownValue: value,
+    );
+    state = state.copyWith(slots: next);
+  }
+
+  /// Sayfa geneli indirim türünü ayarlar (% / ₺) — kendi türünü seçmemiş
+  /// (`useGeneral: true`) tüm haneleri etkiler.
+  void setGeneralKind(TelDiscountKind kind) {
+    state = state.copyWith(generalKind: kind);
+  }
+
+  /// Sayfa geneli indirim değerini ayarlar.
+  void setGeneralValue(num value) {
+    state = state.copyWith(generalValue: value);
   }
 }
 

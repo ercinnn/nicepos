@@ -26,10 +26,12 @@ final gorevlerRepositoryProvider =
 // ignore: unused_element
 typedef GorevlerRepositoryRef = AutoDisposeProviderRef<GorevlerRepository>;
 String _$gorevlerControllerHash() =>
-    r'e3c97a64400b3e0e787cb2709098466997d59d97';
+    r'99dc32b322f7ee0f4a915479bfd5ec0022ac1618';
 
-/// Görevler listesi: dün satılan ürünler EKSİ bugün zaten tiklenmiş olanlar.
-/// autoDispose (dashboard provider'larıyla aynı KARAR) — sayfaya her
+/// Görevler listesi (bekleyen + tamamlanan, `GorevItem.completedAt` ile
+/// ayrışır — bkz. ekran). Tamamlanma sunucuda tutulur (`gorev_tamamlamalar`)
+/// ki aynı (paylaşılan) kullanıcı başka bir cihazdan girdiğinde aynı durumu
+/// görsün. autoDispose (dashboard provider'larıyla aynı KARAR) — sayfaya her
 /// dönüşte taze sorgu, kalıcı-yanlış-veri riski yok.
 ///
 /// Copied from [GorevlerController].

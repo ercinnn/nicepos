@@ -11,6 +11,7 @@ import '../../../core/utils/formatters.dart';
 import 'models/discount_label_slot.dart';
 import 'models/label_slot.dart';
 import 'models/product_label_item.dart';
+import 'models/tel_discount_label_slot.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Raf etiketi PDF üretimi (KARAR v1.11) — her platformda (native Android dahil)
@@ -87,6 +88,234 @@ Future<Uint8List> buildTelLabelsPdfMultiPage({
       pages: pages,
       logoDataUrl: logoDataUrl,
     );
+
+/// Tel İndirim Etiketi PDF'i: Tel Etiketi ile AYNI 4×8 ızgara/kenar boşluğu,
+/// yalnız her hücre çizili eski fiyat + kırmızı/1.5× büyük yeni fiyat basar
+/// (İndirim Etiketi'nin `buildDiscountLabelsPdfMultiPage` yapısı mirror'lanır
+/// — kendi hücre çizim fonksiyonu `_telDiscountCell`, tek sayfa, çok-sayfalı
+/// destek YOK — Tel Etiketi'nin sabit 32 haneli tek-sayfa deseniyle aynı).
+Future<Uint8List> buildTelDiscountLabelsPdf({
+  required List<TelDiscountLabelSlot?> slots,
+  String? logoDataUrl,
+  required TelDiscountKind generalKind,
+  required num generalValue,
+}) async {
+  pw.ThemeData theme;
+  try {
+    final base = await PdfGoogleFonts.robotoRegular();
+    final bold = await PdfGoogleFonts.robotoBold();
+    theme = pw.ThemeData.withFont(base: base, bold: bold);
+  } catch (_) {
+    theme = pw.ThemeData.base();
+  }
+
+  pw.ImageProvider? logoImage;
+  if (logoDataUrl != null) {
+    final i = logoDataUrl.indexOf(',');
+    if (i >= 0) {
+      try {
+        logoImage = pw.MemoryImage(base64Decode(logoDataUrl.substring(i + 1)));
+      } catch (_) {
+        logoImage = null;
+      }
+    }
+  }
+
+  final doc = pw.Document(theme: theme);
+  doc.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(5 * PdfPageFormat.mm),
+      build: (context) {
+        return pw.Column(
+          children: List.generate(_kTelRows, (r) {
+            return pw.Expanded(
+              child: pw.Row(
+                children: List.generate(_kTelCols, (c) {
+                  final idx = r * _kTelCols + c;
+                  final slot = idx < slots.length ? slots[idx] : null;
+                  return pw.Expanded(
+                    child: _telDiscountCell(
+                        slot, logoImage, generalKind, generalValue),
+                  );
+                }),
+              ),
+            );
+          }),
+        );
+      },
+    ),
+  );
+
+  return doc.save();
+}
+
+// Tek Tel İndirim etiketi hücresi — Tel'in `_cell`'iyle aynı çerçeve/dolgu,
+// yalnız fiyat bandı yerine çizili eski fiyat + kırmızı/büyük yeni fiyat
+// (ekrandaki `_TelDiscountLabelCell` ile BİREBİR aynı düzen/oranlar).
+pw.Widget _telDiscountCell(
+  TelDiscountLabelSlot? slot,
+  pw.ImageProvider? logoImage,
+  TelDiscountKind generalKind,
+  num generalValue,
+) {
+  if (slot == null) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: _hairlineEmpty, width: 0.5),
+      ),
+    );
+  }
+
+  return pw.Container(
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: _hairline, width: 0.5),
+    ),
+    padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      mainAxisAlignment: pw.MainAxisAlignment.start,
+      children: [
+        // Üst satır (logo + ÇİZİLİ eski fiyat), yeni fiyat, ürün adı, barkod
+        // — DÖRDÜ `pw.Expanded` flex ORANI (40:33:19:80, ekrandaki
+        // `_TelDiscountLabelCell` ile BİREBİR aynı oran) ile paylaşır. `pw`
+        // paketinde bir Row/SizedBox(height:) zincirinin altındaki
+        // `pw.Expanded(flex:)` barkod widget'ına GERÇEK (sıfır olmayan)
+        // yükseklik vermeyebiliyor (`height > 0` assertion'ı fırlatan
+        // yaşanmış hata) — Raf/Tel'in kanıtlanmış deseni doğrudan
+        // `pw.Expanded`'ın Column'un ANA eksenindeki (dikey) flex payını
+        // kullanmaktı, burada da AYNI desene dönüldü (SizedBox(height:)
+        // KULLANILMAZ). Alt satır (barkod no + tarih) DIŞARIDA, değişmedi.
+        pw.Expanded(
+          flex: 40,
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.SizedBox(
+                width: 26,
+                child: logoImage != null
+                    ? pw.Image(logoImage, fit: pw.BoxFit.contain)
+                    : pw.SizedBox(),
+              ),
+              pw.SizedBox(width: 3),
+              pw.Expanded(
+                child: pw.Align(
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.FittedBox(
+                    fit: pw.BoxFit.contain,
+                    child: pw.Text(
+                      '${formatNumber(slot.oldPrice)} TL',
+                      maxLines: 1,
+                      style: pw.TextStyle(
+                        fontSize: 22,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.black,
+                        decoration: pw.TextDecoration.lineThrough,
+                        decorationColor: _discountRed,
+                        decorationThickness: 1.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Yeni fiyat hero'su — kırmızı (kullanıcı isteğiyle barkod yarıya
+        // inince (80→40) açılan pay buraya eklendi: 26 → 58).
+        pw.Expanded(
+          flex: 73,
+          child: pw.Align(
+            alignment: pw.Alignment.center,
+            child: pw.FittedBox(
+              fit: pw.BoxFit.contain,
+              child: pw.Text(
+                '${formatNumber(slot.newPrice(generalKind, generalValue))} TL',
+                textAlign: pw.TextAlign.center,
+                maxLines: 1,
+                style: pw.TextStyle(
+                  fontSize: 58,
+                  fontWeight: pw.FontWeight.bold,
+                  letterSpacing: -0.5,
+                  color: _discountRed,
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Ürün adı — TEK satır (kullanıcı isteğiyle 2× — 7 → 14).
+        pw.Expanded(
+          flex: 19,
+          child: pw.Align(
+            alignment: pw.Alignment.center,
+            child: pw.FittedBox(
+              fit: pw.BoxFit.scaleDown,
+              child: pw.Text(
+                slot.productName.toUpperCase(),
+                textAlign: pw.TextAlign.center,
+                maxLines: 1,
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Barkod çizgileri (Code128; geçersizse boş bırak) — kullanıcı
+        // isteğiyle yarıya indirildi (80→40), açılan pay yeni fiyata
+        // eklendi. `pw.Expanded`'ın Column ANA eksenindeki flex payı
+        // kullanılır (yukarıdaki not) — bu HER ZAMAN sıfırdan büyük, kesin
+        // bir yükseklik verir.
+        pw.Expanded(
+          flex: 40,
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Spacer(flex: 1),
+              pw.Expanded(
+                flex: 8,
+                child: bc.Barcode.code128().isValid(slot.barcode)
+                    ? pw.BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: slot.barcode,
+                        drawText: false,
+                        color: PdfColors.black,
+                      )
+                    : pw.SizedBox(),
+              ),
+              pw.Spacer(flex: 1),
+            ],
+          ),
+        ),
+        // En alt: barkod no (sol) + oluşturma tarihi (sağ) — Tel'le AYNI format.
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.end,
+          children: [
+            pw.Expanded(
+              child: pw.Text(
+                slot.barcode,
+                textAlign: pw.TextAlign.center,
+                maxLines: 1,
+                overflow: pw.TextOverflow.clip,
+                style: const pw.TextStyle(
+                  fontSize: 9,
+                  letterSpacing: 0.3,
+                  color: PdfColors.black,
+                ),
+              ),
+            ),
+            pw.Text(
+              formatShortDate(slot.createdAt),
+              style: const pw.TextStyle(fontSize: 5, color: _dateGrey),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
 Future<Uint8List> _buildGridLabelsPdfMultiPage({
   required int cols,

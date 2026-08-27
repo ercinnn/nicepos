@@ -7,6 +7,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../data/models/discount_label_slot.dart';
 import '../../data/models/label_slot.dart';
 import '../../data/models/product_label_item.dart';
+import '../../data/models/tel_discount_label_slot.dart';
 
 /// Dolu raf etiketlerini A4 dikey (3 sütun × 8 satır = 24) olarak yeni bir
 /// tarayıcı penceresinde açar ve otomatik yazdırma diyaloğunu tetikler
@@ -37,6 +38,31 @@ void printTelLabelsA4({
   String? logoDataUrl,
 }) {
   final html = _buildTelHtml(slots: slots, logoDataUrl: logoDataUrl);
+
+  final blob = web.Blob(
+    [html.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/html'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.window.open(url, '_blank');
+}
+
+/// Dolu Tel İndirim Etiketlerini A4 dikey (4 sütun × 8 satır = 32) olarak yeni
+/// bir tarayıcı penceresinde açar ve otomatik yazdırır. Tel Etiketi'nin
+/// (`printTelLabelsA4`) birebir aynı ızgara/kenar boşluğu, yalnız her hücre
+/// çizili eski fiyat + kırmızı/1.5× büyük yeni fiyat basar (rozet YOK).
+void printTelDiscountLabelsA4({
+  required List<TelDiscountLabelSlot?> slots,
+  String? logoDataUrl,
+  required TelDiscountKind generalKind,
+  required num generalValue,
+}) {
+  final html = _buildTelDiscountHtml(
+    slots: slots,
+    logoDataUrl: logoDataUrl,
+    generalKind: generalKind,
+    generalValue: generalValue,
+  );
 
   final blob = web.Blob(
     [html.toJS].toJS,
@@ -410,6 +436,184 @@ String _buildTelHtml({
   }
   .bcno { font-size: 14pt; letter-spacing: 0.5px; text-align: center; }
   .cdate { font-size: 5.5pt; color: #444; }
+</style>
+</head>
+<body onload="window.focus(); window.print();">
+  <div class="sheet">
+    $cells
+  </div>
+</body>
+</html>''';
+}
+
+// ─── Tel İndirim Etiketi — Tel ile AYNI 4×8 ızgara, indirimli fiyat çifti ────
+
+String _telDiscountCellHtml(
+  TelDiscountLabelSlot? slot,
+  String? logoDataUrl,
+  TelDiscountKind generalKind,
+  num generalValue,
+) {
+  if (slot == null) {
+    return '<div class="tdcell empty"></div>';
+  }
+
+  final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
+      ? '<img class="tdlogo-img" src="${_esc(logoDataUrl)}" alt="logo">'
+      : _storeIconSvg;
+
+  final bc = _barcodeSvg(slot.barcode);
+  final bcHtml = bc.isEmpty ? '' : '<div class="tdbc">$bc</div>';
+  final bcNo = _esc(slot.barcode);
+
+  return '''
+    <div class="tdcell">
+      <div class="tdtop">
+        <div class="tdlogo">$logoHtml</div>
+        <div class="tdold">${_esc(formatNumber(slot.oldPrice))} TL</div>
+      </div>
+      <div class="tdnew">${_esc(formatNumber(slot.newPrice(generalKind, generalValue)))} TL</div>
+      <div class="tdpname">${_esc(slot.productName)}</div>
+      $bcHtml
+      <div class="tdbottom">
+        <span class="tdbcno">$bcNo</span>
+        <span class="tdcdate">${_esc(formatShortDate(slot.createdAt))}</span>
+      </div>
+    </div>''';
+}
+
+String _buildTelDiscountHtml({
+  required List<TelDiscountLabelSlot?> slots,
+  String? logoDataUrl,
+  required TelDiscountKind generalKind,
+  required num generalValue,
+}) {
+  final cells = StringBuffer();
+  for (final slot in slots) {
+    cells.writeln(
+        _telDiscountCellHtml(slot, logoDataUrl, generalKind, generalValue));
+  }
+
+  // A4 portrait: 210×297mm, kenar 5mm → yazdırılabilir 200×287mm.
+  // 4 sütun → 50mm, 8 satır → ~35.9mm hücre (Tel Etiketi ile birebir aynı).
+  return '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Tel İndirim Etiketleri</title>
+<style>
+  @page { size: A4 portrait; margin: 5mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    width: 200mm;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 35.9mm;
+    gap: 0;
+  }
+  .tdcell {
+    border: 0.2mm solid #b8b8b8;
+    padding: 1.2mm 2mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .tdcell.empty { border-color: #e0e0e0; }
+  /* Üst satır (logo + çizili eski fiyat), yeni fiyat, ürün adı, barkod —
+     DÖRDÜ flex ORANI (40:33:19:80, ekrandaki `_TelDiscountLabelCell` ve
+     PDF'teki `_telDiscountCell` ile BİREBİR aynı oran) ile hücre boyunu
+     paylaşır — kullanıcının canlı gözden geçirmede istediği 2×/2×/0.5×/4×
+     büyüklükler dar hücreye (35.9mm) mutlak pikselde/mm'de birlikte
+     sığmadığından (toplamı bütçeyi aşıyor) SABİT mm yerine bu ORANLAR
+     kullanılır — hücreye göre ölçeklenir, taşma riski YOK. Alt satır
+     (barkod no + tarih) DIŞARIDA, SABİT/değişmedi. */
+  .tdtop {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1.5mm;
+    flex: 40 1 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .tdlogo {
+    width: 18mm;
+    height: 100%;
+    flex: 0 0 auto;
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tdlogo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .tdold {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #000;
+    text-decoration: line-through;
+    text-decoration-color: #C0392B;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Yeni fiyat hero'su — kullanıcı isteğiyle barkod yarıya inince (80→40)
+     açılan pay buraya eklendi: 17pt → 38pt. */
+  .tdnew {
+    flex: 73 1 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-weight: 800;
+    font-size: 38pt;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    color: #C0392B;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Ürün adı — kullanıcı isteğiyle 2×: 7pt → 14pt. */
+  .tdpname {
+    flex: 19 1 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14pt;
+    font-weight: 600;
+    line-height: 1.1;
+    text-transform: uppercase;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Barkod — kullanıcı isteğiyle yarıya indirildi (flex 80 → 40), açılan pay yeni fiyata eklendi. */
+  .tdbc {
+    flex: 40 1 0;
+    min-height: 0;
+    width: 80%;
+    margin: 0 auto;
+  }
+  .tdbc svg { width: 100%; height: 100%; display: block; }
+  .tdbottom {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .tdbcno { font-size: 9pt; letter-spacing: 0.3px; text-align: center; }
+  .tdcdate { font-size: 5pt; color: #444; }
 </style>
 </head>
 <body onload="window.focus(); window.print();">

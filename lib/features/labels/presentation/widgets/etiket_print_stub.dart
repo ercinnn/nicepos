@@ -1,6 +1,7 @@
 import '../../data/models/discount_label_slot.dart';
 import '../../data/models/label_slot.dart';
 import '../../data/models/product_label_item.dart';
+import '../../data/models/tel_discount_label_slot.dart';
 
 /// Web dışı platformlarda yazdırma desteklenmez (buton yalnızca web'de görünür).
 /// Bu stub yalnızca mobil/masaüstü derlemelerinin geçmesi için vardır (satış
@@ -17,6 +18,17 @@ void printLabelsA4({
 void printTelLabelsA4({
   required List<LabelSlot?> slots,
   String? logoDataUrl,
+}) {
+  // No-op
+}
+
+/// Tel İndirim Etiketi yazdırma — web dışı platformlarda no-op (Tel
+/// Etiketi'nin `printTelLabelsA4` no-op'uyla aynı desen).
+void printTelDiscountLabelsA4({
+  required List<TelDiscountLabelSlot?> slots,
+  String? logoDataUrl,
+  required TelDiscountKind generalKind,
+  required num generalValue,
 }) {
   // No-op
 }
