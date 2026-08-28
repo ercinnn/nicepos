@@ -16,6 +16,7 @@ import '../core/constants/app_sizes.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/responsive.dart';
 import '../features/auth/application/auth_provider.dart';
+import '../features/auth/presentation/widgets/edit_tenant_name_dialog.dart';
 import '../features/auth/presentation/widgets/staff_invite_dialog.dart';
 import '../features/gorevler/application/gorevler_provider.dart' show gorevlerTarihAnahtari;
 import '../features/products/application/product_sync_service.dart';
@@ -202,6 +203,10 @@ class _MobileScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Faz C: uygulama içi marka metni artık kiracının kendi adı — yalnız
+    // pre-login ekranlarda (giriş/kayıt) "NicePOS" platform adı kalır.
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
+
     return Scaffold(
       key: scaffoldKey,
       backgroundColor: AppColors.pageBg,
@@ -212,13 +217,14 @@ class _MobileScaffold extends ConsumerWidget {
           icon: const Icon(Icons.menu, color: AppColors.textSecondary),
           onPressed: () => scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.point_of_sale, color: AppColors.primary, size: 20),
-            SizedBox(width: 8),
+            const Icon(Icons.point_of_sale, color: AppColors.primary, size: 20),
+            const SizedBox(width: 8),
             Text(
-              'NicePOS',
-              style: TextStyle(
+              tenantName,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
                 color: AppColors.primary,
                 fontWeight: FontWeight.bold,
                 fontSize: 17,
@@ -411,6 +417,7 @@ class _MobileDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final membership = ref.watch(currentMembershipProvider).valueOrNull;
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
     return Drawer(
       backgroundColor: AppColors.sidebarBg,
       child: SafeArea(
@@ -423,12 +430,15 @@ class _MobileDrawer extends ConsumerWidget {
                 children: [
                   const Icon(Icons.point_of_sale, color: AppColors.primary, size: 24),
                   const SizedBox(width: 10),
-                  const Text(
-                    'NicePOS',
-                    style: TextStyle(
-                      color: AppColors.sidebarTextActive,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+                  Expanded(
+                    child: Text(
+                      tenantName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.sidebarTextActive,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
                 ],
@@ -477,6 +487,16 @@ class _MobileDrawer extends ConsumerWidget {
                 onTap: () {
                   Navigator.of(context).pop();
                   showStaffInviteDialog(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined,
+                    color: AppColors.sidebarText, size: 20),
+                title: const Text('İşletme Adını Düzenle',
+                    style: TextStyle(fontSize: 14, color: AppColors.sidebarText)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  showEditTenantNameDialog(context, currentName: tenantName);
                 },
               ),
             ],
@@ -554,14 +574,15 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
-class _SidebarHeader extends StatelessWidget {
+class _SidebarHeader extends ConsumerWidget {
   final bool expanded;
   final VoidCallback onToggle;
 
   const _SidebarHeader({required this.expanded, required this.onToggle});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
     return SizedBox(
       height: AppSizes.topBarHeight,
       child: Row(
@@ -570,10 +591,10 @@ class _SidebarHeader extends StatelessWidget {
           const Icon(Icons.point_of_sale, color: AppColors.primary, size: 22),
           if (expanded) ...[
             const SizedBox(width: 10),
-            const Expanded(
+            Expanded(
               child: Text(
-                'NicePOS',
-                style: TextStyle(
+                tenantName,
+                style: const TextStyle(
                   color: AppColors.sidebarTextActive,
                   fontWeight: FontWeight.bold,
                   fontSize: 17,
@@ -863,6 +884,7 @@ class _TopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final membership = ref.watch(currentMembershipProvider).valueOrNull;
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
 
     return Container(
       height: AppSizes.topBarHeight,
@@ -873,8 +895,16 @@ class _TopBar extends ConsumerWidget {
           // Arama kutusu yerine: günün tarihi + canlı saat
           const _LiveClock(),
           const Spacer(),
-          // Personel davet — yalnız owner/admin (Faz B, bkz. staff_invite_dialog.dart).
+          // Personel davet + işletme adı düzenleme — yalnız owner/admin
+          // (Faz B/C, bkz. staff_invite_dialog.dart / edit_tenant_name_dialog.dart).
           if (membership?.isOwnerOrAdmin == true) ...[
+            TextButton.icon(
+              onPressed: () =>
+                  showEditTenantNameDialog(context, currentName: tenantName),
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('İşletme Adı', style: TextStyle(fontSize: 13)),
+              style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
+            ),
             TextButton.icon(
               onPressed: () => showStaffInviteDialog(context),
               icon: const Icon(Icons.person_add_alt_outlined, size: 16),

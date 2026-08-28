@@ -63,6 +63,28 @@ final currentMembershipProvider = FutureProvider<Membership?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CurrentMembershipRef = FutureProviderRef<Membership?>;
+String _$currentTenantHash() => r'8e92efbf54cf5483c93a7d3adb8659ac639aaad2';
+
+/// Oturum açan kullanıcının kiracısı (ad/slug). `tenants` RLS'i zaten
+/// `id = current_tenant_id()`'e daraltıldığından filtresiz `select` tam
+/// olarak çağıranın kendi kiracı satırını döndürür (Faz C — bkz. app_scaffold.dart
+/// "NicePOS" yerine kiracı adı gösterimi).
+///
+/// Copied from [currentTenant].
+@ProviderFor(currentTenant)
+final currentTenantProvider = FutureProvider<TenantInfo?>.internal(
+  currentTenant,
+  name: r'currentTenantProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$currentTenantHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CurrentTenantRef = FutureProviderRef<TenantInfo?>;
 String _$ensureTenantProvisionedHash() =>
     r'8c6427e9944ec15e559653f2cb10178e64527c6c';
 

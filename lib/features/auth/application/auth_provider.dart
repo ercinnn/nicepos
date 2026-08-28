@@ -39,6 +39,26 @@ class Membership {
   bool get isOwnerOrAdmin => role == 'owner' || role == 'admin';
 }
 
+/// Oturum açan kullanıcının kiracısı (ad/slug). `tenants` RLS'i zaten
+/// `id = current_tenant_id()`'e daraltıldığından filtresiz `select` tam
+/// olarak çağıranın kendi kiracı satırını döndürür (Faz C — bkz. app_scaffold.dart
+/// "NicePOS" yerine kiracı adı gösterimi).
+@Riverpod(keepAlive: true)
+Future<TenantInfo?> currentTenant(CurrentTenantRef ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  ref.watch(authStateChangesProvider);
+  if (client.auth.currentUser == null) return null;
+  final rows = await client.from('tenants').select('id, name').limit(1);
+  if (rows.isEmpty) return null;
+  return TenantInfo(id: rows.first['id'] as String, name: rows.first['name'] as String);
+}
+
+class TenantInfo {
+  final String id;
+  final String name;
+  const TenantInfo({required this.id, required this.name});
+}
+
 /// Gecikmeli e-posta onayı senaryosunu kapatır: kullanıcı `signUp()` anında
 /// bir oturum ALMADIYSA (Confirm email açıksa) şirket adı/davet kodu
 /// `user_metadata`'da bekler; kullanıcı e-postayı onaylayıp İLK kez giriş
