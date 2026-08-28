@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../application/auth_provider.dart';
 
 /// Owner/admin'in kendi kiracısının (işletme) adını değiştirdiği diyalog —
 /// `update_tenant_name` RPC'si (bkz. 0042 migration). Uygulama genelinde
@@ -14,15 +16,15 @@ Future<void> showEditTenantNameDialog(BuildContext context, {required String cur
   );
 }
 
-class _EditTenantNameDialog extends StatefulWidget {
+class _EditTenantNameDialog extends ConsumerStatefulWidget {
   final String currentName;
   const _EditTenantNameDialog({required this.currentName});
 
   @override
-  State<_EditTenantNameDialog> createState() => _EditTenantNameDialogState();
+  ConsumerState<_EditTenantNameDialog> createState() => _EditTenantNameDialogState();
 }
 
-class _EditTenantNameDialogState extends State<_EditTenantNameDialog> {
+class _EditTenantNameDialogState extends ConsumerState<_EditTenantNameDialog> {
   late final _controller = TextEditingController(text: widget.currentName);
   bool _loading = false;
   String? _error;
@@ -45,6 +47,9 @@ class _EditTenantNameDialogState extends State<_EditTenantNameDialog> {
     });
     try {
       await Supabase.instance.client.rpc('update_tenant_name', params: {'p_name': name});
+      // Provider'ı invalidate etmezsek isim RPC'de değişse bile ekranda
+      // eski değer kalır — keepAlive provider kendi kendine yenilenmez.
+      ref.invalidate(currentTenantProvider);
       if (mounted) Navigator.of(context).pop();
     } on PostgrestException catch (e) {
       setState(() => _error = e.message);
