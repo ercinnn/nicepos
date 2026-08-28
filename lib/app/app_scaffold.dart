@@ -109,6 +109,21 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
   Widget build(BuildContext context) {
     final email = ref.watch(currentUserEmailProvider);
 
+    // Kiracı provizyonu garantisi (gecikmeli e-posta onayı senaryosu — bkz.
+    // auth_provider.dart `ensureTenantProvisionedProvider`). ⚠️ Bilinçli
+    // olarak router'ın `redirect`'inde DEĞİL, burada widget seviyesinde
+    // beklenir: `redirect` içinde `await` edilen bir asenkron kontrol,
+    // go_router'ın `refreshListenable`'ı (auth state değişimleri) ile
+    // çakışıp TÜM uygulamanın canlıda kalıcı beyaz ekranda kilitlenmesine
+    // yol açmıştı (ölçülmüş hata) — router her zaman senkron kalmalı, yükleme
+    // durumu bir widget'ın normal build akışında (burada) gösterilmeli.
+    final provisioning = ref.watch(ensureTenantProvisionedProvider);
+    if (provisioning.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     // Mobil çevrimdışı ürün senkronu — arka planda (kullanıcı hiç dokunmadan,
     // ör. periyodik prob veya connectivity geri gelince) sessizce tamamlanan
     // bir senkron döngüsünü bildirir. `AppScaffold` tüm rotaları sardığından
