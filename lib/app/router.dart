@@ -8,8 +8,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase/supabase_config.dart';
 import '../core/supabase/supabase_client_provider.dart';
 import '../features/analiz/presentation/screens/analiz_screen.dart';
+import '../features/auth/application/auth_provider.dart';
 import '../features/auth/presentation/screens/config_missing_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
+import '../features/auth/presentation/screens/signup_screen.dart';
 import '../features/customers/presentation/screens/customer_detail_screen.dart';
 import '../features/customers/presentation/screens/customers_list_screen.dart';
 import '../features/gorevler/presentation/screens/gorevler_screen.dart';
@@ -91,16 +93,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/home',
     refreshListenable: refreshStream,
-    redirect: (context, state) {
+    redirect: (context, state) async {
       final loggedIn = client.auth.currentSession != null;
       final goingToLogin = state.matchedLocation == '/login';
+      final goingToSignup = state.matchedLocation == '/signup';
+      final goingToPublic = goingToLogin || goingToSignup;
 
-      if (!loggedIn && !goingToLogin) return '/login';
-      if (loggedIn && goingToLogin) return '/home';
+      if (!loggedIn) return goingToPublic ? null : '/login';
+      if (goingToPublic) return '/home';
+
+      // Kiracı provizyonunu garanti et (gecikmeli e-posta onayı senaryosu —
+      // bkz. auth_provider.dart `ensureTenantProvisionedProvider`). keepAlive
+      // olduğundan aynı oturum için tekrar tekrar RPC çağırmaz, yalnızca ilk
+      // çözümü bekler; sonraki her redirect'te önbellekten anında döner.
+      await ref.read(ensureTenantProvisionedProvider.future);
+      // Provizyon başarısız olup signOut() tetiklenmişse bir sonraki redirect
+      // turu loggedIn=false görüp /login'e yönlendirir (bu turda henüz eski
+      // currentSession değeri okunmuş olabilir, refreshStream zaten yeni bir
+      // redirect turu tetikleyecektir).
       return null;
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(path: '/signup', builder: (context, state) => const SignupScreen()),
       ShellRoute(
         builder: (context, state, child) {
           return AppScaffold(currentPath: state.matchedLocation, child: child);

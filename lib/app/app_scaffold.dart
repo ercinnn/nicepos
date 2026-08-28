@@ -16,6 +16,7 @@ import '../core/constants/app_sizes.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/responsive.dart';
 import '../features/auth/application/auth_provider.dart';
+import '../features/auth/presentation/widgets/staff_invite_dialog.dart';
 import '../features/gorevler/application/gorevler_provider.dart' show gorevlerTarihAnahtari;
 import '../features/products/application/product_sync_service.dart';
 import '../features/products/application/sync_status.dart';
@@ -386,14 +387,15 @@ class _BottomNavItem extends StatelessWidget {
   }
 }
 
-class _MobileDrawer extends StatelessWidget {
+class _MobileDrawer extends ConsumerWidget {
   final String currentPath;
   final String? email;
 
   const _MobileDrawer({required this.currentPath, required this.email});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final membership = ref.watch(currentMembershipProvider).valueOrNull;
     return Drawer(
       backgroundColor: AppColors.sidebarBg,
       child: SafeArea(
@@ -450,6 +452,19 @@ class _MobileDrawer extends StatelessWidget {
                 }).toList(),
               ),
             ),
+            if (membership?.isOwnerOrAdmin == true) ...[
+              const Divider(height: 1, color: AppColors.primaryMid),
+              ListTile(
+                leading: const Icon(Icons.person_add_alt_outlined,
+                    color: AppColors.sidebarText, size: 20),
+                title: const Text('Personel Davet Et',
+                    style: TextStyle(fontSize: 14, color: AppColors.sidebarText)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  showStaffInviteDialog(context);
+                },
+              ),
+            ],
             if (email != null) ...[
               const Divider(height: 1, color: AppColors.primaryMid),
               Padding(
@@ -832,6 +847,8 @@ class _TopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final membership = ref.watch(currentMembershipProvider).valueOrNull;
+
     return Container(
       height: AppSizes.topBarHeight,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -841,6 +858,16 @@ class _TopBar extends ConsumerWidget {
           // Arama kutusu yerine: günün tarihi + canlı saat
           const _LiveClock(),
           const Spacer(),
+          // Personel davet — yalnız owner/admin (Faz B, bkz. staff_invite_dialog.dart).
+          if (membership?.isOwnerOrAdmin == true) ...[
+            TextButton.icon(
+              onPressed: () => showStaffInviteDialog(context),
+              icon: const Icon(Icons.person_add_alt_outlined, size: 16),
+              label: const Text('Personel Davet Et', style: TextStyle(fontSize: 13)),
+              style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
+            ),
+            const SizedBox(width: 8),
+          ],
           if (email != null) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

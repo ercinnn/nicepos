@@ -51,6 +51,13 @@ migrate_working_dir/
 # Cloudflare Wrangler yerel oturum/cache (storefront Cloudflare Pages deploy'u)
 /.wrangler/
 
+# Supabase CLI yerel önbellek/sürüm kontrolü — commit edilmez
+/supabase/.temp/
+
+# Veritabanı yedekleri (pg_dump) — asla commit edilmez, yalnız yerel/harici saklama
+*.sql
+!supabase/migrations/*.sql
+
 # Symbolication related
 app.*.symbols
 
