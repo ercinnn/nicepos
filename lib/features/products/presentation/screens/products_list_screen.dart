@@ -13,6 +13,7 @@ import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/skeleton.dart';
+import '../../../audit/data/repositories/audit_log_repository.dart';
 import '../../../auth/application/auth_provider.dart';
 import '../../data/local/product_local_cache_dao.dart';
 import '../../data/models/product.dart';
@@ -395,6 +396,12 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
     try {
       await ref.read(productRepositoryProvider).delete(p.id);
+      unawaited(AuditLogRepository().log(
+        action: 'product.delete',
+        entityType: 'product',
+        entityId: p.id,
+        summary: p.name,
+      ));
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('"${p.name}" silindi')));
@@ -439,12 +446,19 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
     final ids = Set<String>.from(_selectedIds);
     final repo = ref.read(productRepositoryProvider);
+    final nameById = {for (final p in _products) p.id: p.name};
     int deleted = 0, skipped = 0;
 
     for (final id in ids) {
       try {
         await repo.delete(id);
         deleted++;
+        unawaited(AuditLogRepository().log(
+          action: 'product.delete',
+          entityType: 'product',
+          entityId: id,
+          summary: nameById[id] ?? id,
+        ));
       } catch (_) {
         skipped++;
       }

@@ -7,10 +7,11 @@
 -- kalıcı işlemler için ARTIK yalnız owner/admin sorumlu olduğundan, kimin ne
 -- zaman sildiğini görmek isteyen owner/admin için bir kayıt tutulur.
 --
--- v1 kapsamı: yalnız satış silme (`SaleEditScreen._delete`) loglanır — CLAUDE.md
--- Yapılacaklar'daki "Satışı Sil" örneğiyle birebir. Tablo/politika genel
--- amaçlıdır (action/entity_type serbest metin) — ileride başka kalıcı işlemler
--- (ürün silme, borç hareketi silme vb.) aynı tabloya eklenebilir.
+-- Kapsam: satış silme (SaleEditScreen + CustomerDetailScreen — iki ayrı ekrandan
+-- çağrılabilen AYNI SalesRepository.deleteSale), ürün silme (tekil + toplu),
+-- müşteri silme, ödeme/borç hareketi silme (tekil + toplu). Tablo/politika
+-- genel amaçlıdır (action/entity_type serbest metin) — ileride başka kalıcı
+-- işlemler de aynı tabloya eklenebilir.
 --
 -- Uygulama: DDL anon key ile çalıştırılamaz → Supabase SQL Editor'da uygulanır.
 -- Idempotenttir (if not exists / drop-then-create policy) — kısmen

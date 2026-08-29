@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import '../../../../app/theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/instrument_hero.dart';
+import '../../../audit/data/repositories/audit_log_repository.dart';
 import '../../application/customers_provider.dart';
 import '../../data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
@@ -422,6 +425,12 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
 
     try {
       await ref.read(customerRepositoryProvider).delete(widget.customerId);
+      unawaited(AuditLogRepository().log(
+        action: 'customer.delete',
+        entityType: 'customer',
+        entityId: widget.customerId,
+        summary: name,
+      ));
       ref.invalidate(customersProvider);
       ref.invalidate(totalCustomerDebtProvider);
       if (context.mounted) {
@@ -721,7 +730,16 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         '${s.saleCode} satışını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.')) {
       return;
     }
-    await _runDelete(() => SalesRepository().deleteSale(s.id), '${s.saleCode} silindi.');
+    await _runDelete(() async {
+      await SalesRepository().deleteSale(s.id);
+      unawaited(AuditLogRepository().log(
+        action: 'sale.delete',
+        entityType: 'sale',
+        entityId: s.id,
+        summary:
+            '${s.saleCode} · ${formatCurrency(s.totalAmount)} · ${s.customerName ?? 'Perakende'}',
+      ));
+    }, '${s.saleCode} silindi.');
     if (mounted) setState(() => _selectedSaleIds.remove(s.id));
   }
 
@@ -734,6 +752,13 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     await _runDelete(() async {
       for (final s in sales) {
         await SalesRepository().deleteSale(s.id);
+        unawaited(AuditLogRepository().log(
+          action: 'sale.delete',
+          entityType: 'sale',
+          entityId: s.id,
+          summary:
+              '${s.saleCode} · ${formatCurrency(s.totalAmount)} · ${s.customerName ?? 'Perakende'}',
+        ));
       }
     }, '${sales.length} satış silindi.');
     if (mounted) {
@@ -747,8 +772,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         '${p.type.label} (${formatCurrency(p.amount)}) hareketini silmek istediğinize emin misiniz?')) {
       return;
     }
-    await _runDelete(
-        () => ref.read(customerRepositoryProvider).deletePayment(p.id), 'Hareket silindi.');
+    final customerName =
+        ref.read(customerByIdProvider(widget.customerId)).valueOrNull?.name ?? '';
+    await _runDelete(() async {
+      await ref.read(customerRepositoryProvider).deletePayment(p.id);
+      unawaited(AuditLogRepository().log(
+        action: 'customer_payment.delete',
+        entityType: 'customer_payment',
+        entityId: p.id,
+        summary: '${p.type.label} · ${formatCurrency(p.amount)} · $customerName',
+      ));
+    }, 'Hareket silindi.');
   }
 
   Future<void> _deleteAllPayments(List<CustomerPayment> payments) async {
@@ -757,9 +791,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
         '${payments.length} ödeme/borç hareketinin tamamı silinecek. Emin misiniz?')) {
       return;
     }
+    final customerName =
+        ref.read(customerByIdProvider(widget.customerId)).valueOrNull?.name ?? '';
     await _runDelete(() async {
       for (final p in payments) {
         await ref.read(customerRepositoryProvider).deletePayment(p.id);
+        unawaited(AuditLogRepository().log(
+          action: 'customer_payment.delete',
+          entityType: 'customer_payment',
+          entityId: p.id,
+          summary: '${p.type.label} · ${formatCurrency(p.amount)} · $customerName',
+        ));
       }
     }, '${payments.length} hareket silindi.');
   }
