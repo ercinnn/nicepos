@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/supabase/tenant_context.dart';
 import '../models/product.dart';
 import '../models/product_filters.dart';
 import '../models/equivalent_aggregate.dart';
@@ -506,7 +507,10 @@ class ProductRepository {
   }
 
   Future<String> uploadImage(String productId, Uint8List bytes, String fileExt) async {
-    final path = 'products/$productId.$fileExt';
+    // Faz E (0043): path kiracı öneki taşır — storage RLS yazma izni
+    // (storage.foldername(name))[1] = current_tenant_id() kontrolüne bağlı.
+    final tenantId = await currentTenantIdOrThrow(_client);
+    final path = '$tenantId/products/$productId.$fileExt';
     await _client.storage.from('product-images').uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
     return _client.storage.from('product-images').getPublicUrl(path);
   }

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/supabase/tenant_context.dart';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Kayıtlı raf etiketi PDF'leri — Supabase Storage repository (KARAR v1.11).
 // Bucket: `etiket_pdfleri` (private). Yükle / listele / imzalı URL / indir / sil.
@@ -39,13 +41,17 @@ class LabelsStorageRepository {
   /// PDF'i verilen adla yükler; çakışmada üzerine YAZMAZ → sona zaman damgası /
   /// sayaç ekleyerek benzersizleştirir. Kaydedilen nihai adı döndürür.
   Future<String> upload(String rawName, Uint8List bytes) async {
+    // Faz E (0043): her anahtar kiracı öneki taşır — storage RLS'i bunu
+    // (storage.foldername(name))[1] üzerinden zorunlu kılar.
+    final tenantId = await currentTenantIdOrThrow(_client);
     var name = _sanitize(rawName);
     if (!name.toLowerCase().endsWith('.pdf')) name = '$name.pdf';
 
-    // Mevcut adlarla çakışma kontrolü (üzerine yazma yok).
+    // Mevcut adlarla çakışma kontrolü (üzerine yazma yok) — yalnız KENDİ
+    // kiracımızın klasörü içinde.
     final existing = <String>{};
     try {
-      final objs = await _client.storage.from(bucket).list();
+      final objs = await _client.storage.from(bucket).list(path: tenantId);
       for (final o in objs) {
         existing.add(o.name);
       }
@@ -66,7 +72,7 @@ class LabelsStorageRepository {
     }
 
     await _client.storage.from(bucket).uploadBinary(
-          finalName,
+          '$tenantId/$finalName',
           bytes,
           fileOptions: const FileOptions(contentType: 'application/pdf'),
         );
@@ -75,7 +81,8 @@ class LabelsStorageRepository {
 
   /// Kayıtlı PDF'leri listeler (yeni → eski). Ad · boyut · oluşturma tarihi.
   Future<List<SavedLabelFile>> list() async {
-    final objs = await _client.storage.from(bucket).list();
+    final tenantId = await currentTenantIdOrThrow(_client);
+    final objs = await _client.storage.from(bucket).list(path: tenantId);
     final files = objs
         .where((o) => o.name != _placeholder && o.name != logoKey)
         .map((o) {
@@ -89,7 +96,7 @@ class LabelsStorageRepository {
           }
           return SavedLabelFile(
             name: o.name,
-            path: o.name,
+            path: '$tenantId/${o.name}',
             size: size,
             createdAt: created,
           );
@@ -125,14 +132,16 @@ class LabelsStorageRepository {
 
   /// Logoyu (base64 data URL) Storage'a yazar. Önce mevcut logoyu siler.
   Future<void> uploadLogo(String dataUrl) async {
+    final tenantId = await currentTenantIdOrThrow(_client);
+    final key = '$tenantId/$logoKey';
     try {
-      await _client.storage.from(bucket).remove([logoKey]);
+      await _client.storage.from(bucket).remove([key]);
     } catch (_) {
       // Mevcut logo yoksa / silinemezse yükleme yine denenir.
     }
     final bytes = Uint8List.fromList(utf8.encode(dataUrl));
     await _client.storage.from(bucket).uploadBinary(
-          logoKey,
+          key,
           bytes,
           fileOptions: const FileOptions(contentType: 'text/plain'),
         );
@@ -141,7 +150,8 @@ class LabelsStorageRepository {
   /// Kayıtlı logoyu (data URL) getirir; dosya yoksa/offline → null.
   Future<String?> fetchLogo() async {
     try {
-      final bytes = await _client.storage.from(bucket).download(logoKey);
+      final tenantId = await currentTenantIdOrThrow(_client);
+      final bytes = await _client.storage.from(bucket).download('$tenantId/$logoKey');
       return utf8.decode(bytes);
     } catch (_) {
       return null;
@@ -151,7 +161,8 @@ class LabelsStorageRepository {
   /// Kayıtlı logoyu Storage'dan siler.
   Future<void> removeLogo() async {
     try {
-      await _client.storage.from(bucket).remove([logoKey]);
+      final tenantId = await currentTenantIdOrThrow(_client);
+      await _client.storage.from(bucket).remove(['$tenantId/$logoKey']);
     } catch (_) {}
   }
 
