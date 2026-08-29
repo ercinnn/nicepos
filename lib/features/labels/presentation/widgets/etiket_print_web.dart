@@ -74,13 +74,13 @@ void printTelDiscountLabelsA4({
 
 /// Geniş Logo etiketlerini A4 dikey (2 sütun × 5 satır = 10) olarak yeni bir
 /// tarayıcı penceresinde açar ve otomatik yazdırır (KARAR v1.14 / v1.14.2).
-/// [figurDataUrl] = tam marka figürü (genis_logo_figur.png) base64 data URL'i
-/// (RENKLİ basılır; hücreyi doldurur, fiyat/ad/barkod üzerine bindirilir).
+/// [logoDataUrl] = kiracının kendi yüklediği mağaza logosu (Faz D — kiracı-
+/// bazlı marka, opsiyonel; yoksa logo alanı boş kalır).
 void printWideLabelsA4({
   required List<LabelSlot?> slots,
-  required String figurDataUrl,
+  String? logoDataUrl,
 }) {
-  final html = _buildWideHtml(slots: slots, figurDataUrl: figurDataUrl);
+  final html = _buildWideHtml(slots: slots, logoDataUrl: logoDataUrl);
 
   final blob = web.Blob(
     [html.toJS].toJS,
@@ -135,19 +135,20 @@ void printProductLabelsA4({
 /// Dolu İndirim Etiketlerini A4 dikey (2 sütun × 2 satır = 4) olarak yeni bir
 /// tarayıcı penceresinde açar ve otomatik yazdırma diyaloğunu tetikler. Eski
 /// fiyat siyah (üzeri KIRMIZI çizili), yeni fiyat kırmızı hero, tek satır
-/// kırmızı "%X İNDİRİM" bandı. Logo SABİT marka figürü (`nice_logo_indirim.
-/// png`) — çağıran taraf bunu önceden base64 data URL'e çevirip geçirir
-/// (Geniş Logo'nun `figurDataUrl` deseniyle aynı, web'de rootBundle senkron
-/// erişilemediği için).
+/// kırmızı "%X İNDİRİM" bandı. [logoDataUrl]/[tagline] — Faz D kiracı-bazlı
+/// marka (Geniş Logo ile PAYLAŞILIR); logo yoksa alan boş, tagline boşsa
+/// satır basılmaz.
 void printDiscountLabelsA4({
   required List<DiscountLabelSlot?> slots,
-  required String logoDataUrl,
+  String? logoDataUrl,
   required num defaultPercent,
+  String tagline = '',
 }) {
   final html = _buildDiscountHtml(
     slots: slots,
     logoDataUrl: logoDataUrl,
     defaultPercent: defaultPercent,
+    tagline: tagline,
   );
 
   final blob = web.Blob(
@@ -624,45 +625,47 @@ String _buildTelDiscountHtml({
 </html>''';
 }
 
-// ─── Geniş Logo etiketi (KARAR v1.14 / v1.14.2) — 2 sütun × 5 satır = 10 etiket ─
-// Hücre 94×55mm, kenar 11mm. Marka figürü (RENKLİ) hücreyi doldurur; fiyat/ad/
-// barkod figür üzerine oranlı bindirilir (önizleme = HTML = PDF BİREBİR).
+// ─── Geniş Logo etiketi — 2 sütun × 5 satır = 10 etiket ───────────────────────
+// Hücre 88×55mm, kenar 11mm/17mm. Faz D: sabit marka figürü KALDIRILDI —
+// kiracının kendi logosu (opsiyonel) düz zeminde ortalı, dikey flex akış
+// (logo → fiyat → ad → barkod → alt satır). Önizleme = HTML = PDF BİREBİR.
 
-String _wideCellHtml(LabelSlot? slot, String figurDataUrl) {
+String _wideCellHtml(LabelSlot? slot, String? logoDataUrl) {
   if (slot == null) {
     return '<div class="wcell empty"></div>';
   }
+
+  final logoHtml = (logoDataUrl != null && logoDataUrl.isNotEmpty)
+      ? '<img class="wlogo-img" src="${_esc(logoDataUrl)}" alt="logo">'
+      : '';
 
   final bc = _barcodeSvg(slot.barcode);
   final bcHtml = bc.isEmpty ? '' : '<div class="wbc">$bc</div>';
 
   return '''
     <div class="wcell">
-      <img class="wfig" src="${_esc(figurDataUrl)}" alt="figur">
+      <div class="wlogo">$logoHtml</div>
       <div class="wprice"><span>${_esc(formatNumber(slot.price))} TL</span></div>
-      <div class="wbody">
-        <div class="wpname">${_esc(slot.productName)}</div>
-        $bcHtml
-        <div class="wbottom">
-          <span class="wbcno">${_esc(slot.barcode)}</span>
-          <span class="wdate">${_esc(formatShortDate(slot.createdAt))}</span>
-        </div>
+      <div class="wpname">${_esc(slot.productName)}</div>
+      $bcHtml
+      <div class="wbottom">
+        <span class="wbcno">${_esc(slot.barcode)}</span>
+        <span class="wdate">${_esc(formatShortDate(slot.createdAt))}</span>
       </div>
     </div>''';
 }
 
 String _buildWideHtml({
   required List<LabelSlot?> slots,
-  required String figurDataUrl,
+  String? logoDataUrl,
 }) {
   final cells = StringBuffer();
   for (final slot in slots) {
-    cells.writeln(_wideCellHtml(slot, figurDataUrl));
+    cells.writeln(_wideCellHtml(slot, logoDataUrl));
   }
 
-  // A4 portrait 210×297mm; kenar üst/alt 11mm, sol/sağ 17mm (KARAR v1.14.4) →
-  // yazdırılabilir 176×275mm. 2 sütun → 88mm, 5 satır → 55mm. Konum oranları
-  // figürün iç bölgelerine göre (fiyat=tentenin açık iç dikdörtgeni, gövde=yan çizgi içi).
+  // A4 portrait 210×297mm; kenar üst/alt 11mm, sol/sağ 17mm → yazdırılabilir
+  // 176×275mm. 2 sütun → 88mm, 5 satır → 55mm.
   return '''
 <!DOCTYPE html>
 <html lang="tr">
@@ -687,28 +690,30 @@ String _buildWideHtml({
     gap: 0;
   }
   .wcell {
-    position: relative;
     width: 88mm;
     height: 55mm;
     border: 0.2mm solid #b8b8b8;
     overflow: hidden;
+    box-sizing: border-box;
+    padding: 2mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #fff;
   }
   .wcell.empty { border-color: #e0e0e0; }
-  /* Figür hücreyi doldurur (RENKLİ marka grafiği). */
-  .wfig {
-    position: absolute;
-    inset: 0;
+  .wlogo {
+    flex: 0 0 32%;
     width: 100%;
-    height: 100%;
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
   }
-  /* FİYAT — tentenin açık iç dikdörtgeni merkezine ortalı. */
+  .wlogo-img { max-width: 90%; max-height: 100%; object-fit: contain; }
   .wprice {
-    position: absolute;
-    left: 13%;
-    top: 6.5%;
-    width: 74%;
-    height: 25%;
+    flex: 0 0 22%;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -722,46 +727,31 @@ String _buildWideHtml({
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
-  /* Gövde metin alanı — yan çizgilerin içinde, alt çizginin üstünde. */
-  .wbody {
-    position: absolute;
-    left: 10%;
-    top: 58.5%;
-    width: 80%;
-    height: 39.5%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  /* Ürün adı — v1.14.4: ÜSTE hizalı (padding-top 0). v1.14.3'teki aşağı-itme
-     2 satırlı adları barkoda sokuyordu → ~5mm yukarı alındı. Barkod + alt satır
-     yerinde kalır; taşarsa yalnız ad kırpılır. */
   .wpname {
+    flex: 0 0 20%;
+    width: 100%;
     font-size: 9pt;
     font-weight: 700;
     line-height: 1.15;
     text-transform: uppercase;
     text-align: center;
-    margin-top: 2.5mm; /* v1.14.6: ad 2.5mm aşağı, üste hizalı; barkod yerinde kalır */
-    flex: 1 1 auto;
-    min-height: 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    align-self: stretch;
   }
-  /* Barkod — yarı yükseklik (v1.14.2), gövde iç genişliğinde ortalı. */
+  /* Barkod. */
   .wbc {
-    flex: 0 0 auto;
-    height: 33%;
+    flex: 0 0 13%;
     width: 100%;
-    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .wbc svg { width: 100%; height: 100%; display: block; }
   /* Alt satır: barkod no SOLDA · tarih SAĞDA. */
   .wbottom {
-    flex: 0 0 auto;
+    flex: 0 0 9%;
     width: 100%;
     display: flex;
     align-items: flex-end;
@@ -1081,19 +1071,19 @@ String _buildProductHtml({
 }
 
 // ─── İndirim Etiketi — 2 sütun × 2 satır = 4 etiket ───────────────────────────
-// Logo (sabit `nice_logo_indirim.png`, tagline'sız) + "EV GEREÇLERİ &
-// HIRDAVAT" (siyah) + ince ayraç + ürün adı (BÜYÜK HARF) + tek satır kırmızı
-// "%X İNDİRİM" bandı + "ESKİ FİYAT: " (siyah, üzeri KIRMIZI çizili) + kutulu
-// "YENİ FİYAT" (kırmızı hero) + Code128 + alt satır (barkod no + tarih
-// YYAAGG). Kullanıcı referans mockup'ına göre tasarlanmıştır.
+// Logo/tagline Faz D'den itibaren kiracı-bazlı (Geniş Logo ile PAYLAŞILIR) +
+// ince ayraç + ürün adı (BÜYÜK HARF) + tek satır kırmızı "%X İNDİRİM" bandı +
+// "ESKİ FİYAT: " (siyah, üzeri KIRMIZI çizili) + kutulu "YENİ FİYAT" (kırmızı
+// hero) + Code128 + alt satır (barkod no + tarih YYAAGG). Kullanıcı referans
+// mockup'ına göre tasarlanmıştır.
 
 String _discountDateLabelWeb(DateTime d) =>
     '${(d.year % 100).toString().padLeft(2, '0')}'
     '${d.month.toString().padLeft(2, '0')}'
     '${d.day.toString().padLeft(2, '0')}';
 
-String _discountCellHtml(
-    DiscountLabelSlot? slot, String logoDataUrl, num defaultPercent) {
+String _discountCellHtml(DiscountLabelSlot? slot, String? logoDataUrl,
+    num defaultPercent, String tagline) {
   if (slot == null) {
     return '<div class="dscell empty"></div>';
   }
@@ -1101,16 +1091,18 @@ String _discountCellHtml(
   final bc = _barcodeSvg(slot.barcode);
   final bcHtml = bc.isEmpty ? '' : '<div class="ds-bc">$bc</div>';
   final bcNo = _esc(slot.barcode);
-  // Hane-başı tik — tiksizse logo alanı BOŞ bırakılır (slot yüksekliği
-  // .ds-logo-slot ile korunur, satır kaymaz).
-  final logoHtml = slot.showLogo
+  // Hane-başı tik — tiksizse VEYA logo yüklenmediyse logo alanı BOŞ bırakılır
+  // (slot yüksekliği .ds-logo-slot ile korunur, satır kaymaz).
+  final logoHtml = (slot.showLogo && logoDataUrl != null && logoDataUrl.isNotEmpty)
       ? '<img class="ds-logo-img" src="${_esc(logoDataUrl)}" alt="logo">'
       : '';
+  final taglineHtml =
+      tagline.isEmpty ? '' : '<div class="ds-tagline">${_esc(tagline)}</div>';
 
   return '''
     <div class="dscell">
       <div class="ds-logo-slot">$logoHtml</div>
-      <div class="ds-tagline">EV GEREÇLERİ &amp; HIRDAVAT</div>
+      $taglineHtml
       <div class="ds-rule"></div>
       <div class="ds-pname">${_esc(slot.productName)}</div>
       <div class="ds-badge">%${slot.effectivePercent(defaultPercent).round()} İNDİRİM</div>
@@ -1132,15 +1124,17 @@ String _discountCellHtml(
 
 String _buildDiscountHtml({
   required List<DiscountLabelSlot?> slots,
-  required String logoDataUrl,
+  String? logoDataUrl,
   required num defaultPercent,
+  String tagline = '',
 }) {
   final pages = paginateDiscountSlots(slots);
   final sheets = StringBuffer();
   for (final page in pages) {
     final cells = StringBuffer();
     for (final slot in page) {
-      cells.writeln(_discountCellHtml(slot, logoDataUrl, defaultPercent));
+      cells.writeln(
+          _discountCellHtml(slot, logoDataUrl, defaultPercent, tagline));
     }
     sheets.writeln('<div class="sheet">$cells</div>');
   }

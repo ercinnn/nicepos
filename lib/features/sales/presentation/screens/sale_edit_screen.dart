@@ -7,6 +7,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../auth/application/auth_provider.dart';
 import '../../../../features/products/application/products_provider.dart';
 import '../../../../features/products/data/models/product.dart';
 import '../../data/models/cart_item.dart' show DiscountType;
@@ -38,6 +39,15 @@ class SaleEditScreen extends ConsumerStatefulWidget {
 class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
   late List<SaleItem> _items;
   bool _saving = false;
+
+  // Rol-bazlı kısıtlama (kullanıcı kararı) — satışı düzenleme/silme yalnız
+  // owner/admin. `membership == null` (henüz yüklenmedi) durumda ENGELLENMEZ
+  // — owner/admin çoğunluk senaryosunda gecikme yaşamasın (Kasa/Ürünler ile
+  // aynı desen).
+  bool get _canEdit {
+    final membership = ref.watch(currentMembershipProvider).valueOrNull;
+    return membership == null || membership.isOwnerOrAdmin;
+  }
 
   // ── İskonto durumu ──────────────────────────────────────────────────────────
   // İskonto artık birebir saklanır: discount_amount (kesin TL) + discount_type
@@ -753,24 +763,32 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                     ),
                                     DataCell(
                                       InkWell(
-                                        onTap: () => _changeQuantity(i),
+                                        onTap: _canEdit ? () => _changeQuantity(i) : null,
                                         child: Text(
                                           item.quantity.toString(),
-                                          style: const TextStyle(
-                                            color: AppColors.primary,
-                                            decoration: TextDecoration.underline,
+                                          style: TextStyle(
+                                            color: _canEdit
+                                                ? AppColors.primary
+                                                : AppColors.textPrimary,
+                                            decoration: _canEdit
+                                                ? TextDecoration.underline
+                                                : TextDecoration.none,
                                           ),
                                         ),
                                       ),
                                     ),
                                     DataCell(
                                       InkWell(
-                                        onTap: () => _changeUnitPrice(i),
+                                        onTap: _canEdit ? () => _changeUnitPrice(i) : null,
                                         child: Text(
                                           formatCurrency(item.unitPrice),
-                                          style: const TextStyle(
-                                            color: AppColors.primary,
-                                            decoration: TextDecoration.underline,
+                                          style: TextStyle(
+                                            color: _canEdit
+                                                ? AppColors.primary
+                                                : AppColors.textPrimary,
+                                            decoration: _canEdit
+                                                ? TextDecoration.underline
+                                                : TextDecoration.none,
                                           ),
                                         ),
                                       ),
@@ -780,12 +798,14 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                       style: const TextStyle(fontWeight: FontWeight.w600),
                                     )),
                                     DataCell(
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_outline, size: 18),
-                                        color: AppColors.danger,
-                                        tooltip: 'Kaldır',
-                                        onPressed: () => _removeItem(i),
-                                      ),
+                                      _canEdit
+                                          ? IconButton(
+                                              icon: const Icon(Icons.delete_outline, size: 18),
+                                              color: AppColors.danger,
+                                              tooltip: 'Kaldır',
+                                              onPressed: () => _removeItem(i),
+                                            )
+                                          : const SizedBox.shrink(),
                                     ),
                                   ]);
                                 }),
@@ -823,12 +843,14 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                   OutlinedButton.icon(
                                     icon: const Icon(Icons.add, size: 16),
                                     label: const Text('Ürün Ekle'),
-                                    onPressed: _saving ? null : _addProduct,
+                                    onPressed:
+                                        (_saving || !_canEdit) ? null : _addProduct,
                                   ),
                                   OutlinedButton.icon(
                                     icon: const Icon(Icons.edit_note, size: 16),
                                     label: const Text('Muhtelif'),
-                                    onPressed: _saving ? null : _addMiscItem,
+                                    onPressed:
+                                        (_saving || !_canEdit) ? null : _addMiscItem,
                                   ),
                                   if (kIsWeb)
                                     OutlinedButton.icon(
@@ -857,19 +879,31 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                               const Divider(height: 28, color: AppColors.divider),
                               _buildDiscountTotals(),
                               const SizedBox(height: 20),
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.delete_outline, size: 16),
-                                label: const Text('Satışı Sil'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.danger,
-                                  side: const BorderSide(color: AppColors.danger),
-                                  minimumSize: const Size.fromHeight(40),
+                              if (_canEdit) ...[
+                                OutlinedButton.icon(
+                                  icon: const Icon(Icons.delete_outline, size: 16),
+                                  label: const Text('Satışı Sil'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.danger,
+                                    side: const BorderSide(color: AppColors.danger),
+                                    minimumSize: const Size.fromHeight(40),
+                                  ),
+                                  onPressed: _saving ? null : _delete,
                                 ),
-                                onPressed: _saving ? null : _delete,
-                              ),
-                              const SizedBox(height: 8),
+                                const SizedBox(height: 8),
+                              ] else
+                                const Padding(
+                                  padding: EdgeInsets.only(bottom: 8),
+                                  child: Text(
+                                    'Salt okunur — yalnız işletme sahibi/yöneticisi '
+                                    'düzenleyebilir/silebilir.',
+                                    style: TextStyle(
+                                        fontSize: 11.5, color: AppColors.textMuted),
+                                  ),
+                                ),
                               FilledButton(
-                                onPressed: _saving ? null : _save,
+                                onPressed:
+                                    (_saving || !_canEdit) ? null : _save,
                                 style: FilledButton.styleFrom(
                                   minimumSize: const Size.fromHeight(44),
                                 ),
@@ -943,7 +977,7 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: FilledButton(
-                  onPressed: _save,
+                  onPressed: _canEdit ? _save : null,
                   style: FilledButton.styleFrom(
                       backgroundColor: AppColors.gold,
                       foregroundColor: AppColors.primary),
@@ -1010,13 +1044,17 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               GestureDetector(
-                                onTap: () => _changeQuantity(i),
+                                onTap: _canEdit ? () => _changeQuantity(i) : null,
                                 child: Text(
                                   'Miktar: ${item.quantity}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
-                                    color: AppColors.primary,
-                                    decoration: TextDecoration.underline,
+                                    color: _canEdit
+                                        ? AppColors.primary
+                                        : AppColors.textMuted,
+                                    decoration: _canEdit
+                                        ? TextDecoration.underline
+                                        : TextDecoration.none,
                                     decorationColor: AppColors.primary,
                                   ),
                                 ),
@@ -1024,13 +1062,17 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                               const Text('  ·  ',
                                   style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
                               GestureDetector(
-                                onTap: () => _changeUnitPrice(i),
+                                onTap: _canEdit ? () => _changeUnitPrice(i) : null,
                                 child: Text(
                                   'Birim: ${formatCurrency(item.unitPrice)}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
-                                    color: AppColors.primary,
-                                    decoration: TextDecoration.underline,
+                                    color: _canEdit
+                                        ? AppColors.primary
+                                        : AppColors.textMuted,
+                                    decoration: _canEdit
+                                        ? TextDecoration.underline
+                                        : TextDecoration.none,
                                     decorationColor: AppColors.primary,
                                   ),
                                 ),
@@ -1048,16 +1090,18 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                   color: AppColors.primary,
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              // Sil
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 20),
-                                color: AppColors.danger,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                    minWidth: 36, minHeight: 36),
-                                onPressed: () => _removeItem(i),
-                              ),
+                              if (_canEdit) ...[
+                                const SizedBox(width: 4),
+                                // Sil
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 20),
+                                  color: AppColors.danger,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                      minWidth: 36, minHeight: 36),
+                                  onPressed: () => _removeItem(i),
+                                ),
+                              ],
                             ],
                           ),
                         );
@@ -1087,7 +1131,8 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.add, size: 16),
                           label: const Text('Ürün Ekle'),
-                          onPressed: _saving ? null : _addProduct,
+                          onPressed:
+                              (_saving || !_canEdit) ? null : _addProduct,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1095,31 +1140,43 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.edit_note, size: 16),
                           label: const Text('Muhtelif'),
-                          onPressed: _saving ? null : _addMiscItem,
+                          onPressed:
+                              (_saving || !_canEdit) ? null : _addMiscItem,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
-                  // Satışı sil — tam genişlik
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('Satışı Sil'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.danger,
-                        side: const BorderSide(color: AppColors.danger),
+                  if (_canEdit) ...[
+                    // Satışı sil — tam genişlik
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Satışı Sil'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger),
+                        ),
+                        onPressed: _saving ? null : _delete,
                       ),
-                      onPressed: _saving ? null : _delete,
                     ),
-                  ),
-                  const SizedBox(height: 10),
+                    const SizedBox(height: 10),
+                  ] else
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        'Salt okunur — yalnız işletme sahibi/yöneticisi '
+                        'düzenleyebilir/silebilir.',
+                        style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   // Kaydet — tam genişlik
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: _saving ? null : _save,
+                      onPressed: (_saving || !_canEdit) ? null : _save,
                       child: _saving
                           ? const SizedBox(
                               width: 18,

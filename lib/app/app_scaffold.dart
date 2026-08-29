@@ -29,8 +29,12 @@ class _NavItem {
   final IconData icon;
   final IconData selectedIcon;
   final String route;
+  // Rol-bazlı kısıtlama (kullanıcı kararı): yalnız owner/admin görür. Staff
+  // için menüden gizlenir (ekran kendisi de ayrıca guard'lı — bkz. KasaScreen).
+  final bool ownerOrAdminOnly;
 
-  const _NavItem(this.label, this.icon, this.selectedIcon, this.route);
+  const _NavItem(this.label, this.icon, this.selectedIcon, this.route,
+      {this.ownerOrAdminOnly = false});
 }
 
 const _navItems = [
@@ -39,7 +43,8 @@ const _navItems = [
   _NavItem('Analiz', Icons.query_stats_outlined, Icons.query_stats, '/analiz'),
   _NavItem('Satış Yap', Icons.point_of_sale_outlined, Icons.point_of_sale, '/sales'),
   _NavItem('Raporlar', Icons.bar_chart_outlined, Icons.insert_chart, '/reports'),
-  _NavItem('Kasa', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, '/kasa'),
+  _NavItem('Kasa', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, '/kasa',
+      ownerOrAdminOnly: true),
   _NavItem('Etiket', Icons.label_outline, Icons.label, '/etiket'),
   _NavItem('Online Satış', Icons.shopping_bag_outlined, Icons.shopping_bag, '/online-satis'),
   _NavItem('Müşteriler', Icons.people_outline, Icons.people, '/customers'),
@@ -47,8 +52,12 @@ const _navItems = [
   _NavItem('Stok', Icons.playlist_add_check_outlined, Icons.playlist_add_check, '/stok'),
 ];
 
-int _selectedNavIndex(String currentPath) {
-  final index = _navItems.indexWhere((item) =>
+// Rol-bazlı görünür menü — staff için `ownerOrAdminOnly` öğeler filtrelenir.
+List<_NavItem> _visibleNavItems(bool isOwnerOrAdmin) =>
+    isOwnerOrAdmin ? _navItems : _navItems.where((i) => !i.ownerOrAdminOnly).toList();
+
+int _selectedNavIndex(List<_NavItem> items, String currentPath) {
+  final index = items.indexWhere((item) =>
       currentPath == item.route ||
       (item.route != '/home' && currentPath.startsWith(item.route)));
   return index < 0 ? 0 : index;
@@ -122,6 +131,50 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
     if (provisioning.isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Faz G altyapısı — `tenants.is_active=false` (yalnız Supabase Table
+    // Editor'dan elle set edilir, bkz. auth_provider.dart) uygulamayı
+    // kilitler. Provizyon kontrolüyle AYNI desen: widget seviyesinde, router
+    // `redirect`'inde DEĞİL. Henüz çözülmediyse (`valueOrNull == null`)
+    // ENGELLENMEZ — owner/admin çoğunluk senaryosunda gecikme yaşamasın.
+    final tenant = ref.watch(currentTenantProvider).valueOrNull;
+    if (tenant != null && !tenant.isActive) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSizes.space24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, size: 48, color: AppColors.textMuted),
+                const SizedBox(height: AppSizes.space16),
+                const Text(
+                  'Hesabınız pasifleştirildi',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: AppSizes.space8),
+                const Text(
+                  'Bu işletme hesabı şu an aktif değil. Devam etmek için '
+                  'destek ile iletişime geçin.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: AppSizes.space20),
+                OutlinedButton.icon(
+                  onPressed: () => Supabase.instance.client.auth.signOut(),
+                  icon: const Icon(Icons.logout, size: 16),
+                  label: const Text('Çıkış Yap'),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 
@@ -266,16 +319,16 @@ class _MobileScaffold extends ConsumerWidget {
 // erişilir. Seçili öğe rota değişince görünür alana otomatik kaydırılır.
 // ---------------------------------------------------------------------------
 
-class _MobileBottomNav extends StatefulWidget {
+class _MobileBottomNav extends ConsumerStatefulWidget {
   final String currentPath;
 
   const _MobileBottomNav({required this.currentPath});
 
   @override
-  State<_MobileBottomNav> createState() => _MobileBottomNavState();
+  ConsumerState<_MobileBottomNav> createState() => _MobileBottomNavState();
 }
 
-class _MobileBottomNavState extends State<_MobileBottomNav> {
+class _MobileBottomNavState extends ConsumerState<_MobileBottomNav> {
   static const _itemWidth = 76.0;
   final _scrollController = ScrollController();
 
@@ -301,7 +354,10 @@ class _MobileBottomNavState extends State<_MobileBottomNav> {
 
   void _scrollToSelected({required bool animate}) {
     if (!_scrollController.hasClients) return;
-    final index = _selectedNavIndex(widget.currentPath);
+    final isOwnerOrAdmin =
+        ref.read(currentMembershipProvider).valueOrNull?.isOwnerOrAdmin == true;
+    final index =
+        _selectedNavIndex(_visibleNavItems(isOwnerOrAdmin), widget.currentPath);
     final viewport = _scrollController.position.viewportDimension;
     final target = (index * _itemWidth) - (viewport / 2) + (_itemWidth / 2);
     final clamped = target.clamp(0.0, _scrollController.position.maxScrollExtent);
@@ -314,7 +370,10 @@ class _MobileBottomNavState extends State<_MobileBottomNav> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedIndex = _selectedNavIndex(widget.currentPath);
+    final isOwnerOrAdmin =
+        ref.watch(currentMembershipProvider).valueOrNull?.isOwnerOrAdmin == true;
+    final items = _visibleNavItems(isOwnerOrAdmin);
+    final selectedIndex = _selectedNavIndex(items, widget.currentPath);
 
     return Container(
       decoration: const BoxDecoration(
@@ -337,9 +396,9 @@ class _MobileBottomNavState extends State<_MobileBottomNav> {
             controller: _scrollController,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            itemCount: _navItems.length,
+            itemCount: items.length,
             itemBuilder: (context, index) {
-              final item = _navItems[index];
+              final item = items[index];
               final selected = index == selectedIndex;
               return _BottomNavItem(
                 item: item,
@@ -448,7 +507,8 @@ class _MobileDrawer extends ConsumerWidget {
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                children: _navItems.map((item) {
+                children: _visibleNavItems(membership?.isOwnerOrAdmin == true)
+                    .map((item) {
                   final selected = currentPath == item.route ||
                       (item.route != '/home' && currentPath.startsWith(item.route));
                   return ListTile(
@@ -530,7 +590,7 @@ class _MobileDrawer extends ConsumerWidget {
 // Desktop sidebar (unchanged)
 // ---------------------------------------------------------------------------
 
-class _Sidebar extends StatelessWidget {
+class _Sidebar extends ConsumerWidget {
   final String currentPath;
   final bool expanded;
   final VoidCallback onToggle;
@@ -542,8 +602,10 @@ class _Sidebar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final width = expanded ? AppSizes.sidebarWidth : AppSizes.sidebarCollapsedWidth;
+    final isOwnerOrAdmin =
+        ref.watch(currentMembershipProvider).valueOrNull?.isOwnerOrAdmin == true;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -557,7 +619,7 @@ class _Sidebar extends StatelessWidget {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              children: _navItems.map((item) {
+              children: _visibleNavItems(isOwnerOrAdmin).map((item) {
                 final selected = currentPath == item.route ||
                     (item.route != '/home' && currentPath.startsWith(item.route));
                 return _SidebarTile(

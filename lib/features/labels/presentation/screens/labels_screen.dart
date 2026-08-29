@@ -86,12 +86,13 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   final Set<int> _errors = {}; // çözülemeyen hane indeksleri (danger uyarı)
   int _activeIndex = 0; // aktif (odaklı) hane — aktif durum altını
 
-  // Geniş Logo sekmesi (KARAR v1.14) — 10 haneli ayrı giriş durumu.
+  // Geniş Logo sekmesi (KARAR v1.14) — 10 haneli ayrı giriş durumu. Faz D:
+  // sabit marka figürü kaldırıldı, mağaza logosu (kiracı-bazlı) Raf'ın kalıcı
+  // `labelSheetProvider.logoDataUrl`'inden PAYLAŞILIR (Poster ile aynı desen).
   late final List<TextEditingController> _wideControllers;
   late final List<FocusNode> _wideFocusNodes;
   final Set<int> _wideErrors = {};
   int _wideActiveIndex = 0;
-  Uint8List? _figurBytes; // marka figürü (yazdırma için bir kez okunur)
 
   // Tel Etiketi sekmesi — Raf ile birebir aynı akış, 32 haneli ayrı giriş
   // durumu (mağaza logosu Raf'ın kalıcı logoDataUrl'ini paylaşır).
@@ -115,10 +116,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // İndirim Etiketi sekmesi — sınırsız büyüyen giriş listesi (2×2 ızgara,
   // 4/sayfa — bkz. labels_provider.dart LabelDiscountSheetState). Her hane:
   // barkod input'u + (ürün çözülünce görünen) indirim yüzdesi input'u + logo
-  // tiki; logo SABİT marka figürü (`nice_logo_indirim.png`, Geniş Logo'nun
-  // `_figurBytes` deseniyle aynı — bu sekmede logo yükleme YOK, yalnız
-  // hane-başı gösterip göstermeme tiki var). Bu üç liste her zaman provider'ın
-  // `slots` uzunluğuyla birebir eşlenir (bkz. `_syncDiscountControllers`).
+  // tiki; logo Faz D'den itibaren kiracı-bazlı (Geniş Logo/Raf ile
+  // PAYLAŞILAN `labelSheetProvider.logoDataUrl`) — hane-başı tik yalnız o
+  // etikette basılıp basılmayacağını belirler. Bu üç liste her zaman
+  // provider'ın `slots` uzunluğuyla birebir eşlenir (bkz.
+  // `_syncDiscountControllers`).
   late final List<TextEditingController> _discountBarcodeControllers;
   late final List<TextEditingController> _discountPercentControllers;
   late final List<FocusNode> _discountBarcodeFocusNodes;
@@ -127,7 +129,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneleri
   // etkiler (bkz. labels_provider.dart LabelDiscountSheetState.defaultPercent).
   late final TextEditingController _discountDefaultPercentController;
-  Uint8List? _niceLogoBytes; // sabit marka logosu (yazdırma için bir kez okunur)
+  // İndirim Etiketi tagline'ı (Faz D — kiracı-bazlı marka metni, logo altı).
+  late final TextEditingController _taglineController;
 
   // Poster sekmesi (KARAR v1.23 / v1.24) — barkod VEYA ürün adı ile serbest
   // liste; sabit hane sayısı YOK, tek giriş satırı (satış ekranı
@@ -220,6 +223,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     _discountDefaultPercentController = TextEditingController(
       text: initialDefaultPercent == 0 ? '' : initialDefaultPercent.toString(),
     );
+    // keepAlive provider'dan mevcut tagline'ı geri yükle (sekme değişince korunur).
+    _taglineController =
+        TextEditingController(text: ref.read(labelSheetProvider).taglineText ?? '');
     _posterBarcodeController = TextEditingController();
     _posterBarcodeFocus = FocusNode();
     _posterBarcodeFocus.addListener(() {
@@ -246,6 +252,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     // Kayıtlı mağaza logosunu Storage'dan geri yükle (KARAR v1.12) — login/logout
     // sonrası korunur. Fire-and-forget (await gerekmez).
     _loadPersistedLogo();
+    // Kayıtlı İndirim Etiketi tagline'ını geri yükle (Faz D).
+    _loadPersistedTagline();
   }
 
   // Storage'da kayıtlı logoyu (varsa) sayfaya geri yükler (KARAR v1.12).
@@ -255,6 +263,25 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     final dataUrl = await ref.read(labelsStorageRepositoryProvider).fetchLogo();
     if (!mounted || dataUrl == null || dataUrl.isEmpty) return;
     ref.read(labelSheetProvider.notifier).setLogo(dataUrl);
+  }
+
+  // Storage'da kayıtlı İndirim Etiketi tagline'ını (varsa) geri yükler (Faz D).
+  Future<void> _loadPersistedTagline() async {
+    if (ref.read(labelSheetProvider).taglineText != null) return;
+    final text =
+        await ref.read(labelsStorageRepositoryProvider).fetchTagline();
+    if (!mounted || text == null || text.isEmpty) return;
+    ref.read(labelSheetProvider.notifier).setTagline(text);
+    _taglineController.text = text;
+  }
+
+  // Tagline değişince state'i günceller + Storage'a yazar (logo _pickLogo
+  // deseniyle aynı — hata olsa da önizleme çalışsın).
+  Future<void> _onTaglineChanged(String value) async {
+    ref.read(labelSheetProvider.notifier).setTagline(value);
+    try {
+      await ref.read(labelsStorageRepositoryProvider).uploadTagline(value);
+    } catch (_) {}
   }
 
   @override
@@ -297,6 +324,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       n.dispose();
     }
     _discountDefaultPercentController.dispose();
+    _taglineController.dispose();
     _posterBarcodeController.dispose();
     _posterBarcodeFocus.dispose();
     _posterTitleController.dispose();
@@ -619,12 +647,6 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // (_resolveBarcode); yalnız hedef state (labelWideSheetProvider) farklı.
   // ═════════════════════════════════════════════════════════════════════════
 
-  // Marka figürünü yazdırma için bir kez okur (base64 print + PDF ayrı okur).
-  Future<Uint8List> _loadFigurBytes() async {
-    return _figurBytes ??=
-        (await rootBundle.load('genis_logo_figur.png')).buffer.asUint8List();
-  }
-
   int _nextWideEmptyIndex() {
     final slots = ref.read(labelWideSheetProvider).slots;
     for (var i = 0; i < kWideCount; i++) {
@@ -751,10 +773,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
       return;
     }
-    final bytes = await _loadFigurBytes();
-    if (!mounted) return;
-    final figurDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
-    printWideLabelsA4(slots: state.slots, figurDataUrl: figurDataUrl);
+    // Mağaza logosu dar-logo sekmesinin kalıcı store logosundan paylaşılır
+    // (Faz D — sabit marka figürü kaldırıldı).
+    printWideLabelsA4(
+      slots: state.slots,
+      logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+    );
   }
 
   Future<void> _saveWidePdf() async {
@@ -774,7 +798,10 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final bytes = await buildWideLabelsPdf(slots: state.slots);
+      final bytes = await buildWideLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+      );
       final saved =
           await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
       ref.invalidate(savedLabelFilesProvider);
@@ -1438,13 +1465,6 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     setState(() => _discountErrors.clear());
   }
 
-  // Sabit marka logosunu (nice_logo_indirim.png) yazdırma için bir kez okur
-  // (Geniş Logo'nun `_loadFigurBytes` deseniyle aynı).
-  Future<Uint8List> _loadNiceLogoBytes() async {
-    return _niceLogoBytes ??=
-        (await rootBundle.load('nice_logo_indirim.png')).buffer.asUint8List();
-  }
-
   Future<void> _printDiscount() async {
     final state = ref.read(labelDiscountSheetProvider);
     if (state.filledCount == 0) {
@@ -1453,13 +1473,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
       return;
     }
-    final bytes = await _loadNiceLogoBytes();
-    if (!mounted) return;
-    final logoDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
+    final logoState = ref.read(labelSheetProvider);
     printDiscountLabelsA4(
       slots: state.slots,
-      logoDataUrl: logoDataUrl,
+      logoDataUrl: logoState.logoDataUrl,
       defaultPercent: state.defaultPercent,
+      tagline: logoState.taglineText ?? '',
     );
   }
 
@@ -1480,9 +1499,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
+      final logoState = ref.read(labelSheetProvider);
       final bytes = await buildDiscountLabelsPdf(
         slots: state.slots,
         defaultPercent: state.defaultPercent,
+        logoDataUrl: logoState.logoDataUrl,
+        tagline: logoState.taglineText ?? '',
       );
       final saved =
           await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
@@ -1877,6 +1899,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         namePrefix: 'genis-etiket-havuz',
         buildBytes: (pending) => buildWideLabelsPdfMultiPage(
           pages: paginateLabelPoolItems(pending, kWideCount),
+          logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
         ),
       );
 
@@ -2118,13 +2141,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         _Header(
           filledCount: ref.watch(labelWideSheetProvider).filledCount,
           totalCount: kWideCount,
-          showLogoActions: false,
+          hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+          onPickLogo: _pickLogo,
+          onRemoveLogo: _removeLogo,
           onClearAll: _clearWideAll,
           onPrint: _printWide,
           onSavePdf: _saveWidePdf,
           onCameraScan: kIsWeb ? null : _startWideCameraScan,
           subtitle:
-              'Barkod okutun; her hane marka tentesi + fiyat + ürün adıyla '
+              'Barkod okutun; her hane kendi logonuz + fiyat + ürün adıyla '
               'A4 Geniş Logo etiketine dönüşür.',
         ),
         const SizedBox(height: AppSizes.space16),
@@ -2169,13 +2194,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           _Header(
             filledCount: state.filledCount,
             totalCount: kWideCount,
-            showLogoActions: false,
+            hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+            onPickLogo: _pickLogo,
+            onRemoveLogo: _removeLogo,
             onClearAll: _clearWideAll,
             onPrint: _printWide,
             onSavePdf: _saveWidePdf,
             onCameraScan: kIsWeb ? null : _startWideCameraScan,
             subtitle:
-                'Barkod okutun; her hane marka tentesi + fiyat + ürün adıyla '
+                'Barkod okutun; her hane kendi logonuz + fiyat + ürün adıyla '
                 'A4 Geniş Logo etiketine dönüşür.',
             compact: true,
           ),
@@ -2459,7 +2486,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         _Header(
           filledCount: state.filledCount,
           totalCount: kDiscountCount,
-          showLogoActions: false,
+          hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+          onPickLogo: _pickLogo,
+          onRemoveLogo: _removeLogo,
           badgeOverride: '${state.filledCount} hane · ${state.pageCount} sayfa',
           onClearAll: _clearDiscountAll,
           onPrint: _printDiscount,
@@ -2486,6 +2515,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                   activeIndex: _discountActiveIndex,
                   defaultPercentController: _discountDefaultPercentController,
                   onDefaultPercentChanged: _onDiscountDefaultPercentChanged,
+                  taglineController: _taglineController,
+                  onTaglineChanged: _onTaglineChanged,
                   onBarcodeSubmitted: _onDiscountBarcodeSubmitted,
                   onPercentChanged: _onDiscountPercentChanged,
                   onToggleLogo: _toggleDiscountLogo,
@@ -2517,7 +2548,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           _Header(
             filledCount: state.filledCount,
             totalCount: kDiscountCount,
-            showLogoActions: false,
+            hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+            onPickLogo: _pickLogo,
+            onRemoveLogo: _removeLogo,
             badgeOverride: '${state.filledCount} hane · ${state.pageCount} sayfa',
             onClearAll: _clearDiscountAll,
             onPrint: _printDiscount,
@@ -2532,6 +2565,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           _DiscountDefaultPercentField(
             controller: _discountDefaultPercentController,
             onChanged: _onDiscountDefaultPercentChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          _DiscountTaglineField(
+            controller: _taglineController,
+            onChanged: _onTaglineChanged,
           ),
           const SizedBox(height: AppSizes.space8),
           ...List.generate(_discountBarcodeControllers.length, (i) {
@@ -3584,6 +3622,8 @@ class _DiscountInputColumn extends StatelessWidget {
   final int activeIndex;
   final TextEditingController defaultPercentController;
   final ValueChanged<String> onDefaultPercentChanged;
+  final TextEditingController taglineController;
+  final ValueChanged<String> onTaglineChanged;
   final Future<void> Function(int, String) onBarcodeSubmitted;
   final void Function(int, String) onPercentChanged;
   final void Function(int, bool) onToggleLogo;
@@ -3597,6 +3637,8 @@ class _DiscountInputColumn extends StatelessWidget {
     required this.activeIndex,
     required this.defaultPercentController,
     required this.onDefaultPercentChanged,
+    required this.taglineController,
+    required this.onTaglineChanged,
     required this.onBarcodeSubmitted,
     required this.onPercentChanged,
     required this.onToggleLogo,
@@ -3619,6 +3661,11 @@ class _DiscountInputColumn extends StatelessWidget {
           _DiscountDefaultPercentField(
             controller: defaultPercentController,
             onChanged: onDefaultPercentChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          _DiscountTaglineField(
+            controller: taglineController,
+            onChanged: onTaglineChanged,
           ),
           const SizedBox(height: AppSizes.space8),
           Expanded(
@@ -3726,6 +3773,36 @@ class _DiscountDefaultPercentField extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// Logo altı tagline metni (Faz D — kiracı-bazlı marka, Geniş Logo ile
+// PAYLAŞILAN `labelSheetProvider.taglineText`'i düzenler). Boş bırakılırsa
+// etikette tagline satırı hiç basılmaz.
+class _DiscountTaglineField extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _DiscountTaglineField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      style: const TextStyle(fontSize: 13),
+      decoration: const InputDecoration(
+        isDense: true,
+        labelText: 'Logo altı yazı (opsiyonel)',
+        hintText: 'ör. EV GEREÇLERİ & HIRDAVAT',
+        border: OutlineInputBorder(),
+        contentPadding:
+            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
     );
   }
@@ -4022,8 +4099,8 @@ class _TelDiscountPreviewPane extends ConsumerWidget {
 // deseniyle aynı (masaüstü: kendi dikey scroll'u; mobil: `scrollable:false` →
 // dış sayfa scroll'una gömülü). `paginateDiscountSlots` ile 4'lük sayfalara
 // bölünür, her sayfa kendi `_DiscountA4Canvas`'ı olarak alt alta dizilir.
-// Logo Raf'ın kalıcı `labelSheetProvider`'ından PAYLAŞILMAZ — sabit marka
-// figürü (`nice_logo_indirim.png`) hane-başı `showLogo` tikine göre basılır.
+// Logo/tagline Raf'ın kalıcı `labelSheetProvider`'ından PAYLAŞILIR (Faz D) —
+// hane-başı `showLogo` tiki o etikette basılıp basılmayacağını belirler.
 class _DiscountPreviewPane extends ConsumerWidget {
   final bool scrollable;
 
@@ -4032,6 +4109,7 @@ class _DiscountPreviewPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(labelDiscountSheetProvider);
+    final logoState = ref.watch(labelSheetProvider);
     final pages = paginateDiscountSlots(state.slots);
     return Container(
       decoration: BoxDecoration(
@@ -4061,6 +4139,8 @@ class _DiscountPreviewPane extends ConsumerWidget {
                     child: _DiscountA4Canvas(
                       slots: pages[i],
                       defaultPercent: state.defaultPercent,
+                      logoDataUrl: logoState.logoDataUrl,
+                      tagline: logoState.taglineText ?? '',
                     ),
                   ),
                 ),
@@ -4514,8 +4594,15 @@ class _TelDiscountLabelCell extends StatelessWidget {
 class _DiscountA4Canvas extends StatelessWidget {
   final List<DiscountLabelSlot?> slots;
   final num defaultPercent;
+  final String? logoDataUrl;
+  final String tagline;
 
-  const _DiscountA4Canvas({required this.slots, required this.defaultPercent});
+  const _DiscountA4Canvas({
+    required this.slots,
+    required this.defaultPercent,
+    this.logoDataUrl,
+    this.tagline = '',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4535,6 +4622,8 @@ class _DiscountA4Canvas extends StatelessWidget {
                   child: _DiscountLabelCell(
                     slot: slots[idx],
                     defaultPercent: defaultPercent,
+                    logoDataUrl: logoDataUrl,
+                    tagline: tagline,
                   ),
                 );
               }),
@@ -4554,19 +4643,38 @@ String _discountDateLabelUi(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}';
 
 // Tek indirim etiketi hücresi (kullanıcı referans mockup'ına göre KARAR):
-// logo (sabit `nice_logo_indirim.png`) + "EV GEREÇLERİ & HIRDAVAT" (siyah) +
-// ince ayraç + ürün adı (BÜYÜK HARF) + tek satır kırmızı "%X İNDİRİM" bandı +
-// "ESKİ FİYAT: " (siyah, üzeri KIRMIZI çizili) + kutulu "YENİ FİYAT" (kırmızı
-// hero) + Code128 + alt satır (barkod no + tarih YYAAGG).
+// logo (kiracı-bazlı, Faz D) + tagline (siyah, opsiyonel) + ince ayraç + ürün
+// adı (BÜYÜK HARF) + tek satır kırmızı "%X İNDİRİM" bandı + "ESKİ FİYAT: "
+// (siyah, üzeri KIRMIZI çizili) + kutulu "YENİ FİYAT" (kırmızı hero) +
+// Code128 + alt satır (barkod no + tarih YYAAGG).
 class _DiscountLabelCell extends StatelessWidget {
   final DiscountLabelSlot? slot;
   final num defaultPercent;
+  final String? logoDataUrl;
+  final String tagline;
 
-  const _DiscountLabelCell({required this.slot, required this.defaultPercent});
+  const _DiscountLabelCell({
+    required this.slot,
+    required this.defaultPercent,
+    this.logoDataUrl,
+    this.tagline = '',
+  });
 
   @override
   Widget build(BuildContext context) {
     final s = slot;
+    Uint8List? logoBytes;
+    final url = logoDataUrl;
+    if (url != null) {
+      final i = url.indexOf(',');
+      if (i != -1) {
+        try {
+          logoBytes = base64Decode(url.substring(i + 1));
+        } catch (_) {
+          logoBytes = null;
+        }
+      }
+    }
     return Container(
       decoration: BoxDecoration(
         border: Border.all(
@@ -4583,27 +4691,28 @@ class _DiscountLabelCell extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                // Logo — hane başı `showLogo` tikliyse sabit marka figürü
-                // (tagline metni kırpılmış, altında kod-render "EV GEREÇLERİ &
-                // HIRDAVAT" ile devam eder); tiksizse alan BOŞ (yükseklik
+                // Logo — hane başı `showLogo` tikliyse VE kiracı bir logo
+                // yüklediyse gösterilir; tiksiz/logosuz → alan BOŞ (yükseklik
                 // korunur, yalnız görsel basılmaz).
                 SizedBox(
                   height: 84,
-                  child: s.showLogo
-                      ? Image.asset('nice_logo_indirim.png', fit: BoxFit.contain)
+                  child: (s.showLogo && logoBytes != null)
+                      ? Image.memory(logoBytes, fit: BoxFit.contain)
                       : null,
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'EV GEREÇLERİ & HIRDAVAT',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.3,
-                    color: Colors.black,
+                if (tagline.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    tagline,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: Colors.black,
+                    ),
                   ),
-                ),
+                ],
                 const SizedBox(height: 7),
                 Container(height: 1, color: const Color(0xFFCCCCCC)),
                 const SizedBox(height: 7),
@@ -5057,38 +5166,19 @@ class _PosterA4Canvas extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket, KARAR v1.14 /
-// v1.14.2 / v1.14.4). Hücre 88×55mm; üst/alt kenar 11mm, sol/sağ kenar 17mm.
-// Marka figürü (RENKLİ) hücreyi doldurur; fiyat/ad/barkod figür üzerine oranlı
-// bindirilir (önizleme = HTML = PDF BİREBİR).
+// Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket). Hücre
+// 88×55mm; üst/alt kenar 11mm, sol/sağ kenar 17mm. Faz D: sabit marka
+// illüstrasyonu KALDIRILDI — kiracının kendi logosu (opsiyonel) düz zeminde
+// ortalı, dikey `Expanded(flex:)` akışı (logo→fiyat→ad→barkod→alt satır);
+// önizleme = HTML = PDF BİREBİR aynı oranları paylaşır.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// A4 önizleme kenar boşluğu (KARAR v1.14.4 — hücre 94→88mm): üst/alt 11mm,
-// sol/sağ 17mm @96dpi → (210−2×88)/2 = 17mm, hücre genişliği tam 88mm.
+// A4 önizleme kenar boşluğu: üst/alt 11mm, sol/sağ 17mm @96dpi →
+// (210−2×88)/2 = 17mm, hücre genişliği tam 88mm.
 const double _kWideMargin = 11 * 3.7795; // dikey ≈ 41.6px
 const double _kWideMarginH = 17 * 3.7795; // yatay ≈ 64.25px
 
-// Etiket-içi hizalama oranları (hücre = figür; figür crop'undan ölçüldü). Bu
-// oranlar HTML/PDF ile birebir paylaşılır. Fiyat = tentenin açık iç dikdörtgeni;
-// gövde = yan çizgilerin içi (alt çizginin üstünde).
-const double _kWFigPriceLeft = 0.13;
-const double _kWFigPriceTop = 0.065;
-const double _kWFigPriceW = 0.74;
-const double _kWFigPriceH = 0.25;
-const double _kWFigBodyLeft = 0.10;
-const double _kWFigBodyTop = 0.585;
-const double _kWFigBodyW = 0.80;
-const double _kWFigBodyH = 0.395;
-const double _kWFigBarcodeH = 0.13; // barkod çizgi yüksekliği (yarıya indi)
-const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
-
-// Ürün adı (KARAR v1.14.4): ad, gövdenin üst esnek alanında ÜSTE hizalı
-// (topCenter). v1.14.3'teki 1.5 harf aşağı-itme, 2 satırlı adlar barkod
-// çizgilerine giriyordu → ~5mm yukarı alındı (shift 0). Barkod + alt satır
-// YERİNDE KALIR.
 const double _kWNameSize = 12;
-const double _kWNameShift =
-    2.5 * 3.7795; // v1.14.6: ad 2.5mm aşağı (≈9.45px @96dpi), üste hizalı sabit offset
 
 class _WidePreviewPane extends ConsumerWidget {
   const _WidePreviewPane();
@@ -5096,6 +5186,7 @@ class _WidePreviewPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(labelWideSheetProvider);
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.pageBg,
@@ -5106,7 +5197,7 @@ class _WidePreviewPane extends ConsumerWidget {
       child: Center(
         child: FittedBox(
           fit: BoxFit.contain,
-          child: _WideA4Canvas(slots: state.slots),
+          child: _WideA4Canvas(slots: state.slots, logoDataUrl: logoDataUrl),
         ),
       ),
     );
@@ -5115,8 +5206,9 @@ class _WidePreviewPane extends ConsumerWidget {
 
 class _WideA4Canvas extends StatelessWidget {
   final List<LabelSlot?> slots;
+  final String? logoDataUrl;
 
-  const _WideA4Canvas({required this.slots});
+  const _WideA4Canvas({required this.slots, this.logoDataUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -5134,7 +5226,12 @@ class _WideA4Canvas extends StatelessWidget {
             child: Row(
               children: List.generate(kWideCols, (c) {
                 final idx = r * kWideCols + c;
-                return Expanded(child: _WideLabelCell(slot: slots[idx]));
+                return Expanded(
+                  child: _WideLabelCell(
+                    slot: slots[idx],
+                    logoDataUrl: logoDataUrl,
+                  ),
+                );
               }),
             ),
           );
@@ -5145,23 +5242,36 @@ class _WideA4Canvas extends StatelessWidget {
 }
 
 // Geniş Logo A4 önizleme tuvalini (2×5) golden/görsel doğrulama için üretir.
-// Yalnız test amaçlı (tasarım-lideri hiza denetimi); üretim akışında kullanılmaz.
+// Yalnız test amaçlı; üretim akışında kullanılmaz.
 @visibleForTesting
-Widget buildWideCanvasForGolden(List<LabelSlot?> slots) =>
-    _WideA4Canvas(slots: slots);
+Widget buildWideCanvasForGolden(List<LabelSlot?> slots, {String? logoDataUrl}) =>
+    _WideA4Canvas(slots: slots, logoDataUrl: logoDataUrl);
 
-// Tek Geniş Logo etiket hücresi (figür arka planı + fiyat/ad/barkod overlay,
-// KARAR v1.14.2). Figür hücreyi doldurur (RENKLİ); fiyat tentenin açık iç
-// dikdörtgeninin merkezine, ürün adı + barkod + alt satır gövdede (yan
-// çizgilerin içinde) oranlı bindirilir. Öğeler siyah/beyaz.
+// Tek Geniş Logo etiket hücresi (Faz D — düz zeminde ortalı kiracı logosu +
+// fiyat/ad/barkod, `Expanded(flex:)` oranlı dikey akış). Boş hane → yalnız
+// ince kesim kılavuzu.
 class _WideLabelCell extends StatelessWidget {
   final LabelSlot? slot;
+  final String? logoDataUrl;
 
-  const _WideLabelCell({required this.slot});
+  const _WideLabelCell({required this.slot, this.logoDataUrl});
 
   @override
   Widget build(BuildContext context) {
     final s = slot;
+    Uint8List? logoBytes;
+    final url = logoDataUrl;
+    if (url != null) {
+      final i = url.indexOf(',');
+      if (i != -1) {
+        try {
+          logoBytes = base64Decode(url.substring(i + 1));
+        } catch (_) {
+          logoBytes = null;
+        }
+      }
+    }
+
     return Container(
       decoration: BoxDecoration(
         border: Border.all(
@@ -5170,131 +5280,104 @@ class _WideLabelCell extends StatelessWidget {
           width: 0.6,
         ),
       ),
+      padding: const EdgeInsets.all(6),
       child: s == null
           ? const SizedBox.expand()
-          : LayoutBuilder(
-              builder: (ctx, cons) {
-                final w = cons.maxWidth;
-                final h = cons.maxHeight;
-                return Stack(
-                  children: [
-                    // Figür arka planı — hücreyi doldurur (BoxFit.fill).
-                    Positioned.fill(
-                      child: Image.asset(
-                        'genis_logo_figur.png',
-                        fit: BoxFit.fill,
-                      ),
-                    ),
-                    // FİYAT — tentenin açık iç dikdörtgeni merkezine ortalı.
-                    Positioned(
-                      left: w * _kWFigPriceLeft,
-                      top: h * _kWFigPriceTop,
-                      width: w * _kWFigPriceW,
-                      height: h * _kWFigPriceH,
-                      child: Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            '${formatNumber(s.price)} TL',
-                            maxLines: 1,
-                            style: const TextStyle(
-                              fontSize: 46,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.5,
-                              height: 1,
-                              color: Colors.black,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  flex: 32,
+                  child: Center(
+                    child: logoBytes != null
+                        ? Image.memory(logoBytes, fit: BoxFit.contain)
+                        : const SizedBox(),
+                  ),
+                ),
+                Expanded(
+                  flex: 22,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${formatNumber(s.price)} TL',
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 46,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                          height: 1,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                     ),
-                    // Gövde: ürün adı + barkod + alt satır (yan çizgilerin içi).
-                    Positioned(
-                      left: w * _kWFigBodyLeft,
-                      top: h * _kWFigBodyTop,
-                      width: w * _kWFigBodyW,
-                      height: h * _kWFigBodyH,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek
-                          // alan. v1.14.4: ÜSTE hizalı (_kWNameShift=0); 2 satır
-                          // artık barkoda girmez. ClipRect taşarsa kırpar.
-                          Expanded(
-                            child: ClipRect(
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.only(top: _kWNameShift),
-                                child: Align(
-                                  alignment: Alignment.topCenter,
-                                  child: Text(
-                                    s.productName.toUpperCase(),
-                                    textAlign: TextAlign.center,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: _kWNameSize,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.1,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Code128 barkod — yarı yükseklik, gövde iç genişliğinde.
-                          SizedBox(
-                            width: double.infinity,
-                            height: h * _kWFigBarcodeH,
-                            child: BarcodeWidget(
-                              barcode: bc.Barcode.code128(),
-                              data: s.barcode,
-                              drawText: false,
-                              color: Colors.black,
-                              errorBuilder: (context, error) =>
-                                  const SizedBox.shrink(),
-                            ),
-                          ),
-                          // Alt satır: barkod no SOLDA · tarih SAĞDA.
-                          SizedBox(
-                            height: h * _kWFigBottomH,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    s.barcode,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      letterSpacing: 0.3,
-                                      color: Colors.black,
-                                      fontFeatures: [
-                                        FontFeature.tabularFigures()
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  formatShortDate(s.createdAt),
-                                  style: const TextStyle(
-                                    fontSize: 7,
-                                    color: Color(0xFF555555),
-                                    fontFeatures: [FontFeature.tabularFigures()],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                  ),
+                ),
+                Expanded(
+                  flex: 20,
+                  child: ClipRect(
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Text(
+                        s.productName.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: _kWNameSize,
+                          fontWeight: FontWeight.w700,
+                          height: 1.1,
+                          color: Colors.black,
+                        ),
                       ),
                     ),
-                  ],
-                );
-              },
+                  ),
+                ),
+                Expanded(
+                  flex: 13,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: BarcodeWidget(
+                      barcode: bc.Barcode.code128(),
+                      data: s.barcode,
+                      drawText: false,
+                      color: Colors.black,
+                      errorBuilder: (context, error) =>
+                          const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 9,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.barcode,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            letterSpacing: 0.3,
+                            color: Colors.black,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      Text(
+                        formatShortDate(s.createdAt),
+                        style: const TextStyle(
+                          fontSize: 7,
+                          color: Color(0xFF555555),
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
     );
   }

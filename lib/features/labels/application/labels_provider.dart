@@ -28,12 +28,19 @@ const int kTelCount = kTelColumns * kTelRows; // 32
 
 
 /// Etiket sayfasının durumu: 24 hanelik liste (`null` = boş hane) + mağaza logosu
-/// (data URL / base64; hem önizleme hem baskıda kullanılır).
+/// (data URL / base64; hem önizleme hem baskıda kullanılır) + İndirim
+/// Etiketi'nin logo-altı tagline metni (Faz D — kiracı-bazlı marka, ikisi de
+/// tüm sekmelerde PAYLAŞILAN tek kaynak).
 class LabelSheetState {
   final List<LabelSlot?> slots;
   final String? logoDataUrl;
+  final String? taglineText;
 
-  const LabelSheetState({required this.slots, this.logoDataUrl});
+  const LabelSheetState({
+    required this.slots,
+    this.logoDataUrl,
+    this.taglineText,
+  });
 
   factory LabelSheetState.initial() => LabelSheetState(
         slots: List<LabelSlot?>.filled(kLabelCount, null),
@@ -45,10 +52,14 @@ class LabelSheetState {
     List<LabelSlot?>? slots,
     String? logoDataUrl,
     bool clearLogo = false,
+    String? taglineText,
+    bool clearTagline = false,
   }) {
     return LabelSheetState(
       slots: slots ?? this.slots,
       logoDataUrl: clearLogo ? null : (logoDataUrl ?? this.logoDataUrl),
+      taglineText:
+          clearTagline ? null : (taglineText ?? this.taglineText),
     );
   }
 }
@@ -89,6 +100,16 @@ class LabelSheet extends _$LabelSheet {
       state = state.copyWith(clearLogo: true);
     } else {
       state = state.copyWith(logoDataUrl: dataUrl);
+    }
+  }
+
+  /// İndirim Etiketi tagline'ını ayarlar. `null`/boş → tagline kaldır (satır
+  /// basılmaz).
+  void setTagline(String? text) {
+    if (text == null || text.isEmpty) {
+      state = state.copyWith(clearTagline: true);
+    } else {
+      state = state.copyWith(taglineText: text);
     }
   }
 }
@@ -331,9 +352,10 @@ class LabelTelDiscountSheet extends _$LabelTelDiscountSheet {
 /// `paginateDiscountSlots`). `slots` her zaman TEK bir trailing `null`
 /// (henüz taranmamış hane) ile biter; doldurulunca yeni bir `null` eklenir
 /// (büyüme), dolu bir hane silinince liste küçülür. Raf/Tel ile aynı hücre
-/// dilini paylaşır; mağaza logosu ayrı YÜKLENMEZ, sabit marka figürü
-/// (`nice_logo_indirim.png`) kullanılır — hane başı `DiscountLabelSlot.showLogo`
-/// tiki bu logonun o etikette basılıp basılmayacağını belirler.
+/// dilini paylaşır; mağaza logosu Faz D'den itibaren kiracı-bazlı (Geniş
+/// Logo/Raf ile PAYLAŞILAN `LabelSheetState.logoDataUrl`) — hane başı
+/// `DiscountLabelSlot.showLogo` tiki bu logonun o etikette basılıp
+/// basılmayacağını belirler.
 /// [defaultPercent] — sayfa geneli "ana indirim %"; hane kendi yüzdesini
 /// GİRMEMİŞSE (`DiscountLabelSlot.discountPercent == null`) bu değer geçerli
 /// olur. Hane kendi yüzdesini girdiyse genel yüzde değişse bile o haneyi

@@ -39,24 +39,44 @@ class Membership {
   bool get isOwnerOrAdmin => role == 'owner' || role == 'admin';
 }
 
-/// Oturum açan kullanıcının kiracısı (ad/slug). `tenants` RLS'i zaten
-/// `id = current_tenant_id()`'e daraltıldığından filtresiz `select` tam
+/// Oturum açan kullanıcının kiracısı (ad/slug/plan/aktiflik). `tenants` RLS'i
+/// zaten `id = current_tenant_id()`'e daraltıldığından filtresiz `select` tam
 /// olarak çağıranın kendi kiracı satırını döndürür (Faz C — bkz. app_scaffold.dart
-/// "NicePOS" yerine kiracı adı gösterimi).
+/// "NicePOS" yerine kiracı adı gösterimi). Faz G altyapısı: `plan`/`is_active`
+/// artık uygulama tarafında OKUNUYOR — `is_active=false` `AppScaffold`'da
+/// kilitleme ekranına yönlendirir (bkz. app_scaffold.dart). Bu iki alan
+/// platform-yönetim alanları — kendi kiracısını yönetemeyen owner/admin'in
+/// self-servis değiştirebileceği bir alan DEĞİL, yalnız Supabase Table
+/// Editor'dan elle değiştirilir (gerçek faturalama/ödeme entegre olmadan
+/// self-servis plan seçimi anlamsız kalırdı).
 @Riverpod(keepAlive: true)
 Future<TenantInfo?> currentTenant(CurrentTenantRef ref) async {
   final client = ref.watch(supabaseClientProvider);
   ref.watch(authStateChangesProvider);
   if (client.auth.currentUser == null) return null;
-  final rows = await client.from('tenants').select('id, name').limit(1);
+  final rows =
+      await client.from('tenants').select('id, name, plan, is_active').limit(1);
   if (rows.isEmpty) return null;
-  return TenantInfo(id: rows.first['id'] as String, name: rows.first['name'] as String);
+  final row = rows.first;
+  return TenantInfo(
+    id: row['id'] as String,
+    name: row['name'] as String,
+    plan: row['plan'] as String? ?? 'trial',
+    isActive: row['is_active'] as bool? ?? true,
+  );
 }
 
 class TenantInfo {
   final String id;
   final String name;
-  const TenantInfo({required this.id, required this.name});
+  final String plan;
+  final bool isActive;
+  const TenantInfo({
+    required this.id,
+    required this.name,
+    this.plan = 'trial',
+    this.isActive = true,
+  });
 }
 
 /// Gecikmeli e-posta onayı senaryosunu kapatır: kullanıcı `signUp()` anında

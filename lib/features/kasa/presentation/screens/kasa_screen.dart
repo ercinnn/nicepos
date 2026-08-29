@@ -9,6 +9,7 @@ import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/instrument_hero.dart';
+import '../../../auth/application/auth_provider.dart';
 import '../../../products/data/models/company.dart';
 import '../../application/kasa_provider.dart';
 import '../../data/models/kasa_entry.dart';
@@ -82,6 +83,16 @@ class _KasaScreenState extends ConsumerState<KasaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rol-bazlı kısıtlama (kullanıcı kararı) — Kasa yalnız owner/admin'e
+    // açık. Ana savunma menüden gizlenmesi (bkz. app_scaffold.dart
+    // `_visibleNavItems`); bu, doğrudan URL ile gelen staff kullanıcıya karşı
+    // ikinci savunma katmanı. `membership == null` (henüz yüklenmedi) durumda
+    // engellenmez — owner/admin çoğunluk senaryosunda gecikme yaşamasın.
+    final membership = ref.watch(currentMembershipProvider).valueOrNull;
+    if (membership != null && !membership.isOwnerOrAdmin) {
+      return const _KasaAccessDenied();
+    }
+
     final mobil = context.isMobile;
 
     final icerik = Column(
@@ -210,6 +221,42 @@ class _KasaScreenState extends ConsumerState<KasaScreen> {
             width: c.maxWidth < 760 ? c.maxWidth : 760,
             child: icerik,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// Rol-bazlı kısıtlama (kullanıcı kararı) — staff bu ekrana doğrudan URL ile
+// gelirse gösterilir (menüden zaten gizli, bkz. app_scaffold.dart).
+class _KasaAccessDenied extends StatelessWidget {
+  const _KasaAccessDenied();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSizes.space24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.lock_outline, size: 40, color: AppColors.textMuted),
+            const SizedBox(height: AppSizes.space12),
+            const Text(
+              'Bu ekrana erişim yetkiniz yok',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: AppSizes.space4),
+            const Text(
+              'Kasa Defteri yalnız işletme sahibi/yöneticisi tarafından görüntülenebilir.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+          ],
         ),
       ),
     );

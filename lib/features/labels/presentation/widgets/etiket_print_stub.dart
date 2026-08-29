@@ -36,7 +36,7 @@ void printTelDiscountLabelsA4({
 /// Geniş Logo etiketi yazdırma — web dışı platformlarda no-op (KARAR v1.14).
 void printWideLabelsA4({
   required List<LabelSlot?> slots,
-  required String figurDataUrl,
+  String? logoDataUrl,
 }) {
   // No-op
 }
@@ -63,8 +63,9 @@ void printProductLabelsA4({
 /// İndirim Etiketi (2×2 = 4/sayfa) yazdırma — web dışı platformlarda no-op.
 void printDiscountLabelsA4({
   required List<DiscountLabelSlot?> slots,
-  required String logoDataUrl,
+  String? logoDataUrl,
   required num defaultPercent,
+  String tagline = '',
 }) {
   // No-op
 }

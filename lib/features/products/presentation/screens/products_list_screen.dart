@@ -13,6 +13,7 @@ import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/skeleton.dart';
+import '../../../auth/application/auth_provider.dart';
 import '../../data/local/product_local_cache_dao.dart';
 import '../../data/models/product.dart';
 import '../../data/models/product_filters.dart';
@@ -112,6 +113,17 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
   bool _offline = false;
 
   final Set<String> _selectedIds = {};
+
+  // Rol-bazlı kısıtlama (kullanıcı kararı) — maliyet (Alış Fiyatı) sütunu
+  // staff'a kapalı; owner/admin'in kişisel kolon tercihi (`productColumnsProvider`)
+  // buradan ETKİLENMEZ, yalnız render anında filtrelenir.
+  bool get _isOwnerOrAdmin =>
+      ref.watch(currentMembershipProvider).valueOrNull?.isOwnerOrAdmin == true;
+
+  Set<ProductColumn> get _visibleColumns {
+    final cols = ref.watch(productColumnsProvider);
+    return _isOwnerOrAdmin ? cols : cols.difference({ProductColumn.alis});
+  }
 
   // Ürün başına "Durum" (Çok Satan/Tükendi/Pasif) — bkz. `_loadStatuses`.
   Map<String, String?> _statuses = {};
@@ -321,10 +333,16 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
   Future<void> _showColumnPicker() async {
     final current = ref.read(productColumnsProvider);
+    final isOwnerOrAdmin = _isOwnerOrAdmin;
     await showDialog<void>(
       context: context,
       builder: (ctx) => _ColumnPickerDialog(
         selected: Set.from(current),
+        availableColumns: isOwnerOrAdmin
+            ? ProductColumn.values
+            : ProductColumn.values
+                .where((c) => c != ProductColumn.alis)
+                .toList(),
         onChanged: (col, visible) =>
             ref.read(productColumnsProvider.notifier).toggle(col, visible),
         onReset: () => ref.read(productColumnsProvider.notifier).reset(),
@@ -617,6 +635,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                             onDelete: _deleteProduct,
                             equivalent: _equivalents[_displayProducts[i].id],
                             onEquivalentChanged: _loadProducts,
+                            showCost: _isOwnerOrAdmin,
                           ),
                         ),
         ),
@@ -731,7 +750,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
             OutlinedButton.icon(
               onPressed: _showColumnPicker,
               icon: const Icon(Icons.view_column_outlined, size: 18),
-              label: Text('Kolonlar (${ref.watch(productColumnsProvider).length})'),
+              label: Text('Kolonlar (${_visibleColumns.length})'),
             ),
             const SizedBox(width: AppSizes.space12),
             OutlinedButton.icon(
@@ -817,7 +836,7 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                           )
                         : _ProductsTable(
                             products: _displayProducts,
-                            visibleColumns: ref.watch(productColumnsProvider),
+                            visibleColumns: _visibleColumns,
                             selectedIds: _selectedIds,
                             allSelected: _allSelected,
                             statuses: _statuses,
@@ -875,11 +894,13 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
 
 class _ColumnPickerDialog extends StatefulWidget {
   final Set<ProductColumn> selected;
+  final List<ProductColumn> availableColumns;
   final void Function(ProductColumn col, bool visible) onChanged;
   final VoidCallback onReset;
 
   const _ColumnPickerDialog({
     required this.selected,
+    required this.availableColumns,
     required this.onChanged,
     required this.onReset,
   });
@@ -920,7 +941,7 @@ class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
         width: 300,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: ProductColumn.values.map((col) {
+          children: widget.availableColumns.map((col) {
             return CheckboxListTile(
               dense: true,
               title: Text(col.label,
@@ -1065,11 +1086,17 @@ class _ProductSummaryDialogState extends ConsumerState<_ProductSummaryDialog> {
                         label: 'Listelenen parça sayısı',
                         value: formatNumber(_quantity),
                       ),
-                      _SummaryRow(
-                        icon: Icons.shopping_cart_outlined,
-                        label: 'Toplam ürün maliyeti',
-                        value: formatCurrency(_cost),
-                      ),
+                      // Rol-bazlı kısıtlama (kullanıcı kararı) — maliyet
+                      // toplamı da staff'a kapalı (Alış Fiyatı sütunuyla aynı
+                      // bilgiyi toplu biçimde sızdırmasın diye).
+                      if (ref.watch(currentMembershipProvider).valueOrNull
+                              ?.isOwnerOrAdmin ==
+                          true)
+                        _SummaryRow(
+                          icon: Icons.shopping_cart_outlined,
+                          label: 'Toplam ürün maliyeti',
+                          value: formatCurrency(_cost),
+                        ),
                       _SummaryRow(
                         icon: Icons.sell_outlined,
                         label: 'Toplam ürün satış tutarı',
@@ -2280,12 +2307,15 @@ class _ProductMobileCard extends StatelessWidget {
   final Future<void> Function(Product) onDelete;
   final EquivalentAggregate? equivalent;
   final VoidCallback onEquivalentChanged;
+  // Rol-bazlı kısıtlama (kullanıcı kararı) — maliyet (Alış) staff'a kapalı.
+  final bool showCost;
 
   const _ProductMobileCard({
     required this.product,
     required this.onDelete,
     this.equivalent,
     required this.onEquivalentChanged,
+    this.showCost = true,
   });
 
   @override
@@ -2362,8 +2392,10 @@ class _ProductMobileCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: AppSizes.space4),
-                _InfoChip(label: 'Alış', value: formatCurrency(p.purchasePrice)),
-                const SizedBox(height: AppSizes.space4),
+                if (showCost) ...[
+                  _InfoChip(label: 'Alış', value: formatCurrency(p.purchasePrice)),
+                  const SizedBox(height: AppSizes.space4),
+                ],
                 _InfoChip(
                   label: 'Fiyat',
                   value: formatCurrency(p.price1),

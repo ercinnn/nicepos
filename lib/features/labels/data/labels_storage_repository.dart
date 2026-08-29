@@ -38,6 +38,11 @@ class LabelsStorageRepository {
   // Mağaza logosu Storage anahtarı (KARAR v1.12) — PDF listesinden filtrelenir.
   static const String logoKey = '__store_logo.txt';
 
+  // Etiket tagline'ı (İndirim Etiketi'nin logo altı slogan metni, Faz D
+  // kiracı-bazı marka) Storage anahtarı — `logoKey` ile aynı desen,
+  // PDF listesinden filtrelenir.
+  static const String taglineKey = '__store_tagline.txt';
+
   /// PDF'i verilen adla yükler; çakışmada üzerine YAZMAZ → sona zaman damgası /
   /// sayaç ekleyerek benzersizleştirir. Kaydedilen nihai adı döndürür.
   Future<String> upload(String rawName, Uint8List bytes) async {
@@ -84,7 +89,10 @@ class LabelsStorageRepository {
     final tenantId = await currentTenantIdOrThrow(_client);
     final objs = await _client.storage.from(bucket).list(path: tenantId);
     final files = objs
-        .where((o) => o.name != _placeholder && o.name != logoKey)
+        .where((o) =>
+            o.name != _placeholder &&
+            o.name != logoKey &&
+            o.name != taglineKey)
         .map((o) {
           final meta = o.metadata;
           final size = (meta?['size'] as num?)?.toInt() ?? 0;
@@ -164,6 +172,38 @@ class LabelsStorageRepository {
       final tenantId = await currentTenantIdOrThrow(_client);
       await _client.storage.from(bucket).remove(['$tenantId/$logoKey']);
     } catch (_) {}
+  }
+
+  // ─── İndirim Etiketi tagline'ı (Faz D — kiracı-bazlı marka) ────────────────
+  // `uploadLogo`/`fetchLogo`/`removeLogo` ile birebir aynı desen, düz metin.
+
+  /// Tagline metnini Storage'a yazar. Önce mevcut değeri siler.
+  Future<void> uploadTagline(String tagline) async {
+    final tenantId = await currentTenantIdOrThrow(_client);
+    final key = '$tenantId/$taglineKey';
+    try {
+      await _client.storage.from(bucket).remove([key]);
+    } catch (_) {
+      // Mevcut değer yoksa / silinemezse yükleme yine denenir.
+    }
+    final bytes = Uint8List.fromList(utf8.encode(tagline));
+    await _client.storage.from(bucket).uploadBinary(
+          key,
+          bytes,
+          fileOptions: const FileOptions(contentType: 'text/plain'),
+        );
+  }
+
+  /// Kayıtlı tagline'ı getirir; dosya yoksa/offline → null.
+  Future<String?> fetchTagline() async {
+    try {
+      final tenantId = await currentTenantIdOrThrow(_client);
+      final bytes =
+          await _client.storage.from(bucket).download('$tenantId/$taglineKey');
+      return utf8.decode(bytes);
+    } catch (_) {
+      return null;
+    }
   }
 
   // Dosya adını Storage anahtarı için güvenli hale getirir: yol ayraçlarını ve
