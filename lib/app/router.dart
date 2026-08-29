@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase/supabase_config.dart';
 import '../core/supabase/supabase_client_provider.dart';
 import '../features/analiz/presentation/screens/analiz_screen.dart';
+import '../features/audit/presentation/screens/audit_log_screen.dart';
 import '../features/auth/presentation/screens/config_missing_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/signup_screen.dart';
@@ -183,6 +184,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/analiz',
             pageBuilder: (context, state) =>
                 _fadeThroughPage(state, const AnalizScreen()),
+          ),
+          GoRoute(
+            path: '/denetim',
+            pageBuilder: (context, state) =>
+                _fadeThroughPage(state, const AuditLogScreen()),
           ),
         ],
       ),

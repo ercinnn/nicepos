@@ -50,6 +50,8 @@ const _navItems = [
   _NavItem('Müşteriler', Icons.people_outline, Icons.people, '/customers'),
   _NavItem('Ürünler', Icons.inventory_2_outlined, Icons.inventory_2, '/products'),
   _NavItem('Stok', Icons.playlist_add_check_outlined, Icons.playlist_add_check, '/stok'),
+  _NavItem('Denetim Kaydı', Icons.history_outlined, Icons.history, '/denetim',
+      ownerOrAdminOnly: true),
 ];
 
 // Rol-bazlı görünür menü — staff için `ownerOrAdminOnly` öğeler filtrelenir.

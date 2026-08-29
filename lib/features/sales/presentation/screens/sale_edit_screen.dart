@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../audit/data/repositories/audit_log_repository.dart';
 import '../../../auth/application/auth_provider.dart';
 import '../../../../features/products/application/products_provider.dart';
 import '../../../../features/products/data/models/product.dart';
@@ -459,6 +462,15 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
     try {
       await SalesRepository().deleteSale(widget.sale.id);
       stopwatch.stop();
+      // Denetim kaydı (0044 migration) — ikincil, sale zaten silinmiş olur.
+      unawaited(AuditLogRepository().log(
+        action: 'sale.delete',
+        entityType: 'sale',
+        entityId: widget.sale.id,
+        summary: '${widget.sale.saleCode} · '
+            '${formatCurrency(widget.sale.totalAmount)} · '
+            '${widget.sale.customerName ?? 'Perakende'}',
+      ));
       if (mounted) {
         Navigator.pop(
           context,

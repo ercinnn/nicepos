@@ -63,12 +63,18 @@ final currentMembershipProvider = FutureProvider<Membership?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CurrentMembershipRef = FutureProviderRef<Membership?>;
-String _$currentTenantHash() => r'8e92efbf54cf5483c93a7d3adb8659ac639aaad2';
+String _$currentTenantHash() => r'aad7cdc409c6a7039d3a66c11172f146cf7d5886';
 
-/// Oturum açan kullanıcının kiracısı (ad/slug). `tenants` RLS'i zaten
-/// `id = current_tenant_id()`'e daraltıldığından filtresiz `select` tam
+/// Oturum açan kullanıcının kiracısı (ad/slug/plan/aktiflik). `tenants` RLS'i
+/// zaten `id = current_tenant_id()`'e daraltıldığından filtresiz `select` tam
 /// olarak çağıranın kendi kiracı satırını döndürür (Faz C — bkz. app_scaffold.dart
-/// "NicePOS" yerine kiracı adı gösterimi).
+/// "NicePOS" yerine kiracı adı gösterimi). Faz G altyapısı: `plan`/`is_active`
+/// artık uygulama tarafında OKUNUYOR — `is_active=false` `AppScaffold`'da
+/// kilitleme ekranına yönlendirir (bkz. app_scaffold.dart). Bu iki alan
+/// platform-yönetim alanları — kendi kiracısını yönetemeyen owner/admin'in
+/// self-servis değiştirebileceği bir alan DEĞİL, yalnız Supabase Table
+/// Editor'dan elle değiştirilir (gerçek faturalama/ödeme entegre olmadan
+/// self-servis plan seçimi anlamsız kalırdı).
 ///
 /// Copied from [currentTenant].
 @ProviderFor(currentTenant)
