@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/local_db/app_database.dart';
 import '../../../core/supabase/supabase_client_provider.dart';
+import '../../sales/application/barcode_cache.dart';
 
 part 'auth_provider.g.dart';
 
@@ -91,8 +94,32 @@ class TenantInfo {
 @Riverpod(keepAlive: true)
 Future<void> ensureTenantProvisioned(EnsureTenantProvisionedRef ref) async {
   final client = ref.watch(supabaseClientProvider);
-  ref.watch(authStateChangesProvider);
+  final authState = ref.watch(authStateChangesProvider).valueOrNull;
   if (client.auth.currentUser == null) return;
+
+  // ⚠️ Çapraz-kiracı yerel önbellek sızıntısı düzeltmesi (yaşanmış hata):
+  // `BarcodeCache` (bellek-içi, tüm platformlar) ve `products_cache`/
+  // `product_groups_cache`/`companies_cache` (native SQLite) hiçbiri
+  // `tenant_id` taşımaz ve RLS'e hiç uğramaz. Aynı cihazda önce BAŞKA bir
+  // kiracı oturum açtıysa bu önbellekler onun ürün/grup/firma verisini
+  // tutmaya devam eder — Ürünler listesi her zaman taze/RLS'li sorgu
+  // yaptığından doğru görünür, ama barkod okutma eski kiracının ürününü
+  // sepete ekleyebilir. Yalnız GERÇEK bir yeni girişte (`signedIn` —
+  // soğuk açılıştaki `initialSession`'da veya token yenilemede
+  // TETİKLENMEZ) temizlenir; aksi halde dead-zone dayanıklılığı için
+  // tutulan önbellek her token yenilemesinde boşuna silinirdi.
+  if (authState?.event == AuthChangeEvent.signedIn) {
+    ref.invalidate(barcodeCacheProvider);
+    if (!kIsWeb) {
+      try {
+        await ref.read(appDatabaseProvider).clearTenantScopedCaches();
+      } catch (_) {
+        // Yerel DB henüz açılamadıysa sessizce geç — bir sonraki online
+        // sorgu zaten taze veriyle üzerine yazar (replaceAll), risk yalnız
+        // dead-zone'daki kısa bir pencerede kalır.
+      }
+    }
+  }
 
   final existing = await client.from('memberships').select('id').limit(1);
   if (existing.isNotEmpty) return;

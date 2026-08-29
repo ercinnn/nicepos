@@ -138,6 +138,24 @@ class AppDatabase {
     _db = db;
     return db;
   }
+
+  /// Çapraz-kiracı sızıntısını önler (yaşanmış hata — bkz. `auth_provider.dart`
+  /// `ensureTenantProvisioned`): aynı cihazda önce BAŞKA bir kiracı oturum
+  /// açmışsa, bu SAF önbellek tabloları (RLS'e hiç uğramaz, `tenant_id`
+  /// TAŞIMAZ) eski kiracının ürün/grup/firma verisini tutmaya devam eder —
+  /// barkod okutma o eski ürünü sepete ekleyebilir. Yalnız GERÇEK bir yeni
+  /// girişte çağrılır. `pending_sales`/`pending_changes` (henüz senkron
+  /// olmamış GERÇEK kullanıcı işi) ve `sync_meta` kasıtlı olarak DOKUNULMAZ —
+  /// veri kaybı riski, çapraz-kiracı okuma sızıntısından daha büyük bir zarar
+  /// olurdu.
+  Future<void> clearTenantScopedCaches() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('products_cache');
+      await txn.delete('product_groups_cache');
+      await txn.delete('companies_cache');
+    });
+  }
 }
 
 @Riverpod(keepAlive: true)
