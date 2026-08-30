@@ -84,37 +84,58 @@ class RealCloudflareClient implements CloudflareClient {
     return body.result as T;
   }
 
+  // Gerçek Cloudflare şeması (2026-08-31'de canlı hesapla doğrulandı — beta
+  // dokümantasyonu erişilemediğinden ÖNCEKİ sürüm tahminiydi, YANLIŞ çıktı):
+  //   GET .../domain-search?q=<terim>  (parametre adı `query` DEĞİL `q`)
+  //     → { domains: [{ name, registrable, tier, pricing?: { currency,
+  //         registration_cost, renewal_cost } }] }
+  //     — yalnız MÜSAİT adaylar döner (alınmış olan sorgu teriminin kendisi
+  //     hiç listede ÇIKMAZ, `available:false` olarak da GÖSTERİLMEZ).
+  //   POST .../domain-check  body {domains:[...]}
+  //     → aynı şekil, MÜSAİT DEĞİLSE `reason` alanı (ör. "domain_unavailable")
+  //     dolu gelir, `pricing` YOK; müsaitse `pricing` dolu, `reason` yok.
+  private mapDomainResult(r: {
+    name: string;
+    registrable: boolean;
+    pricing?: { currency: string; registration_cost: string };
+  }): DomainCandidate {
+    return {
+      domain: r.name,
+      available: r.registrable,
+      priceAmount: r.pricing ? Number(r.pricing.registration_cost) : 0,
+      priceCurrency: r.pricing?.currency ?? "USD",
+    };
+  }
+
   async searchDomains(query: string): Promise<DomainCandidate[]> {
-    const result = await this.request<
-      { domain: string; available: boolean; price: { amount: number; currency: string } }[]
-    >(
-      `/accounts/${this.accountId}/registrar/domain-search?query=${encodeURIComponent(query)}`,
+    const result = await this.request<{
+      domains: {
+        name: string;
+        registrable: boolean;
+        pricing?: { currency: string; registration_cost: string };
+      }[];
+    }>(
+      `/accounts/${this.accountId}/registrar/domain-search?q=${encodeURIComponent(query)}`,
     );
-    return result
-      .filter((r) => isAllowedDomain(r.domain))
-      .map((r) => ({
-        domain: r.domain,
-        available: r.available,
-        priceAmount: r.price.amount,
-        priceCurrency: r.price.currency,
-      }));
+    return result.domains
+      .filter((r) => isAllowedDomain(r.name))
+      .map((r) => this.mapDomainResult(r));
   }
 
   async checkDomains(domains: string[]): Promise<DomainCandidate[]> {
     const filtered = domains.filter(isAllowedDomain);
     if (filtered.length === 0) return [];
-    const result = await this.request<
-      { domain: string; available: boolean; price: { amount: number; currency: string } }[]
-    >(`/accounts/${this.accountId}/registrar/domain-check`, {
+    const result = await this.request<{
+      domains: {
+        name: string;
+        registrable: boolean;
+        pricing?: { currency: string; registration_cost: string };
+      }[];
+    }>(`/accounts/${this.accountId}/registrar/domain-check`, {
       method: "POST",
       body: JSON.stringify({ domains: filtered }),
     });
-    return result.map((r) => ({
-      domain: r.domain,
-      available: r.available,
-      priceAmount: r.price.amount,
-      priceCurrency: r.price.currency,
-    }));
+    return result.domains.map((r) => this.mapDomainResult(r));
   }
 
   async registerDomain(
