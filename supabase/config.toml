@@ -389,7 +389,12 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 
 [functions.domain-search]
 enabled = true
-verify_jwt = true
+# Platform seviyesindeki JWT doğrulaması KAPALI — fonksiyon KENDİ auth
+# kontrolünü yapıyor (bkz. _shared/authContext.ts requireAuthContext,
+# Supabase Auth API'sine gerçek getUser() çağrısı). `verify_jwt = true`
+# (varsayılan) bu projede asymmetric JWT imza şemasıyla
+# 401 UNAUTHORIZED_ASYMMETRIC_JWT hatası veriyordu (canlıda doğrulandı).
+verify_jwt = false
 import_map = "./functions/domain-search/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -400,7 +405,7 @@ entrypoint = "./functions/domain-search/index.ts"
 
 [functions.domain-check]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/domain-check/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -411,7 +416,7 @@ entrypoint = "./functions/domain-check/index.ts"
 
 [functions.domain-purchase-initiate]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/domain-purchase-initiate/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -422,7 +427,10 @@ entrypoint = "./functions/domain-purchase-initiate/index.ts"
 
 [functions.iyzico-webhook]
 enabled = true
-verify_jwt = true
+# iyzico'nun webhook'u hiçbir zaman bir Supabase kullanıcı JWT'si taşımaz —
+# bu ayar burada opsiyonel değil, ZORUNLU (kendi imza doğrulaması var, bkz.
+# _shared/iyzico.ts verifyWebhookSignature).
+verify_jwt = false
 import_map = "./functions/iyzico-webhook/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -433,7 +441,9 @@ entrypoint = "./functions/iyzico-webhook/index.ts"
 
 [functions.domain-registration-poll]
 enabled = true
-verify_jwt = true
+# pg_cron'un tetiklemesi de bir Supabase kullanıcı JWT'si taşımaz — paylaşımlı
+# sırla (POLL_TRIGGER_SECRET) kendi doğrulamasını yapıyor, bu ayar ZORUNLU.
+verify_jwt = false
 import_map = "./functions/domain-registration-poll/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
