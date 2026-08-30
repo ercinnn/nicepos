@@ -129,7 +129,7 @@ TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` ile üretilir; her 
 
 `SalesCart` (Riverpod notifier, `sales_cart_notifier.dart`) 5 müşteri sekmesini yönetir (`SalesState.activeTab` + `List<CustomerTabState>`).
 
-- **Canlı ürün arama:** barkod okutup Enter → doğrudan sepete ekler. Yazı yazınca (250ms debounce) `OverlayPortal` ile canlı öneri listesi açılır (Türkçe-duyarlı substring arama).
+- **Canlı ürün arama:** barkod okutup Enter → doğrudan sepete ekler. Yazı yazınca (150ms debounce) `OverlayPortal` ile canlı öneri listesi açılır (Türkçe-duyarlı substring arama, ağ hatasında native'de `products_cache` fallback'i). Bileşen `LiveProductSearchField` (`lib/features/products/presentation/widgets/live_product_search_field.dart`) — Analiz sayfasıyla (`/analiz`) PAYLAŞILIR, `onProductSelected` çağrı noktasına göre davranır (Satış'ta sepete ekler, Analiz'de ürünü seçip satış grafiğini yükler).
 - **Sepet (`cart_table.dart`):** satır bazlı %/₺ iskonto (`_CompactDiscountCell`) + sepet geneli iskonto. **Çoklu seçim + toplu %iskonto:** her satırın solunda yuvarlak seçim ikonu (`_RowSelectToggle`); seçim varken üstte "Seçilenlere % İndirim Uygula" barı belirir, yalnız YÜZDE tipinde iskonto uygular ve yalnız seçili satırları etkiler (mevcut tekil %/₺ iskontodan ayrı bir akış). Seçim `Set<int>` index bazlı, sekme değişince veya satır sayısı değişince otomatik temizlenir.
 - **Birim fiyat:** elle düzenlenebilir + yanında "Fiyat1 yap" radyosu (`products.price1`'i kalıcı günceller).
 - **Mobil:** kamera barkod okuma, sepet kart listesi (sola kaydır → sil), ödeme `DraggableScrollableSheet`.

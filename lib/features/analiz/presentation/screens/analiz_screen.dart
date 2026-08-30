@@ -10,6 +10,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../products/application/products_provider.dart';
 import '../../../products/data/models/product.dart';
+import '../../../products/presentation/widgets/live_product_search_field.dart';
 import '../../../reports/application/reports_provider.dart';
 import '../../../reports/data/models/product_sale_record.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
@@ -77,6 +78,20 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen> {
     }
   }
 
+  // Canlı arama açılır listesinden bir ürüne dokununca çağrılır — barkod
+  // ile aynı sonucu (ürünü seçip grafiği yükle) ağ turu beklemeden verir,
+  // çünkü ürün nesnesi zaten arama sonucundan elde.
+  void _selectProduct(Product product) {
+    setState(() {
+      _looking = false;
+      _product = product;
+      _error = null;
+    });
+    ref.invalidate(productSalesHistoryProvider(product.id));
+    _barcodeCtrl.clear();
+    _barcodeFocus.requestFocus();
+  }
+
   Future<void> _scanCamera() async {
     await openBarcodeScanner(context, (value) {
       _lookup(value);
@@ -119,6 +134,7 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen> {
           isMobile: isMobile,
           onSubmit: () => _lookup(),
           onScan: kIsWeb ? null : _scanCamera,
+          onProductSelected: _selectProduct,
         ),
         if (_error != null) ...[
           const SizedBox(height: AppSizes.space12),
@@ -158,6 +174,7 @@ class _BarcodeRow extends StatelessWidget {
   final bool isMobile;
   final VoidCallback onSubmit;
   final VoidCallback? onScan;
+  final void Function(Product) onProductSelected;
 
   const _BarcodeRow({
     required this.controller,
@@ -166,17 +183,19 @@ class _BarcodeRow extends StatelessWidget {
     required this.isMobile,
     required this.onSubmit,
     required this.onScan,
+    required this.onProductSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final field = TextField(
+    final field = LiveProductSearchField(
       controller: controller,
       focusNode: focusNode,
       autofocus: !isMobile,
-      onSubmitted: (_) => onSubmit(),
+      onSubmitted: (_) async => onSubmit(),
+      onProductSelected: onProductSelected,
       decoration: InputDecoration(
-        hintText: 'Barkod okutun veya yazın...',
+        hintText: 'Barkod okutun veya ürün adı yazın...',
         prefixIcon: looking
             ? const Padding(
                 padding: EdgeInsets.all(14),
