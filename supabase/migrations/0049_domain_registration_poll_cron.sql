@@ -12,15 +12,14 @@
 -- `create extension` bazı planlarda/izinlerde çalışmayabiliyor, dashboard'dan
 -- açmak garantili yol.
 --
--- ⚠️ MANUEL DOLDURMA GEREKİR: aşağıdaki `REPLACE_WITH_RANDOM_SECRET` gerçek,
--- rastgele üretilmiş bir değerle değiştirilmeli (ör. `openssl rand -hex 32`)
--- VE AYNI değer `domain-registration-poll` Edge Function'ının
--- `POLL_TRIGGER_SECRET` secret'ı olarak da ayarlanmalı
--- (`supabase secrets set POLL_TRIGGER_SECRET=...`) — ikisi eşleşmezse
--- fonksiyon her tetiklemeyi 401 ile reddeder (bilinçli fail-closed davranış,
--- bkz. authContext deseni). Servis-rolü anahtarı BURAYA (versiyon kontrollü
--- bir migration dosyasına) asla yazılmaz — ayrı, tek amaçlı bir paylaşılan
--- sır kullanılır.
+-- Aşağıdaki değer, `domain-registration-poll`'un bu isteğin GERÇEKTEN bizim
+-- veritabanımızdan geldiğini anlaması için kullandığı paylaşımlı bir "iç
+-- şifre" (rastgele üretildi, elle hatırlamanız/kullanmanız gerekmez) — AYNI
+-- değer `POLL_TRIGGER_SECRET` adıyla Edge Function secret'ı olarak da
+-- ayarlanmalı (bu depoyu yöneten tarafından `supabase secrets set` ile),
+-- ikisi eşleşmezse fonksiyon her tetiklemeyi 401 ile reddeder (bilinçli
+-- fail-closed davranış). Servis-rolü anahtarı BURAYA (versiyon kontrollü bir
+-- migration dosyasına) asla yazılmaz — bu ondan ayrı, tek amaçlı bir sır.
 --
 -- Uygulama: DDL anon key ile çalıştırılamaz → Supabase SQL Editor'da uygulanır.
 -- Idempotenttir (cron.schedule aynı isimle çağrılırsa günceller).
@@ -34,7 +33,7 @@ select cron.schedule(
     url := 'https://maogkrllltlxkfdwfsdj.supabase.co/functions/v1/domain-registration-poll',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-poll-secret', 'REPLACE_WITH_RANDOM_SECRET'
+      'x-poll-secret', 'd3dc6e7f0376115031be59baeb0b1c477f8e0ac325ead3e4'
     ),
     body := '{}'::jsonb
   );
