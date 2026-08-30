@@ -16,9 +16,26 @@ Future<void> showDomainPurchaseWizard(BuildContext context) {
     builder: (dialogContext) => Dialog(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(child: _DomainWizardBody()),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(child: _DomainWizardBody()),
+            ),
+            // Süreç ödemeden sonra arka planda (webhook/cron) devam ettiği
+            // için pencereyi kapatmak güvenli — her aşamada görünür olmalı
+            // (yaşanmış hata: barrierDismissible:false + kapatma butonu
+            // eksikliği pencereyi tamamen kapatılamaz hale getiriyordu).
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton(
+                tooltip: 'Kapat',
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+            ),
+          ],
         ),
       ),
     ),
