@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/theme.dart';
 import '../state/cart_provider.dart';
+import '../state/tenant_provider.dart';
 
 // Dar ekranda (<600) arama satırının AppBar.bottom'da kapladığı ekstra
 // yükseklik (TextField ~40 + üst/alt boşluk 8+8) — mevcut sabit `_kBase`
@@ -48,6 +49,7 @@ class StoreAppBar extends ConsumerWidget implements PreferredSizeWidget {
     final itemCount = ref.watch(
       cartProvider.select((items) => items.fold(0, (s, i) => s + i.quantity)),
     );
+    final storeName = ref.watch(currentTenantProvider).name;
 
     return AppBar(
       // İnce altın çizgi — ana uygulamanın "altın ray" imzasının en küçük
@@ -76,12 +78,12 @@ class StoreAppBar extends ConsumerWidget implements PreferredSizeWidget {
       ),
       title: GestureDetector(
         onTap: () => context.go('/'),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.storefront_outlined, color: StoreColors.goldLight),
-            SizedBox(width: 8),
-            Text('NicePOS', style: TextStyle(fontWeight: FontWeight.w700)),
+            const Icon(Icons.storefront_outlined, color: StoreColors.goldLight),
+            const SizedBox(width: 8),
+            Text(storeName, style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
         ),
       ),

@@ -3,15 +3,38 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'models/cart_item.dart';
 import 'models/store_category.dart';
 import 'models/store_product.dart';
+import 'models/store_tenant.dart';
 
 class StoreRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
+  // `store_tenants` (bkz. 0045_storefront_multi_tenant.sql) — anon'un
+  // okuyabildiği tek dar view, storefront'un "hangi kiracıyım" sorusunu
+  // slug'dan tenant_id'ye çevirir. `tenants` tablosunun kendisi anon'a
+  // KAPALI (current_tenant_id() üyeliğe bağlı).
+  Future<StoreTenant?> resolveTenant(String slug) async {
+    final row = await _client
+        .from('store_tenants')
+        .select('id, name, slug')
+        .eq('slug', slug)
+        .maybeSingle();
+    if (row == null) return null;
+    return StoreTenant.fromMap(Map<String, dynamic>.from(row));
+  }
+
+  // Her sorgu `tenant_id` ile filtrelenir — `online_products`/`product_groups`
+  // RLS'i anon'a TÜM kiracıların satırlarını açık bırakıyor (0040/0029),
+  // izolasyon burada, istemci tarafında sağlanır (bkz. store_repository.dart
+  // üstündeki not, tenant_resolver.dart).
   Future<List<StoreProduct>> fetchProducts({
+    required String tenantId,
     String? query,
     String? groupId,
   }) async {
-    var builder = _client.from('online_products').select();
+    var builder = _client
+        .from('online_products')
+        .select()
+        .eq('tenant_id', tenantId);
     if (query != null && query.trim().isNotEmpty) {
       final q = query.trim();
       builder = builder.or('name.ilike.%$q%,barcode.ilike.%$q%');
@@ -27,11 +50,12 @@ class StoreRepository {
         .toList();
   }
 
-  Future<StoreProduct?> fetchProductById(String id) async {
+  Future<StoreProduct?> fetchProductById(String id, {required String tenantId}) async {
     final row = await _client
         .from('online_products')
         .select()
         .eq('id', id)
+        .eq('tenant_id', tenantId)
         .maybeSingle();
     if (row == null) return null;
     return StoreProduct.fromMap(Map<String, dynamic>.from(row));
@@ -40,10 +64,11 @@ class StoreRepository {
   // Tüm ürün grupları çekilir (bkz. 0029_online_categories_public_read.sql —
   // anon'a public SELECT açıldı). v1'de client tarafında ürünü olmayan
   // gruplar filtrelenmez — boş bir kategoriye tıklanırsa grid boş görünür.
-  Future<List<StoreCategory>> fetchCategories() async {
+  Future<List<StoreCategory>> fetchCategories({required String tenantId}) async {
     final rows = await _client
         .from('product_groups')
         .select('id, name, parent_group_id')
+        .eq('tenant_id', tenantId)
         .order('name');
     return (rows as List)
         .map(

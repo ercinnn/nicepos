@@ -57,13 +57,16 @@ Future<TenantInfo?> currentTenant(CurrentTenantRef ref) async {
   final client = ref.watch(supabaseClientProvider);
   ref.watch(authStateChangesProvider);
   if (client.auth.currentUser == null) return null;
-  final rows =
-      await client.from('tenants').select('id, name, plan, is_active').limit(1);
+  final rows = await client
+      .from('tenants')
+      .select('id, name, slug, plan, is_active')
+      .limit(1);
   if (rows.isEmpty) return null;
   final row = rows.first;
   return TenantInfo(
     id: row['id'] as String,
     name: row['name'] as String,
+    slug: row['slug'] as String,
     plan: row['plan'] as String? ?? 'trial',
     isActive: row['is_active'] as bool? ?? true,
   );
@@ -72,11 +75,13 @@ Future<TenantInfo?> currentTenant(CurrentTenantRef ref) async {
 class TenantInfo {
   final String id;
   final String name;
+  final String slug;
   final String plan;
   final bool isActive;
   const TenantInfo({
     required this.id,
     required this.name,
+    required this.slug,
     this.plan = 'trial',
     this.isActive = true,
   });

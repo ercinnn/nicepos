@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/theme.dart';
+import 'data/models/store_tenant.dart';
 import 'features/cart/cart_screen.dart';
 import 'features/checkout/checkout_screen.dart';
 import 'features/checkout/order_success_screen.dart';
@@ -73,12 +74,14 @@ final storeRouter = GoRouter(
 );
 
 class StorefrontApp extends StatelessWidget {
-  const StorefrontApp({super.key});
+  final StoreTenant tenant;
+
+  const StorefrontApp({super.key, required this.tenant});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'NicePOS Online Satış',
+      title: '${tenant.name} — Online Satış',
       debugShowCheckedModeBanner: false,
       theme: buildStoreTheme(),
       routerConfig: storeRouter,

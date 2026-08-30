@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../data/models/store_product.dart';
 import '../../state/cart_provider.dart';
 import '../../state/catalog_provider.dart';
+import '../../state/tenant_provider.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/skeleton_box.dart';
 import '../../widgets/store_app_bar.dart';
@@ -17,7 +18,10 @@ final _productByIdProvider = FutureProvider.family<StoreProduct?, String>((
   ref,
   id,
 ) async {
-  return ref.watch(storeRepositoryProvider).fetchProductById(id);
+  final tenantId = ref.watch(currentTenantProvider).id;
+  return ref
+      .watch(storeRepositoryProvider)
+      .fetchProductById(id, tenantId: tenantId);
 });
 
 class ProductDetailScreen extends ConsumerStatefulWidget {
@@ -46,9 +50,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
       return _relatedFuture!;
     }
     _relatedForProductId = product.id;
+    final tenantId = ref.read(currentTenantProvider).id;
     _relatedFuture = ref
         .read(storeRepositoryProvider)
-        .fetchProducts(groupId: product.groupId)
+        .fetchProducts(tenantId: tenantId, groupId: product.groupId)
         .then((list) => list.where((p) => p.id != product.id).toList());
     return _relatedFuture!;
   }

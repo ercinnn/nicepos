@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/models/store_category.dart';
 import '../data/models/store_product.dart';
 import 'cart_provider.dart';
+import 'tenant_provider.dart';
 
 final categoriesProvider = FutureProvider<List<StoreCategory>>((ref) async {
-  return ref.watch(storeRepositoryProvider).fetchCategories();
+  final tenantId = ref.watch(currentTenantProvider).id;
+  return ref.watch(storeRepositoryProvider).fetchCategories(tenantId: tenantId);
 });
 
 class CatalogFilter {
@@ -32,7 +34,8 @@ final catalogFilterProvider = StateProvider<CatalogFilter>(
 
 final catalogProductsProvider = FutureProvider<List<StoreProduct>>((ref) async {
   final filter = ref.watch(catalogFilterProvider);
+  final tenantId = ref.watch(currentTenantProvider).id;
   return ref
       .watch(storeRepositoryProvider)
-      .fetchProducts(query: filter.query, groupId: filter.groupId);
+      .fetchProducts(tenantId: tenantId, query: filter.query, groupId: filter.groupId);
 });
