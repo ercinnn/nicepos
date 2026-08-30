@@ -279,7 +279,61 @@ iki paket için de geçerlidir — ilk release build öncesi unutulmamalı.
   eğri/süre (iki ayrı Flutter projesi olsa da marka geçiş hissi tutarlı
   kalsın diye kasıtlı kopya).
 
-## 14. KARAR Geçmişi
+## 15. Editoryal Ürün Izgarası (ProductGrid / ProductCard / FilterSidebar)
+
+Kullanıcı isteği (COS/Ferm Living/KITH referanslı) monokrom bir kimlik
+öneriyordu — **KARARLAŞTIRILDI: palet/tipografi (§1-2) DEĞİŞMEDİ**, yalnız
+YAPISAL/etkileşim kalıpları (grid oranı, hover dinamikleri, sol filtre)
+editoryal referanslara göre yenilendi. Altın ekonomisi (§3) korunur.
+
+- **`ProductGrid`** (`widgets/product_grid.dart`): kolon sayısı Tailwind
+  referans breakpoint'leriyle BİREBİR — mobil 1, `sm` (≥640) 2, `lg` (≥1024)
+  4. Kolon SAYISI kararı `home_screen.dart`'ta (viewport genişliğine göre)
+  verilir, `ProductGrid`'in KENDİ yerel genişliğine göre DEĞİL — masaüstünde
+  sidebar'ın yanında `ProductGrid`'in genişliği daralmış olabilir, bu yüzden
+  kendi genişliğinden breakpoint çıkarması yanlış sonuç verirdi. Gap `space.
+  xxl` (24, Tailwind `gap-6`). Hücre `childAspectRatio`'su görsel oranı
+  (3:4) + sabit metin bloğu yüksekliğinden (`ProductCard.textBlockHeight`,
+  96) hesaplanır — ikisi arasında SENKRON kalmalı (biri değişirse diğeri de).
+- **`ProductCard`** (`widgets/product_card.dart`):
+  - Görsel: kesin `3:4` dikey oran (`AspectRatio` + `BoxFit.cover`).
+  - Hover dinamiği: **ikinci ürün görseli veri modelinde YOK**
+    (`StoreProduct` tek `image_url` taşır — ikinci görsel eklemek ayrı bir
+    şema/form işi, bu turun kapsamı dışı bırakıldı). Görsel takas yerine
+    hafif bir `AnimatedScale` yakınlaştırması (1.0→1.06, 300ms) kullanılır.
+  - Quick-add barı: görselin altına yaslanan, `AnimatedSlide` ile beliren
+    dolu-navy bar (§6 birincil buton diliyle aynı). **Yalnız hover'a bağlı
+    DEĞİL** — `MediaQuery` genişliği <1024 ise (dokunmatik varsayımı, hover
+    hiç tetiklenmez) bar HER ZAMAN görünür kalır; a11y/kullanılabilirlik
+    gereği (yaşanmış ders: yalnız hover'a bağlı bir CTA dokunmatik
+    kullanıcıyı tamamen dışarıda bırakırdı).
+  - Renk swatch'ları **eklenmedi** — sistemde ürün varyant/renk modeli hiç
+    yok (POS envanteri, moda kataloğu değil); sahte/placeholder veri
+    UYDURULMADI.
+  - Metin bloğu: kategori etiketi (varsa, `textMuted` uppercase, opsiyonel —
+    `StoreProduct.groupId` her zaman dolu olmayabilir) + başlık (sol hizalı,
+    2 satır) + fiyat (`navy` w700, `Spacer()` ile bloğun altına sabitlenir).
+    Sabit yükseklik (`textBlockHeight`) — kategori etiketi olsun/olmasın
+    kart boyu hizalı kalır, `ProductGrid`'in aspect-ratio hesabıyla taşma
+    riski oluşmaz (başlık zaten `maxLines:2` ile üstten sınırlı).
+  - Kart hover'ı (kenarlık→gold, gölge, 3px kalkma) **KORUNDU** (v1.1'den
+    değişmedi) — bu, storefront'un tek gold-hover imza anı.
+- **`FilterSidebar`** (`widgets/filter_sidebar.dart`): `w-64` (256px)
+  sabit genişlik, yalnız `lg` (≥1024) genişlikte gösterilir — dar/orta
+  ekranda 256px sabit bir sütun sığmaz, mevcut yatay kategori chip şeridi
+  (§7) korunur. Görsel dil pill/chip DEĞİL — sol 2px gold kenarlıklı düz
+  metin listesi (editoryal, "filtre" bir navigasyon listesi gibi okunur).
+  Seçili satırda gold kenarlık + `textPrimary` w600; pasifte `textMuted`
+  w400. Kendi `SingleChildScrollView`'ı var (200+ kategori). **"Sticky"
+  gerçek CSS `position:sticky` DEĞİL** — sayfa `Row(crossAxisAlignment:
+  stretch)` ile sidebar'ı sağdaki ürün ızgarasından BAĞIMSIZ bir sütuna
+  koyar (`Expanded(SingleChildScrollView(...))` yalnız sağ taraf kaydırılır)
+  — sidebar `Scaffold.body`'nin tam yüksekliğini kaplar ve kendi içeriği
+  taşarsa yalnız KENDİSİ kaydırılır; pratik sonuç aynı ("filtre her zaman
+  görünür kalır") ama scroll-offset'e bağlı animasyonlu bir sticky değil,
+  daha basit/kırılgan-olmayan bir ikiz-scroll deseni.
+
+## 16. KARAR Geçmişi
 
 - **v1.0** (2026-08-07): İlk kuruluş. Hero banner + footer + Space
   Grotesk/Inter tipografik çift + AppBar altın çizgisi + ürün kartı hover +
@@ -301,3 +355,15 @@ iki paket için de geçerlidir — ilk release build öncesi unutulmamalı.
   öğesi (§1-3) DEĞİŞMEDİ, altın ekonomisi kuralı tüm yeni örüntülerde
   korundu (gold yalnız hero rayı + AppBar çizgisi + ürün kartı hover'ında
   kalmaya devam ediyor).
+- **v1.2** (2026-08-30): Editoryal ürün ızgarası turu (kullanıcı isteği:
+  COS/Ferm Living/KITH referanslı yeniden tasarım). **KARAR (kullanıcı
+  onaylı):** palet/tipografi (§1-2) DEĞİŞMEDİ — yalnız YAPISAL kalıplar
+  yenilendi: §15 — `ProductGrid` (kesin 1/`sm`:2/`lg`:4 kolon, `space.xxl`
+  gap, kolon kararı viewport genişliğine göre sayfa seviyesinde verilir),
+  `ProductCard` (kesin 3:4 görsel oranı, hover'da ikinci-görsel-takas YERİNE
+  hafif zoom — veri modelinde ikinci görsel yok, uydurulmadı —, dokunmatikte
+  DAİMA görünen quick-add barı, renk swatch'ları YOK — varyant modeli
+  sistemde hiç yok), `FilterSidebar` (256px, yalnız `lg`, dar ekranda mevcut
+  yatay chip şeridi korunur, gerçek CSS sticky değil ikiz-scroll deseni).
+  Kart hover'ının gold kenarlık/gölge/kalkma imzası (v1.1) DEĞİŞMEDİ. Eski
+  §14 (KARAR) → §16'ya kaydı (yeni §15 aralarına eklendiği için).

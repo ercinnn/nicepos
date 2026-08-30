@@ -4,14 +4,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
+import '../../data/models/store_category.dart';
+import '../../data/models/store_product.dart';
 import '../../state/cart_provider.dart';
 import '../../state/catalog_provider.dart';
-import '../../widgets/product_card.dart';
+import '../../widgets/filter_sidebar.dart';
+import '../../widgets/product_grid.dart';
 import '../../widgets/skeleton_box.dart';
 import '../../widgets/store_app_bar.dart';
-import '../../widgets/store_empty_state.dart';
 import '../../widgets/store_footer.dart';
 import '../../widgets/store_hero_banner.dart';
+
+// Tailwind referans breakpoint'leri (promptta birebir istendiği gibi): sm=640
+// (2 kolon), lg=1024 (4 kolon + sol sidebar). Kolon SAYISI viewport'a göre
+// burada (sayfa seviyesinde) karar verilir — ProductGrid'in kendi genişliği
+// masaüstünde sidebar'ın yanında daralmış olabileceğinden (bkz. product_grid.
+// dart üstündeki not), breakpoint kararını KENDİ yerel genişliğine göre
+// vermesi yanlış olurdu.
+int _columnsForWidth(double width) {
+  if (width >= 1024) return 4;
+  if (width >= 640) return 2;
+  return 1;
+}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -100,127 +114,134 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
         ),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const StoreHeroBanner(),
-            categoriesAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: SkeletonChipRow(),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // `constraints.maxWidth` burada = tam viewport genişliği (Scaffold.
+          // body doğrudan LayoutBuilder'ı sarıyor, aralarında daraltan bir
+          // sidebar YOK henüz) — _columnsForWidth'in Tailwind sm/lg
+          // referansıyla birebir örtüşmesi için doğru ölçüm noktası budur.
+          final viewportWidth = constraints.maxWidth;
+          final columns = _columnsForWidth(viewportWidth);
+          final showSidebar = viewportWidth >= 1024; // lg
+          final categories = categoriesAsync.value ?? const <StoreCategory>[];
+          final categoryNames = {
+            for (final category in categories) category.id: category.name,
+          };
+
+          void handleAddToCart(StoreProduct product) {
+            ref.read(cartProvider.notifier).add(product);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${product.name} sepete eklendi'),
+                duration: const Duration(seconds: 1),
               ),
-              error: (e, _) => const Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Text(
-                  'Kategoriler yüklenemedi',
-                  style: TextStyle(color: StoreColors.textMuted, fontSize: 12.5),
+            );
+          }
+
+          final grid = ProductGrid(
+            productsAsync: productsAsync,
+            categoryNames: categoryNames,
+            searchQuery: filter.query,
+            columns: columns,
+            onAddToCart: handleAddToCart,
+          );
+
+          if (showSidebar) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilterSidebar(
+                  categories: categories,
+                  selectedGroupId: filter.groupId,
+                  onSelect: (groupId) =>
+                      ref.read(catalogFilterProvider.notifier).state =
+                          groupId == null
+                          ? filter.copyWith(clearGroup: true)
+                          : filter.copyWith(groupId: groupId),
                 ),
-              ),
-              data: (categories) {
-                if (categories.isEmpty) return const SizedBox(height: 8);
-                // 200+ kategori tek satır yatay kaydırmaya sığmıyor (yalnız
-                // 10-12'si görünüyordu) — Wrap ile alt sıralara geçer. Hepsi
-                // birden açık kalırsa sayfa aşırı uzayacağından sabit yükseklikli
-                // bir alanda (yaklaşık 3 satır) dikey kaydırmalı gösterilir.
-                return Container(
-                  constraints: const BoxConstraints(maxHeight: 168),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                const VerticalDivider(width: 1, color: StoreColors.border),
+                Expanded(
                   child: SingleChildScrollView(
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    child: Column(
                       children: [
-                        _CategoryChip(
-                          label: 'Tümü',
-                          selected: filter.groupId == null,
-                          onTap: () =>
-                              ref.read(catalogFilterProvider.notifier).state =
-                                  filter.copyWith(clearGroup: true),
-                        ),
-                        for (final category in categories)
-                          _CategoryChip(
-                            label: category.name,
-                            selected: filter.groupId == category.id,
-                            onTap: () =>
-                                ref.read(catalogFilterProvider.notifier).state =
-                                    filter.copyWith(groupId: category.id),
-                          ),
+                        const StoreHeroBanner(),
+                        grid,
+                        const SizedBox(height: 24),
+                        const StoreFooter(),
                       ],
                     ),
                   ),
-                );
-              },
-            ),
-            const Divider(height: 1, color: StoreColors.border),
-            productsAsync.when(
-              loading: () => GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 220,
-                  mainAxisExtent: 250,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
                 ),
-                itemCount: 8,
-                itemBuilder: (context, i) => const SkeletonProductCard(),
-              ),
-              error: (e, _) => SizedBox(
-                height: 200,
-                child: StoreEmptyState(
-                  icon: Icons.error_outline,
-                  message: 'Ürünler yüklenemedi: $e',
-                ),
-              ),
-              data: (products) {
-                if (products.isEmpty) {
-                  final query = filter.query.trim();
-                  return SizedBox(
-                    height: 240,
-                    child: StoreEmptyState(
-                      icon: query.isNotEmpty
-                          ? Icons.search_off_outlined
-                          : Icons.inventory_2_outlined,
-                      message: query.isNotEmpty
-                          ? '"$query" için sonuç yok'
-                          : 'Bu kategoride ürün yok',
-                    ),
-                  );
-                }
-                return GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 220,
-                    mainAxisExtent: 250,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
+              ],
+            );
+          }
+
+          // Mobil/tablet (<1024): 256px sabit sidebar sığmaz — mevcut yatay
+          // kategori chip şeridi korunur (§7, 200+ kategori taşma dersi).
+          return SingleChildScrollView(
+            child: Column(
+              children: [
+                const StoreHeroBanner(),
+                categoriesAsync.when(
+                  loading: () => const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: SkeletonChipRow(),
                   ),
-                  itemCount: products.length,
-                  itemBuilder: (context, i) {
-                    final product = products[i];
-                    return ProductCard(
-                      product: product,
-                      onAddToCart: () {
-                        ref.read(cartProvider.notifier).add(product);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('${product.name} sepete eklendi'),
-                            duration: const Duration(seconds: 1),
-                          ),
-                        );
-                      },
+                  error: (e, _) => const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    child: Text(
+                      'Kategoriler yüklenemedi',
+                      style: TextStyle(
+                        color: StoreColors.textMuted,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                  data: (categories) {
+                    if (categories.isEmpty) return const SizedBox(height: 8);
+                    return Container(
+                      constraints: const BoxConstraints(maxHeight: 168),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _CategoryChip(
+                              label: 'Tümü',
+                              selected: filter.groupId == null,
+                              onTap: () =>
+                                  ref
+                                      .read(catalogFilterProvider.notifier)
+                                      .state = filter.copyWith(
+                                    clearGroup: true,
+                                  ),
+                            ),
+                            for (final category in categories)
+                              _CategoryChip(
+                                label: category.name,
+                                selected: filter.groupId == category.id,
+                                onTap: () =>
+                                    ref
+                                        .read(catalogFilterProvider.notifier)
+                                        .state = filter.copyWith(
+                                      groupId: category.id,
+                                    ),
+                              ),
+                          ],
+                        ),
+                      ),
                     );
                   },
-                );
-              },
+                ),
+                const Divider(height: 1, color: StoreColors.border),
+                grid,
+                const SizedBox(height: 24),
+                const StoreFooter(),
+              ],
             ),
-            const SizedBox(height: 24),
-            const StoreFooter(),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
