@@ -212,6 +212,13 @@ Dükkânın bazı bölgelerinde internet çekmiyor (Wi-Fi/cell "bağlı" görün
 - **⚠️ Barkod çakışması:** `products.barcode` UNIQUE — iki offline kayıt (veya offline+sunucu) aynı barkodu paylaşırsa sync `23505` ile başarısız olur, "Bekleyenler"den elle çözülür (silinmez, kullanıcı müdahalesi bekler).
 - Yeni bağımlılıklar: `sqflite`, `connectivity_plus` (`AndroidManifest.xml`'e `ACCESS_NETWORK_STATE` eklendi), `shared_preferences` (son bağlantı durumu kalıcılığı) — üçü de web derlemesini bozmaz, yalnız runtime'da `!kIsWeb` ile atlanır.
 
+## Analiz
+
+`/analiz` — bir ürün seçilince (barkod okutma/yazma veya Satış ekranındaki ile PAYLAŞILAN `LiveProductSearchField` canlı arama açılır listesi) seçili tarih aralığındaki günlük/haftalık/aylık satış adedi grafiği (`fl_chart` `BarChart`, aralığa göre `_pickBucket` gün/hafta/ay seçer).
+
+- **Çubuğa tıklayınca döküm diyaloğu:** `BarTouchData.touchCallback` (`FlTapUpEvent`) bir çubuğa tıklanmasını yakalar, o dönemin (gün/hafta/ay) satışlarını `_BucketSalesDialog`'da listeler — Saat/Satış Kodu/Müşteri/Ürün/İskonto/Ödeme/Toplam/Not sütunlu `DataTable` (yatay taşarsa `SingleChildScrollView` ile kaydırılır). İskonto/Ödeme/Not `sale_items` değil `sales` (satış) seviyesi alanlar olduğundan `ProductSaleRecord` bu alanlarla genişletildi (`report_repository.dart` `fetchProductSalesHistory` — aynı provider Ürün Raporları sekmesiyle PAYLAŞILIR, dikkat: alanları değiştirirsen orayı da kontrol et).
+- **Satış Kodu → Satışı Düzenle, ÜSTTE (kullanıcı isteği):** Satış Kodu'na dokunmak `SaleEditScreen`'i AYRI bir `showDialog` ile açar — bu, `_BucketSalesDialog`'un ÜSTÜNE biner (Flutter route stack'i alttaki dialog'u pop/replace ETMEZ). Kullanıcı Satışı Düzenle'yi kapatınca alttaki döküm listesi ekranda KALIR. Değişiklik yapılırsa (`SaleEditResult.changed`) liste bayat kalmasın diye `productSalesHistoryProvider` invalidate edilip taze veriyle güncellenir — dialog KAPANMADAN.
+
 ## Raporlar
 
 `/reports` — Günlük / Tarihsel / Ürün raporları. İskonto sütunu `% 82.25` formatında (2 ondalık).

@@ -254,7 +254,9 @@ class ReportRepository {
   Future<List<ProductSaleRecord>> fetchProductSalesHistory(String productId) async {
     final rows = await _client
         .from('sale_items')
-        .select('quantity, unit_price, total, sales(id, sale_code, sale_date, customers(name))')
+        .select('quantity, unit_price, total, sales(id, sale_code, sale_date, '
+            'total_amount, discount_percent, discount_amount, discount_type, '
+            'payment_type, note, customers(name))')
         .eq('product_id', productId)
         .limit(2000);
 
@@ -286,6 +288,13 @@ class ReportRepository {
         unitPrice: itemMap['unit_price'] as num? ?? 0,
         total: itemMap['total'] as num? ?? 0,
         customerName: customerMap?['name'] as String?,
+        saleTotalAmount: saleMap['total_amount'] as num? ?? 0,
+        discountPercent: saleMap['discount_percent'] as num? ?? 0,
+        discountAmount: saleMap['discount_amount'] as num? ?? 0,
+        discountType: saleMap['discount_type'] as String? ?? 'percent',
+        paymentType:
+            PaymentTypeX.fromDb(saleMap['payment_type'] as String? ?? 'nakit'),
+        note: saleMap['note'] as String?,
       ));
     }
 

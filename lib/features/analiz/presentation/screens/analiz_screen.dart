@@ -13,6 +13,9 @@ import '../../../products/data/models/product.dart';
 import '../../../products/presentation/widgets/live_product_search_field.dart';
 import '../../../reports/application/reports_provider.dart';
 import '../../../reports/data/models/product_sale_record.dart';
+import '../../../sales/data/models/sale.dart';
+import '../../../sales/data/repositories/sales_repository.dart';
+import '../../../sales/presentation/screens/sale_edit_screen.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 
 /// Analiz sayfası: bir barkod okutup (mobilde kamera, web'de barkod
@@ -356,7 +359,12 @@ class _AnalizContent extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(vertical: AppSizes.space32),
               child: Center(child: Text('Hata: $e')),
             ),
-            data: (records) => _ChartCard(records: records, start: start, end: end),
+            data: (records) => _ChartCard(
+              productId: product.id,
+              records: records,
+              start: start,
+              end: end,
+            ),
           ),
         ],
       ),
@@ -519,11 +527,17 @@ class _ChartPoint {
 }
 
 class _ChartCard extends StatelessWidget {
+  final String productId;
   final List<ProductSaleRecord> records;
   final DateTime start;
   final DateTime end;
 
-  const _ChartCard({required this.records, required this.start, required this.end});
+  const _ChartCard({
+    required this.productId,
+    required this.records,
+    required this.start,
+    required this.end,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -556,6 +570,27 @@ class _ChartCard extends StatelessWidget {
     final totalQty = inRange.fold<num>(0, (a, r) => a + r.quantity);
     final totalAmount = inRange.fold<num>(0, (a, r) => a + r.total);
 
+    // Bir çubuğa dokununca o çubuğun temsil ettiği dönemdeki (gün/hafta/ay)
+    // satışları listeleyen diyaloğu açar — bkz. `_BucketSalesDialog`.
+    void onBarTap(int index) {
+      if (index < 0 || index >= points.length) return;
+      final bucketStart = points[index].date;
+      final bucketRecords = inRange
+          .where((r) => _bucketKey(r.saleDate, bucket) == bucketStart)
+          .toList()
+        ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
+      if (bucketRecords.isEmpty) return;
+      showDialog<void>(
+        context: context,
+        builder: (_) => _BucketSalesDialog(
+          productId: productId,
+          records: bucketRecords,
+          bucketStart: bucketStart,
+          bucket: bucket,
+        ),
+      );
+    }
+
     return Container(
       decoration: AppSizes.cardDecoration(),
       padding: const EdgeInsets.all(AppSizes.space12),
@@ -581,7 +616,7 @@ class _ChartCard extends StatelessWidget {
                       style: TextStyle(color: AppColors.textMuted),
                     ),
                   )
-                : _QuantityBarChart(points: points, bucket: bucket),
+                : _QuantityBarChart(points: points, bucket: bucket, onBarTap: onBarTap),
           ),
         ],
       ),
@@ -592,8 +627,13 @@ class _ChartCard extends StatelessWidget {
 class _QuantityBarChart extends StatelessWidget {
   final List<_ChartPoint> points;
   final _Bucket bucket;
+  final void Function(int index) onBarTap;
 
-  const _QuantityBarChart({required this.points, required this.bucket});
+  const _QuantityBarChart({
+    required this.points,
+    required this.bucket,
+    required this.onBarTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -676,6 +716,14 @@ class _QuantityBarChart extends StatelessWidget {
               );
             },
           ),
+          // Bir çubuğa dokununca (parmak/tık kalkışında) o dönemin satışlarını
+          // listeleyen diyaloğu açar — bkz. `_ChartCard.onBarTap`.
+          touchCallback: (event, response) {
+            if (event is! FlTapUpEvent) return;
+            final spot = response?.spot;
+            if (spot == null) return;
+            onBarTap(spot.touchedBarGroupIndex);
+          },
         ),
         barGroups: [
           for (var i = 0; i < points.length; i++)
@@ -691,6 +739,222 @@ class _QuantityBarChart extends StatelessWidget {
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Bir çubuğa (gün/hafta/ay) ait satışları listeleyen diyalog ─────────────
+// Saat/Satış Kodu/Müşteri/Ürün/İskonto/Ödeme/Toplam/Not sütunları — İskonto/
+// Ödeme/Not SATIŞ seviyesi alanlardır (bkz. `ProductSaleRecord` genişletmesi,
+// `report_repository.dart` `fetchProductSalesHistory`). Satış Kodu'na
+// dokunmak `SaleEditScreen`'i AYRI bir `showDialog` olarak açar — bu
+// diyaloğun ÜSTÜNE biner, kapatılınca alttaki liste ekranda KALIR (kullanıcı
+// isteği: "ilk diyalog penceresindeki diğer satışlar ekranda kalsın").
+// Değişiklik yapılırsa (silme/düzenleme) liste bayat kalmasın diye sunucudan
+// taze veriyle güncellenir — diyalog KAPANMADAN.
+class _BucketSalesDialog extends ConsumerStatefulWidget {
+  final String productId;
+  final List<ProductSaleRecord> records;
+  final DateTime bucketStart;
+  final _Bucket bucket;
+
+  const _BucketSalesDialog({
+    required this.productId,
+    required this.records,
+    required this.bucketStart,
+    required this.bucket,
+  });
+
+  @override
+  ConsumerState<_BucketSalesDialog> createState() =>
+      _BucketSalesDialogState();
+}
+
+class _BucketSalesDialogState extends ConsumerState<_BucketSalesDialog> {
+  late List<ProductSaleRecord> _records;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _records = widget.records;
+  }
+
+  String get _title {
+    switch (widget.bucket) {
+      case _Bucket.day:
+        return DateFormat('d MMMM yyyy', 'tr_TR').format(widget.bucketStart);
+      case _Bucket.week:
+        final end = widget.bucketStart.add(const Duration(days: 6));
+        return '${DateFormat('d MMM', 'tr_TR').format(widget.bucketStart)} – '
+            '${DateFormat('d MMM yyyy', 'tr_TR').format(end)}';
+      case _Bucket.month:
+        return DateFormat('MMMM yyyy', 'tr_TR').format(widget.bucketStart);
+    }
+  }
+
+  String _discountLabel(ProductSaleRecord r) {
+    if (r.discountType == 'percent') {
+      if (r.discountPercent <= 0) return '—';
+      return '%${formatNumber(r.discountPercent)}';
+    }
+    if (r.discountAmount <= 0) return '—';
+    return formatCurrency(r.discountAmount);
+  }
+
+  Future<void> _openSaleEdit(ProductSaleRecord r) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final repo = SalesRepository();
+      final sale = await repo.fetchSaleById(r.saleId);
+      final items = await repo.fetchItems(r.saleId);
+      if (!mounted) return;
+      final result = await showDialog<SaleEditResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => SaleEditScreen(sale: sale, initialItems: items),
+      );
+      if (!mounted) return;
+      if (result?.changed == true) {
+        ref.invalidate(productSalesHistoryProvider(widget.productId));
+        final fresh = await ref
+            .read(productSalesHistoryProvider(widget.productId).future);
+        if (!mounted) return;
+        setState(() {
+          _records = fresh
+              .where((x) =>
+                  _bucketKey(x.saleDate, widget.bucket) == widget.bucketStart)
+              .toList()
+            ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
+        });
+      }
+      if (result?.message != null && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(result!.message!)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Satış açılamadı: $e'),
+              backgroundColor: AppColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 560),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.space16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _title,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  if (_busy)
+                    const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                ],
+              ),
+              Text(
+                '${_records.length} satış',
+                style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: AppSizes.space12),
+              Flexible(
+                child: _records.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppSizes.space24),
+                        child: Center(
+                          child: Text('Bu dönemde satış kalmadı.',
+                              style: TextStyle(color: AppColors.textMuted)),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          headingRowColor:
+                              WidgetStateProperty.all(AppColors.tableHeader),
+                          columns: const [
+                            DataColumn(label: Text('Saat')),
+                            DataColumn(label: Text('Satış Kodu')),
+                            DataColumn(label: Text('Müşteri')),
+                            DataColumn(label: Text('Ürün')),
+                            DataColumn(label: Text('İskonto')),
+                            DataColumn(label: Text('Ödeme')),
+                            DataColumn(label: Text('Toplam'), numeric: true),
+                            DataColumn(label: Text('Not')),
+                          ],
+                          rows: [
+                            for (final r in _records)
+                              DataRow(cells: [
+                                DataCell(
+                                    Text(DateFormat('HH:mm').format(r.saleDate))),
+                                DataCell(
+                                  InkWell(
+                                    onTap: () => _openSaleEdit(r),
+                                    child: Text(
+                                      r.saleCode,
+                                      style: const TextStyle(
+                                        color: AppColors.primary,
+                                        decoration: TextDecoration.underline,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                DataCell(Text(r.customerName ?? 'Perakende')),
+                                DataCell(Text(
+                                    '${formatNumber(r.quantity)} × ${formatCurrency(r.unitPrice)}')),
+                                DataCell(Text(_discountLabel(r))),
+                                DataCell(Text(r.paymentType.label)),
+                                DataCell(Text(formatCurrency(r.saleTotalAmount))),
+                                DataCell(
+                                  ConstrainedBox(
+                                    constraints:
+                                        const BoxConstraints(maxWidth: 160),
+                                    child: Text(
+                                      r.note?.isNotEmpty == true ? r.note! : '—',
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                ),
+                              ]),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
