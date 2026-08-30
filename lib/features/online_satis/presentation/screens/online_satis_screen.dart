@@ -11,11 +11,13 @@ import '../../../../core/utils/formatters.dart';
 import '../../../auth/application/auth_provider.dart';
 import '../../../products/application/products_provider.dart';
 import '../../../products/data/models/product.dart';
+import '../widgets/domain/domain_purchase_wizard.dart';
 
 // Paylaşılan storefront dağıtımı (bkz. CLAUDE.md "Deploy — Cloudflare Pages"
-// → Online Satış) — henüz kiracıya özel bir domain YOK (Faz F Adım 2, custom
-// domain bağlama, henüz yapılmadı). `?magaza=<slug>` query parametresi Faz F
-// Adım 1'in kiracı çözümleme mekanizması (bkz. storefront/lib/core/tenant_resolver.dart).
+// → Online Satış). `?magaza=<slug>` query parametresi Faz F Adım 1'in kiracı
+// çözümleme mekanizması (bkz. storefront/lib/core/tenant_resolver.dart).
+// Faz F Adım 2 (kiracının kendi domain'ini satın alıp bağlaması) —
+// `_DomainConnectionCard` ile bu ekranda.
 const String _storefrontBaseUrl = 'https://nicepos-online-satis.pages.dev';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -80,6 +82,8 @@ class _OnlineSatisScreenState extends ConsumerState<OnlineSatisScreen> {
         const _StorefrontLinkCard(),
         const SizedBox(height: 12),
         const _ImageAspectSelector(),
+        const SizedBox(height: 12),
+        const _DomainConnectionCard(),
         const SizedBox(height: 16),
         _OnlineProductSearchField(
           controller: _searchController,
@@ -255,6 +259,73 @@ class _ImageAspectSelector extends ConsumerWidget {
                 showSelectedIcon: false,
                 onSelectionChanged: (selection) => _select(context, ref, selection.first),
               ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Kiracının kendi domain'ini satın alıp storefront'una bağlaması (Faz F
+// Adım 2). Cloudflare Registrar + iyzico akışı Supabase Edge Functions'ta
+// yaşıyor (bkz. supabase/functions/) — bu kart yalnız giriş noktası:
+// bağlı değilse sihirbazı açar, bağlıysa domain'i + durumunu gösterir.
+class _DomainConnectionCard extends ConsumerWidget {
+  const _DomainConnectionCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenantAsync = ref.watch(currentTenantProvider);
+    return tenantAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, _) => const SizedBox.shrink(),
+      data: (tenant) {
+        if (tenant == null) return const SizedBox.shrink();
+        final connected = tenant.customDomainStatus == 'connected' &&
+            tenant.customDomain != null;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                connected ? Icons.language : Icons.add_link,
+                color: connected ? AppColors.success : AppColors.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Kendi Domain\'iniz',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      connected
+                          ? tenant.customDomain!
+                          : 'Mağazanız için kendi alan adınızı arayıp satın alın.',
+                      style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              if (!connected)
+                OutlinedButton(
+                  onPressed: () => showDomainPurchaseWizard(context),
+                  child: const Text('Domain Bağla'),
+                ),
             ],
           ),
         );

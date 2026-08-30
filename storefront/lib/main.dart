@@ -25,11 +25,23 @@ Future<void> main() async {
     // Kiracı çözümlemesi runApp'TEN ÖNCE, bir kez yapılır (bkz.
     // tenant_provider.dart) — ekranlar async yükleme durumu yönetmez, doğrudan
     // ref.watch(currentTenantProvider) okur.
-    final slug = resolveTenantSlugFromEnvironment() ?? defaultTenantSlug;
+    //
+    // Faz F Adım 2: hostname paylaşılan pages.dev adresi/localhost DEĞİLSE
+    // (yani bir kiracının bizim üzerimizden satın alıp bağladığı KENDİ
+    // domain'i olabilir) ÖNCE özel domain eşlemesi denenir; sonuç yoksa
+    // mevcut slug/subdomain akışına (Faz F Adım 1) düşülür.
+    final repository = StoreRepository();
+    final host = Uri.base.host;
+    const sharedHost = 'nicepos-online-satis.pages.dev';
     try {
-      tenant = await StoreRepository().resolveTenant(slug);
+      if (host.isNotEmpty && host != sharedHost && host != 'localhost') {
+        tenant = await repository.resolveTenantByDomain(host);
+      }
+      tenant ??= await repository.resolveTenant(
+        resolveTenantSlugFromEnvironment() ?? defaultTenantSlug,
+      );
       if (tenant == null) {
-        tenantError = 'Mağaza bulunamadı: "$slug"';
+        tenantError = 'Mağaza bulunamadı.';
       }
     } catch (_) {
       tenantError = 'Mağaza bilgisi yüklenemedi. Lütfen sayfayı yenileyin.';

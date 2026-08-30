@@ -15,8 +15,22 @@ class StoreRepository {
   Future<StoreTenant?> resolveTenant(String slug) async {
     final row = await _client
         .from('store_tenants')
-        .select('id, name, slug, storefront_image_aspect')
+        .select('id, name, slug, storefront_image_aspect, custom_domain')
         .eq('slug', slug)
+        .maybeSingle();
+    if (row == null) return null;
+    return StoreTenant.fromMap(Map<String, dynamic>.from(row));
+  }
+
+  // Faz F Adım 2 — kiracının bizim üzerimizden satın alıp bağladığı kendi
+  // domain'i (bkz. 0048 migration). `main.dart` bunu hostname paylaşılan
+  // pages.dev adresi DEĞİLSE önce dener, sonuç yoksa slug/subdomain akışına
+  // düşer.
+  Future<StoreTenant?> resolveTenantByDomain(String host) async {
+    final row = await _client
+        .from('store_tenants')
+        .select('id, name, slug, storefront_image_aspect, custom_domain')
+        .eq('custom_domain', host)
         .maybeSingle();
     if (row == null) return null;
     return StoreTenant.fromMap(Map<String, dynamic>.from(row));
