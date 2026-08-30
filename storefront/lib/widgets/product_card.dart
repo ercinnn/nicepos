@@ -16,6 +16,12 @@ class ProductCard extends StatefulWidget {
   final String? categoryName;
   final VoidCallback onAddToCart;
 
+  // Kiracının Online Satış panelinden seçtiği format (bkz. StoreTenant.
+  // imageAspectRatio, 0046 migration) — kare (1.0) veya dikey (3/4,
+  // varsayılan). ProductGrid'in aspectRatio hesabıyla BİREBİR aynı değer
+  // kullanılmalı (bkz. product_grid.dart _buildGrid).
+  final double imageAspectRatio;
+
   // ProductGrid'in aspectRatio hesabıyla BİREBİR aynı sabit — burada değişirse
   // orada da değişmeli (bkz. product_grid.dart _cellAspectRatio).
   static const double textBlockHeight = 96;
@@ -25,6 +31,7 @@ class ProductCard extends StatefulWidget {
     required this.product,
     required this.onAddToCart,
     this.categoryName,
+    this.imageAspectRatio = 3 / 4,
   });
 
   @override
@@ -82,7 +89,7 @@ class _ProductCardState extends State<ProductCard> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AspectRatio(
-                  aspectRatio: 3 / 4,
+                  aspectRatio: widget.imageAspectRatio,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [

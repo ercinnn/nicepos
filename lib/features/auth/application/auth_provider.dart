@@ -59,7 +59,7 @@ Future<TenantInfo?> currentTenant(CurrentTenantRef ref) async {
   if (client.auth.currentUser == null) return null;
   final rows = await client
       .from('tenants')
-      .select('id, name, slug, plan, is_active')
+      .select('id, name, slug, plan, is_active, storefront_image_aspect')
       .limit(1);
   if (rows.isEmpty) return null;
   final row = rows.first;
@@ -69,6 +69,7 @@ Future<TenantInfo?> currentTenant(CurrentTenantRef ref) async {
     slug: row['slug'] as String,
     plan: row['plan'] as String? ?? 'trial',
     isActive: row['is_active'] as bool? ?? true,
+    storefrontImageAspect: row['storefront_image_aspect'] as String? ?? 'portrait',
   );
 }
 
@@ -78,12 +79,14 @@ class TenantInfo {
   final String slug;
   final String plan;
   final bool isActive;
+  final String storefrontImageAspect;
   const TenantInfo({
     required this.id,
     required this.name,
     required this.slug,
     this.plan = 'trial',
     this.isActive = true,
+    this.storefrontImageAspect = 'portrait',
   });
 }
 

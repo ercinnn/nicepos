@@ -19,6 +19,11 @@ class ProductGrid extends StatelessWidget {
   final int columns;
   final void Function(StoreProduct) onAddToCart;
 
+  // Kiracının seçtiği görsel formatı (bkz. StoreTenant.imageAspectRatio) —
+  // ProductCard'a BİREBİR aynı değer geçirilir, hücre yükseklik hesabı da
+  // buna göre yapılır.
+  final double imageAspectRatio;
+
   static const double gap = 24; // space.xxl — Tailwind gap-6
 
   const ProductGrid({
@@ -28,6 +33,7 @@ class ProductGrid extends StatelessWidget {
     required this.searchQuery,
     required this.columns,
     required this.onAddToCart,
+    this.imageAspectRatio = 3 / 4,
   });
 
   @override
@@ -68,6 +74,7 @@ class ProductGrid extends StatelessWidget {
               categoryName:
                   product.groupId == null ? null : categoryNames[product.groupId],
               onAddToCart: () => onAddToCart(product),
+              imageAspectRatio: imageAspectRatio,
             );
           },
         );
@@ -90,7 +97,8 @@ class ProductGrid extends StatelessWidget {
         // +6: kart kenarlığının (Container'ın örtük border-inset padding'i)
         // ve font metrik yuvarlamalarının payı — QA testinde (bkz. storefront
         // deploy notları) yakalanan gerçek bir taşma hatasına karşı güvenlik.
-        final cellHeight = cellWidth * 4 / 3 + ProductCard.textBlockHeight + 6;
+        final cellHeight =
+            cellWidth / imageAspectRatio + ProductCard.textBlockHeight + 6;
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),

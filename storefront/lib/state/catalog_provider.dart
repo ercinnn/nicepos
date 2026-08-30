@@ -10,6 +10,20 @@ final categoriesProvider = FutureProvider<List<StoreCategory>>((ref) async {
   return ref.watch(storeRepositoryProvider).fetchCategories(tenantId: tenantId);
 });
 
+final _activeCategoryIdsProvider = FutureProvider<Set<String>>((ref) async {
+  final tenantId = ref.watch(currentTenantProvider).id;
+  return ref.watch(storeRepositoryProvider).fetchActiveCategoryIds(tenantId);
+});
+
+// Yalnız online-aktif ürünü OLAN kategoriler — filtre UI'sında (FilterSidebar
+// + mobil chip şeridi) gösterilecek liste budur, ham `categoriesProvider`
+// DEĞİL (kullanıcı isteği: boş kategori filtre olarak görünmesin).
+final visibleCategoriesProvider = FutureProvider<List<StoreCategory>>((ref) async {
+  final categories = await ref.watch(categoriesProvider.future);
+  final activeIds = await ref.watch(_activeCategoryIdsProvider.future);
+  return categories.where((c) => activeIds.contains(c.id)).toList();
+});
+
 class CatalogFilter {
   final String query;
   final String? groupId;

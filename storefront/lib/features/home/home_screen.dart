@@ -8,6 +8,7 @@ import '../../data/models/store_category.dart';
 import '../../data/models/store_product.dart';
 import '../../state/cart_provider.dart';
 import '../../state/catalog_provider.dart';
+import '../../state/tenant_provider.dart';
 import '../../widgets/filter_sidebar.dart';
 import '../../widgets/product_grid.dart';
 import '../../widgets/skeleton_box.dart';
@@ -64,8 +65,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final filter = ref.watch(catalogFilterProvider);
-    final categoriesAsync = ref.watch(categoriesProvider);
+    // Ad çözümlemesi (categoryNames) TÜM kategorilerden — filtre UI'sında
+    // GÖSTERİLECEK liste ise yalnız online-aktif ürünü olanlar
+    // (visibleCategoriesProvider, kullanıcı isteği: boş kategori filtre
+    // olarak görünmesin).
+    final allCategoriesAsync = ref.watch(categoriesProvider);
+    final visibleCategoriesAsync = ref.watch(visibleCategoriesProvider);
     final productsAsync = ref.watch(catalogProductsProvider);
+    final imageAspectRatio = ref.watch(currentTenantProvider).imageAspectRatio;
     final narrow = MediaQuery.sizeOf(context).width < 600;
 
     return Scaffold(
@@ -123,9 +130,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final viewportWidth = constraints.maxWidth;
           final columns = _columnsForWidth(viewportWidth);
           final showSidebar = viewportWidth >= 1024; // lg
-          final categories = categoriesAsync.value ?? const <StoreCategory>[];
+          final allCategories = allCategoriesAsync.value ?? const <StoreCategory>[];
+          final visibleCategories =
+              visibleCategoriesAsync.value ?? const <StoreCategory>[];
           final categoryNames = {
-            for (final category in categories) category.id: category.name,
+            for (final category in allCategories) category.id: category.name,
           };
 
           void handleAddToCart(StoreProduct product) {
@@ -144,6 +153,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             searchQuery: filter.query,
             columns: columns,
             onAddToCart: handleAddToCart,
+            imageAspectRatio: imageAspectRatio,
           );
 
           if (showSidebar) {
@@ -151,7 +161,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 FilterSidebar(
-                  categories: categories,
+                  categories: visibleCategories,
                   selectedGroupId: filter.groupId,
                   onSelect: (groupId) =>
                       ref.read(catalogFilterProvider.notifier).state =
@@ -182,7 +192,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Column(
               children: [
                 const StoreHeroBanner(),
-                categoriesAsync.when(
+                visibleCategoriesAsync.when(
                   loading: () => const Padding(
                     padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
                     child: SkeletonChipRow(),

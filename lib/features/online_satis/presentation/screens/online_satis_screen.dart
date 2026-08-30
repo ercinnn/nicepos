@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
@@ -77,6 +78,8 @@ class _OnlineSatisScreenState extends ConsumerState<OnlineSatisScreen> {
         ),
         const SizedBox(height: 16),
         const _StorefrontLinkCard(),
+        const SizedBox(height: 12),
+        const _ImageAspectSelector(),
         const SizedBox(height: 16),
         _OnlineProductSearchField(
           controller: _searchController,
@@ -180,6 +183,77 @@ class _StorefrontLinkCard extends ConsumerWidget {
                     const SnackBar(content: Text('Mağaza linki kopyalandı')),
                   );
                 },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Storefront ürün görselinin en-boy oranı — kiracı-bazlı tercih (bkz.
+// 0046_storefront_image_aspect.sql). RPC owner/admin dışını reddeder
+// (hata mesajı doğrudan snackbar'a düşer) — ekranda ayrıca gizlenmez,
+// bu düşük riskli bir görünüm ayarı (silme/finansal işlem değil).
+class _ImageAspectSelector extends ConsumerWidget {
+  const _ImageAspectSelector();
+
+  Future<void> _select(BuildContext context, WidgetRef ref, String aspect) async {
+    try {
+      await Supabase.instance.client.rpc(
+        'update_storefront_image_aspect',
+        params: {'p_aspect': aspect},
+      );
+      ref.invalidate(currentTenantProvider);
+    } on PostgrestException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Kaydedilemedi: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenantAsync = ref.watch(currentTenantProvider);
+    return tenantAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, _) => const SizedBox.shrink(),
+      data: (tenant) {
+        if (tenant == null) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.crop_outlined, color: AppColors.primary, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Ürün görseli formatı',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary),
+                ),
+              ),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'square', label: Text('Kare'), icon: Icon(Icons.crop_square, size: 16)),
+                  ButtonSegment(
+                    value: 'portrait',
+                    label: Text('Dikey'),
+                    icon: Icon(Icons.crop_portrait, size: 16),
+                  ),
+                ],
+                selected: {tenant.storefrontImageAspect},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) => _select(context, ref, selection.first),
               ),
             ],
           ),

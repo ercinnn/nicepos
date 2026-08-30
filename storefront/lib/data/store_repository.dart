@@ -15,7 +15,7 @@ class StoreRepository {
   Future<StoreTenant?> resolveTenant(String slug) async {
     final row = await _client
         .from('store_tenants')
-        .select('id, name, slug')
+        .select('id, name, slug, storefront_image_aspect')
         .eq('slug', slug)
         .maybeSingle();
     if (row == null) return null;
@@ -62,8 +62,10 @@ class StoreRepository {
   }
 
   // Tüm ürün grupları çekilir (bkz. 0029_online_categories_public_read.sql —
-  // anon'a public SELECT açıldı). v1'de client tarafında ürünü olmayan
-  // gruplar filtrelenmez — boş bir kategoriye tıklanırsa grid boş görünür.
+  // anon'a public SELECT açıldı). Kullanıcı ismi/hiyerarşi için ham liste —
+  // "hangi kategoriler filtre olarak GÖSTERİLİR" kararı ayrı bir yerde
+  // (bkz. fetchActiveCategoryIds + catalog_provider.dart
+  // visibleCategoriesProvider) — bu metot filtrelemez.
   Future<List<StoreCategory>> fetchCategories({required String tenantId}) async {
     final rows = await _client
         .from('product_groups')
@@ -75,6 +77,22 @@ class StoreRepository {
           (row) => StoreCategory.fromMap(Map<String, dynamic>.from(row as Map)),
         )
         .toList();
+  }
+
+  // Yalnız en az bir online-aktif ürünü OLAN kategori id'leri (kullanıcı
+  // isteği: "sitede sadece online açık olan ürünlerin kategorileri
+  // görünsün"). DB migration gerekmez — online_products zaten yalnız
+  // is_online_active=true satırları döndürüyor, burada yalnız group_id
+  // sütunu çekilip Set'e indirgeniyor.
+  Future<Set<String>> fetchActiveCategoryIds(String tenantId) async {
+    final rows = await _client
+        .from('online_products')
+        .select('group_id')
+        .eq('tenant_id', tenantId);
+    return (rows as List)
+        .map((row) => (row as Map)['group_id'] as String?)
+        .whereType<String>()
+        .toSet();
   }
 
   // Misafir sipariş — sunucu tarafında fiyat/stok/aktiflik doğrulanır

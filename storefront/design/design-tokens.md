@@ -333,7 +333,33 @@ editoryal referanslara göre yenilendi. Altın ekonomisi (§3) korunur.
   görünür kalır") ama scroll-offset'e bağlı animasyonlu bir sticky değil,
   daha basit/kırılgan-olmayan bir ikiz-scroll deseni.
 
-## 16. KARAR Geçmişi
+## 17. Boş Kategori Filtreleme + Görsel Format Tercihi
+
+- **Filtre listesi yalnız aktif kategoriler:** `FilterSidebar` (§15) ve mobil
+  kategori chip şeridi (§7) artık `visibleCategoriesProvider`'ı okur —
+  yalnız en az bir online-aktif ürünü OLAN kategoriler filtre olarak
+  gösterilir (kullanıcı isteği: boş kategori seçilebilir bir filtre olarak
+  görünmesin). Ad çözümlemesi (ürün kartındaki kategori etiketi) hâlâ TÜM
+  kategorileri taşıyan `categoriesProvider`'dan gelir — bu bilinçli, çünkü
+  bir ürünün kategori adını göstermek için "bu kategori şu an filtre
+  listesinde mi" sorusunun cevabı gerekmez. Uygulama DB migration
+  GEREKTİRMEDİ — `online_products` zaten yalnız `is_online_active=true`
+  satırları döndürüyor, `StoreRepository.fetchActiveCategoryIds` bu view'dan
+  `group_id`'leri `Set`'e indirger.
+- **Ürün görseli formatı (kare/dikey) kiracı tercihi:** Online Satış
+  panelinden (`_ImageAspectSelector`, ana uygulama) owner/admin "Kare"
+  (1:1) veya "Dikey" (3:4, varsayılan — v1.2'nin editoryal kararı) seçer.
+  `tenants.storefront_image_aspect` (0046 migration) + `update_tenant_name`
+  (0042) ile AYNI desende bir RPC (`update_storefront_image_aspect`,
+  owner/admin kontrolü RPC içinde). `store_tenants` view'ı (0045) bu sütunu
+  taşır, storefront `StoreTenant.imageAspectRatio` getter'ıyla `ProductCard`/
+  `ProductGrid`'e TEK bir `imageAspectRatio` (double) olarak akar —
+  `ProductGrid`'in hücre-yükseklik hesabı (§15) sabit `4/3` yerine bu değeri
+  kullanacak şekilde genelleştirildi. **Palet/tipografi/altın ekonomisi
+  DEĞİŞMEDİ** — yalnız görsel ORANI kiracı tercihine bağlandı, kartın geri
+  kalanı (kenarlık/hover/quick-add/metin bloğu) sabit kalır.
+
+## 18. KARAR Geçmişi
 
 - **v1.0** (2026-08-07): İlk kuruluş. Hero banner + footer + Space
   Grotesk/Inter tipografik çift + AppBar altın çizgisi + ürün kartı hover +
@@ -367,3 +393,10 @@ editoryal referanslara göre yenilendi. Altın ekonomisi (§3) korunur.
   yatay chip şeridi korunur, gerçek CSS sticky değil ikiz-scroll deseni).
   Kart hover'ının gold kenarlık/gölge/kalkma imzası (v1.1) DEĞİŞMEDİ. Eski
   §14 (KARAR) → §16'ya kaydı (yeni §15 aralarına eklendiği için).
+- **v1.3** (2026-08-30): §17 — boş kategoriler filtre listesinden gizlendi
+  (`visibleCategoriesProvider`, DB migration gerekmedi) + ürün görseli
+  formatı (kare/dikey) kiracı tercihine bağlandı (`tenants.
+  storefront_image_aspect`, 0046 migration, Online Satış panelinden owner/
+  admin seçer). `ProductGrid`/`ProductCard`'ın sabit `3/4` oranı artık
+  parametrik (`imageAspectRatio`), varsayılan yine dikey (v1.2 ile aynı
+  görünüm, geriye dönük uyumlu). Eski §16 (KARAR) → §18'e kaydı.
