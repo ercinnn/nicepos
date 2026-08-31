@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/connectivity/connectivity_status_service.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_sizes.dart';
+import '../core/help_mode/help_mode_toggle_button.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/responsive.dart';
 import '../features/auth/application/auth_provider.dart';
@@ -293,6 +294,7 @@ class _MobileScaffold extends ConsumerWidget {
           // `!kIsWeb` guard, `context.isMobile` DEĞİL, çünkü bir Android
           // tablet yatayda "masaüstü" `_TopBar`'ı render edebilir).
           if (!kIsWeb) const SyncStatusBadge(),
+          const HelpModeToggleButton(),
           IconButton(
             icon: const Icon(Icons.logout, color: AppColors.textSecondary, size: 20),
             onPressed: () => Supabase.instance.client.auth.signOut(),
@@ -1003,6 +1005,8 @@ class _TopBar extends ConsumerWidget {
             const SyncStatusBadge(),
             const SizedBox(width: 4),
           ],
+          const HelpModeToggleButton(),
+          const SizedBox(width: 4),
           TextButton.icon(
             onPressed: () => Supabase.instance.client.auth.signOut(),
             icon: const Icon(Icons.logout, size: 16),

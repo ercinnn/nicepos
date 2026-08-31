@@ -63,7 +63,7 @@ final currentMembershipProvider = FutureProvider<Membership?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CurrentMembershipRef = FutureProviderRef<Membership?>;
-String _$currentTenantHash() => r'aad7cdc409c6a7039d3a66c11172f146cf7d5886';
+String _$currentTenantHash() => r'b84cd6133f4f4e33cc1106dc0fd22fa4016af50d';
 
 /// Oturum açan kullanıcının kiracısı (ad/slug/plan/aktiflik). `tenants` RLS'i
 /// zaten `id = current_tenant_id()`'e daraltıldığından filtresiz `select` tam
@@ -92,7 +92,7 @@ final currentTenantProvider = FutureProvider<TenantInfo?>.internal(
 // ignore: unused_element
 typedef CurrentTenantRef = FutureProviderRef<TenantInfo?>;
 String _$ensureTenantProvisionedHash() =>
-    r'8c6427e9944ec15e559653f2cb10178e64527c6c';
+    r'b73fe4ae73a11cc733cafd9f30c459d15a57decf';
 
 /// Gecikmeli e-posta onayı senaryosunu kapatır: kullanıcı `signUp()` anında
 /// bir oturum ALMADIYSA (Confirm email açıksa) şirket adı/davet kodu

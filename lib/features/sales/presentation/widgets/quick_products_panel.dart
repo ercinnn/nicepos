@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
+import '../../../../core/help_mode/help_hotspot.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/skeleton.dart';
 import '../../../../features/products/application/products_provider.dart';
@@ -52,38 +53,42 @@ class _QuickProductsPanelState extends ConsumerState<QuickProductsPanel> {
         final stillExists = salesGroups.any((g) => g.id == _selectedGroup?.id);
         if (!stillExists) _selectedGroup = salesGroups.first;
 
-        return Column(
-          children: [
-            // Grup sekmeleri — tek satıra sığmazsa alt satıra kayar (Wrap)
-            Container(
-              width: double.infinity,
-              color: AppColors.cardBg,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSizes.space8, vertical: AppSizes.space4),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final group in salesGroups)
-                    _GroupChip(
-                      name: group.name,
-                      selected: _selectedGroup?.id == group.id,
-                      onTap: () => setState(() => _selectedGroup = group),
-                    ),
-                ],
+        return HelpHotspot(
+          title: 'Hızlı Ürünler',
+          text: 'Sık satılan ürünleri barkod okutmadan tek dokunuşla sepete eklemenizi sağlar. Üstteki çiplerden bir grup/kategori seçin, altta o gruptaki ürünlerden birine dokunun — ürün doğrudan sepete eklenir.',
+          child: Column(
+            children: [
+              // Grup sekmeleri — tek satıra sığmazsa alt satıra kayar (Wrap)
+              Container(
+                width: double.infinity,
+                color: AppColors.cardBg,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSizes.space8, vertical: AppSizes.space4),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final group in salesGroups)
+                      _GroupChip(
+                        name: group.name,
+                        selected: _selectedGroup?.id == group.id,
+                        onTap: () => setState(() => _selectedGroup = group),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            const Divider(height: 1),
-            // Ürün grid
-            Expanded(
-              child: _selectedGroup == null
-                  ? const SizedBox()
-                  : _ProductList(
-                      groupId: _selectedGroup!.id,
-                      onProductSelected: widget.onProductSelected,
-                    ),
-            ),
-          ],
+              const Divider(height: 1),
+              // Ürün grid
+              Expanded(
+                child: _selectedGroup == null
+                    ? const SizedBox()
+                    : _ProductList(
+                        groupId: _selectedGroup!.id,
+                        onProductSelected: widget.onProductSelected,
+                      ),
+              ),
+            ],
+          ),
         );
       },
     );

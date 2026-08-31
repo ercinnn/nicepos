@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/connectivity/connectivity_status_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
+import '../../../../core/help_mode/help_hotspot.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
@@ -180,17 +181,21 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
                 // ── [3] Altta sabit — ana aksiyon.
                 if (anaAksiyonVar) ...[
                   const Divider(height: AppSizes.space24),
-                  ElevatedButton(
-                    onPressed: (cartEmpty || _completing || offline)
-                        ? null
-                        : () => _completeSale(tab, payment),
-                    child: _completing
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Satışı Tamamla'),
+                  HelpHotspot(
+                    title: 'Satışı Tamamla',
+                    text: 'Açık Hesap/Parçalı seçtiğinizde satışı asıl bitiren adım budur — bu butona basınca satış kaydedilir, stok düşer ve (varsa) borç hareketi oluşturulur. Nakit/POS bunu gerektirmez, onlar tek dokunuşta biter.',
+                    child: ElevatedButton(
+                      onPressed: (cartEmpty || _completing || offline)
+                          ? null
+                          : () => _completeSale(tab, payment),
+                      child: _completing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Satışı Tamamla'),
+                    ),
                   ),
                 ],
               ],
@@ -224,22 +229,30 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
           Row(
             children: [
               Expanded(
-                child: _PaymentTypeButton(
-                  label: 'Nakit İade',
-                  icon: Icons.payments_outlined,
-                  color: AppColors.danger,
-                  filled: true,
-                  onTap: (cartEmpty || _completing || offline) ? null : () => _completeReturn(tab, PaymentType.nakit),
+                child: HelpHotspot(
+                  title: 'Nakit İade',
+                  text: 'Sepetteki iade tutarını NAKİT olarak müşteriye geri öder ve iadeyi HEMEN tamamlar — ayrı bir onay adımı yoktur, stok geri eklenir.',
+                  child: _PaymentTypeButton(
+                    label: 'Nakit İade',
+                    icon: Icons.payments_outlined,
+                    color: AppColors.danger,
+                    filled: true,
+                    onTap: (cartEmpty || _completing || offline) ? null : () => _completeReturn(tab, PaymentType.nakit),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSizes.space8),
               Expanded(
-                child: _PaymentTypeButton(
-                  label: 'POS İadesi',
-                  icon: Icons.credit_card_outlined,
-                  color: AppColors.danger,
-                  filled: true,
-                  onTap: (cartEmpty || _completing || offline) ? null : () => _completeReturn(tab, PaymentType.pos),
+                child: HelpHotspot(
+                  title: 'POS İadesi',
+                  text: 'Sepetteki iade tutarını POS/kart üzerinden müşteriye geri öder ve iadeyi HEMEN tamamlar — ayrı bir onay adımı yoktur, stok geri eklenir.',
+                  child: _PaymentTypeButton(
+                    label: 'POS İadesi',
+                    icon: Icons.credit_card_outlined,
+                    color: AppColors.danger,
+                    filled: true,
+                    onTap: (cartEmpty || _completing || offline) ? null : () => _completeReturn(tab, PaymentType.pos),
+                  ),
                 ),
               ),
             ],
@@ -262,22 +275,30 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
           Row(
             children: [
               Expanded(
-                child: _PaymentTypeButton(
-                  label: 'Nakit',
-                  icon: Icons.payments_outlined,
-                  color: AppColors.cash,
-                  filled: true,
-                  onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.nakit),
+                child: HelpHotspot(
+                  title: 'Nakit',
+                  text: 'Tek dokunuşla satışı NAKİT tahsilatla tamamlar — ayrı bir onay adımı yoktur, satış HEMEN kapanır.',
+                  child: _PaymentTypeButton(
+                    label: 'Nakit',
+                    icon: Icons.payments_outlined,
+                    color: AppColors.cash,
+                    filled: true,
+                    onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.nakit),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSizes.space8),
               Expanded(
-                child: _PaymentTypeButton(
-                  label: 'POS',
-                  icon: Icons.credit_card_outlined,
-                  color: AppColors.pos,
-                  filled: true,
-                  onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.pos),
+                child: HelpHotspot(
+                  title: 'POS',
+                  text: 'Tek dokunuşla satışı POS/kart tahsilatıyla tamamlar — ayrı bir onay adımı yoktur, satış HEMEN kapanır.',
+                  child: _PaymentTypeButton(
+                    label: 'POS',
+                    icon: Icons.credit_card_outlined,
+                    color: AppColors.pos,
+                    filled: true,
+                    onTap: (cartEmpty || _completing) ? null : () => _completeSaleDirectly(tab, PaymentType.pos),
+                  ),
                 ),
               ),
             ],
@@ -288,26 +309,34 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
           Row(
             children: [
               Expanded(
-                child: _PaymentTypeButton(
-                  label: 'Açık Hesap',
-                  icon: Icons.account_balance_wallet_outlined,
-                  color: AppColors.openAccount,
-                  selected: payment.type == PaymentType.acikHesap,
-                  onTap: (cartEmpty || _completing || offline)
-                      ? null
-                      : () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
+                child: HelpHotspot(
+                  title: 'Açık Hesap',
+                  text: 'Satışı HEMEN TAMAMLAMAZ — yalnız ödeme türünü seçer. Tutar müşteri hesabına BORÇ olarak işlenecek; devam etmek için müşteri seçili olmalı ve alttaki "Satışı Tamamla" butonuna basmanız gerekir.',
+                  child: _PaymentTypeButton(
+                    label: 'Açık Hesap',
+                    icon: Icons.account_balance_wallet_outlined,
+                    color: AppColors.openAccount,
+                    selected: payment.type == PaymentType.acikHesap,
+                    onTap: (cartEmpty || _completing || offline)
+                        ? null
+                        : () => paymentNotifier.selectType(PaymentType.acikHesap, tab.total),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSizes.space8),
               Expanded(
-                child: _PaymentTypeButton(
-                  label: 'Parçalı',
-                  icon: Icons.call_split_outlined,
-                  color: AppColors.splitPayment,
-                  selected: payment.type == PaymentType.parcali,
-                  onTap: (cartEmpty || _completing || offline)
-                      ? null
-                      : () => paymentNotifier.selectType(PaymentType.parcali, tab.total),
+                child: HelpHotspot(
+                  title: 'Parçalı',
+                  text: 'Satışı HEMEN TAMAMLAMAZ — yalnız ödeme türünü seçer. Açılan Nakit/Kart alanlarına tutarı bölüştürüp alttaki "Satışı Tamamla" butonuna basmanız gerekir.',
+                  child: _PaymentTypeButton(
+                    label: 'Parçalı',
+                    icon: Icons.call_split_outlined,
+                    color: AppColors.splitPayment,
+                    selected: payment.type == PaymentType.parcali,
+                    onTap: (cartEmpty || _completing || offline)
+                        ? null
+                        : () => paymentNotifier.selectType(PaymentType.parcali, tab.total),
+                  ),
                 ),
               ),
             ],
@@ -691,35 +720,39 @@ class _SpeakTotalButtonState extends State<_SpeakTotalButton> {
     // Mobil dokunma hedefi ≥ 48×48 (§3); masaüstünde 40 yeterli. Sabit ölçü →
     // hero panelinin kompakt trailing'i olarak ne dikeyde ne yatayda taşırmaz.
     final olcu = context.isMobile ? 48.0 : 40.0;
-    return Tooltip(
-      message: 'Toplamı İngilizce seslendir',
-      // Şeffaf Material: dokunma dalgası koyu panelin ÜSTÜNDE çizilir (aksi
-      // hâlde alttaki Card'a çizilir ve gradyanın altında kaybolur).
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-          onTap: _speak,
-          child: Container(
-            width: olcu,
-            height: olcu,
-            alignment: Alignment.center,
-            // `panel.control` (§6.2): kenarlık 0.24–0.30 · dolgu 0.04–0.08.
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+    return HelpHotspot(
+      title: 'İngilizce Seslendir',
+      text: 'Toplam tutarı İngilizce olarak sesli okur — yabancı müşterilerle ödeme tutarını anlaşmak için kullanışlıdır.',
+      child: Tooltip(
+        message: 'Toplamı İngilizce seslendir',
+        // Şeffaf Material: dokunma dalgası koyu panelin ÜSTÜNDE çizilir (aksi
+        // hâlde alttaki Card'a çizilir ve gradyanın altında kaybolur).
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+            onTap: _speak,
+            child: Container(
+              width: olcu,
+              height: olcu,
+              alignment: Alignment.center,
+              // `panel.control` (§6.2): kenarlık 0.24–0.30 · dolgu 0.04–0.08.
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+              ),
+              child: _speaking
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('🇬🇧', style: TextStyle(fontSize: 20)),
             ),
-            child: _speaking
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text('🇬🇧', style: TextStyle(fontSize: 20)),
           ),
         ),
       ),

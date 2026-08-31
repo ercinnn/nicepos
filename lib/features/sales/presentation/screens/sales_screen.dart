@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/connectivity/connectivity_status_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
+import '../../../../core/help_mode/help_hotspot.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
@@ -174,27 +175,35 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
           Row(
             children: [
               Expanded(
-                child: LiveProductSearchField(
-                  controller: _barcodeController,
-                  focusNode: _barcodeFocusNode,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Ürün barkodunu okutunuz veya ürün adı yazıp Enter\'a basınız...',
-                    prefixIcon: Icon(Icons.qr_code_scanner, size: 18),
+                child: HelpHotspot(
+                  title: 'Ürün Arama / Barkod',
+                  text: 'Barkod okutun veya ürün adını yazıp Enter\'a basın — ürün doğrudan sepete eklenir. Yazarken altta açılan canlı öneri listesinden de bir ürüne dokunarak ekleyebilirsiniz.',
+                  child: LiveProductSearchField(
+                    controller: _barcodeController,
+                    focusNode: _barcodeFocusNode,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Ürün barkodunu okutunuz veya ürün adı yazıp Enter\'a basınız...',
+                      prefixIcon: Icon(Icons.qr_code_scanner, size: 18),
+                    ),
+                    onSubmitted: _onBarcodeSubmitted,
+                    onProductSelected: (p) {
+                      HapticFeedback.lightImpact();
+                      ref.read(salesCartProvider.notifier).addProduct(p);
+                    },
                   ),
-                  onSubmitted: _onBarcodeSubmitted,
-                  onProductSelected: (p) {
-                    HapticFeedback.lightImpact();
-                    ref.read(salesCartProvider.notifier).addProduct(p);
-                  },
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () => showDialog(
-                    context: context, builder: (_) => const ProductSearchDialog()),
-                icon: const Icon(Icons.search),
-                label: const Text('Ara'),
+              HelpHotspot(
+                title: 'Ürün Ara',
+                text: 'Barkod/arama alanında bulamadığınız bir ürünü aramak için ayrı, daha geniş bir arama penceresi açar.',
+                child: OutlinedButton.icon(
+                  onPressed: () => showDialog(
+                      context: context, builder: (_) => const ProductSearchDialog()),
+                  icon: const Icon(Icons.search),
+                  label: const Text('Ara'),
+                ),
               ),
               const SizedBox(width: 8),
               _ReturnModeButton(isActive: isReturnMode),
@@ -282,42 +291,50 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
         Row(
           children: [
             Expanded(
-              child: LiveProductSearchField(
-                controller: _barcodeController,
-                focusNode: _barcodeFocusNode,
-                decoration: InputDecoration(
-                  hintText: isReturnMode ? 'İade ürünü barkod veya adı...' : 'Barkod veya ürün adı...',
-                  prefixIcon: const Icon(Icons.qr_code_scanner, size: 18),
-                  isDense: true,
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.search, size: 18),
-                    onPressed: () => showDialog(
-                        context: context, builder: (_) => const ProductSearchDialog()),
+              child: HelpHotspot(
+                title: 'Ürün Arama / Barkod',
+                text: 'Barkod okutun veya ürün adını yazıp Enter\'a basın — ürün doğrudan sepete eklenir. Yazarken altta açılan canlı öneri listesinden de bir ürüne dokunarak ekleyebilirsiniz. Sağdaki büyüteç ikonu ayrı bir arama penceresi açar.',
+                child: LiveProductSearchField(
+                  controller: _barcodeController,
+                  focusNode: _barcodeFocusNode,
+                  decoration: InputDecoration(
+                    hintText: isReturnMode ? 'İade ürünü barkod veya adı...' : 'Barkod veya ürün adı...',
+                    prefixIcon: const Icon(Icons.qr_code_scanner, size: 18),
+                    isDense: true,
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.search, size: 18),
+                      onPressed: () => showDialog(
+                          context: context, builder: (_) => const ProductSearchDialog()),
+                    ),
                   ),
+                  onSubmitted: _onBarcodeSubmitted,
+                  onProductSelected: (p) {
+                    HapticFeedback.lightImpact();
+                    ref.read(salesCartProvider.notifier).addProduct(p);
+                  },
                 ),
-                onSubmitted: _onBarcodeSubmitted,
-                onProductSelected: (p) {
-                  HapticFeedback.lightImpact();
-                  ref.read(salesCartProvider.notifier).addProduct(p);
-                },
               ),
             ),
             const SizedBox(width: 8),
             _ReturnModeButton(isActive: isReturnMode, compact: true),
             if (!kIsWeb) ...[
               const SizedBox(width: 8),
-              SizedBox(
-                height: 48,
-                width: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              HelpHotspot(
+                title: 'Kamera ile Barkod Oku',
+                text: 'Telefonun kamerasını barkod okuyucu olarak kullanır — barkodu kameraya gösterin, ürün otomatik sepete eklenir.',
+                child: SizedBox(
+                  height: 48,
+                  width: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => openBarcodeScanner(context, _onBarcodeSubmitted),
+                    child: const Icon(Icons.camera_alt_outlined, size: 22),
                   ),
-                  onPressed: () => openBarcodeScanner(context, _onBarcodeSubmitted),
-                  child: const Icon(Icons.camera_alt_outlined, size: 22),
                 ),
               ),
             ],
@@ -365,11 +382,15 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
           children: [
             const Expanded(child: CustomerSelectButton()),
             const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: () => showDialog(
-                  context: context, builder: (_) => const QuickProductsDialog()),
-              icon: const Icon(Icons.bolt_rounded, size: 18),
-              label: const Text('Hızlı Ürünler'),
+            HelpHotspot(
+              title: 'Hızlı Ürünler',
+              text: 'Sık satılan ürünleri barkod okutmadan tek dokunuşla sepete eklemenizi sağlar; ürünler grup/kategoriye göre listelenir.',
+              child: OutlinedButton.icon(
+                onPressed: () => showDialog(
+                    context: context, builder: (_) => const QuickProductsDialog()),
+                icon: const Icon(Icons.bolt_rounded, size: 18),
+                label: const Text('Hızlı Ürünler'),
+              ),
             ),
           ],
         ),
@@ -399,36 +420,40 @@ class _ReturnModeButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return SizedBox(
-      height: 48,
-      child: compact
-          ? IconButton(
-              style: IconButton.styleFrom(
-                backgroundColor: isActive
-                    ? AppColors.danger.withValues(alpha: 0.12)
-                    : Colors.transparent,
-                foregroundColor: isActive ? AppColors.danger : AppColors.textMuted,
-                side: BorderSide(
-                  color: isActive ? AppColors.danger : AppColors.border,
+    return HelpHotspot(
+      title: 'İade Modu',
+      text: 'Açıkken sepete eklediğiniz ürünler SATIŞ değil İADE olarak işlenir — stok geri eklenir, tutar müşteriye ödenir. Tekrar dokunarak kapatabilirsiniz.',
+      child: SizedBox(
+        height: 48,
+        child: compact
+            ? IconButton(
+                style: IconButton.styleFrom(
+                  backgroundColor: isActive
+                      ? AppColors.danger.withValues(alpha: 0.12)
+                      : Colors.transparent,
+                  foregroundColor: isActive ? AppColors.danger : AppColors.textMuted,
+                  side: BorderSide(
+                    color: isActive ? AppColors.danger : AppColors.border,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              tooltip: isActive ? 'İade Modunu Kapat' : 'İade Modu',
-              icon: const Icon(Icons.undo_rounded, size: 20),
-              onPressed: () => ref.read(salesCartProvider.notifier).toggleReturnMode(),
-            )
-          : OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: isActive ? AppColors.danger : AppColors.textMuted,
-                side: BorderSide(
-                  color: isActive ? AppColors.danger : AppColors.border,
+                tooltip: isActive ? 'İade Modunu Kapat' : 'İade Modu',
+                icon: const Icon(Icons.undo_rounded, size: 20),
+                onPressed: () => ref.read(salesCartProvider.notifier).toggleReturnMode(),
+              )
+            : OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isActive ? AppColors.danger : AppColors.textMuted,
+                  side: BorderSide(
+                    color: isActive ? AppColors.danger : AppColors.border,
+                  ),
+                  backgroundColor: isActive ? AppColors.danger.withValues(alpha: 0.08) : null,
                 ),
-                backgroundColor: isActive ? AppColors.danger.withValues(alpha: 0.08) : null,
+                onPressed: () => ref.read(salesCartProvider.notifier).toggleReturnMode(),
+                icon: const Icon(Icons.undo_rounded, size: 18),
+                label: Text(isActive ? 'İade Modu: Açık' : 'İade Modu'),
               ),
-              onPressed: () => ref.read(salesCartProvider.notifier).toggleReturnMode(),
-              icon: const Icon(Icons.undo_rounded, size: 18),
-              label: Text(isActive ? 'İade Modu: Açık' : 'İade Modu'),
-            ),
+      ),
     );
   }
 }
