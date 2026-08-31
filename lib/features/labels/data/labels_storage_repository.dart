@@ -134,6 +134,10 @@ class LabelsStorageRepository {
   Future<void> remove(String path) =>
       _client.storage.from(bucket).remove([path]);
 
+  /// Toplu silme — tek Storage çağrısıyla birden çok dosya siler.
+  Future<void> removeMany(List<String> paths) =>
+      _client.storage.from(bucket).remove(paths);
+
   // ─── Mağaza logosu kalıcılığı (KARAR v1.12) ────────────────────────────────
   // Logo, data URL string'i olarak `__store_logo.txt` anahtarında saklanır.
   // RLS update izni olmayabilir → upsert yerine remove+insert kullanılır.

@@ -6600,14 +6600,83 @@ class _HavuzPoolRow extends ConsumerWidget {
 // Sekme 2: Kayıtlı Dosyalar (KARAR v1.11) — Storage'daki PDF'ler. EKRAN HERO'SU
 // YOK (stok listesi/rapor dili). cardDecoration + goldBg başlık. Masaüstü tablo /
 // mobil kart. Satır aksiyonları: Aç/İndir · Yazdır · Sil (danger + onay).
+// Çoklu seçim + toplu silme: her satırın/kartın solunda sepet ekranındaki
+// _RowSelectToggle ile AYNI görsel dilde bir seçim ikonu (masaüstünde başlıkta
+// "tümünü seç" de vardır); seçim varken üstte "Seçilenleri Sil (N)" çubuğu
+// belirir (`_BulkDeleteBar`, sepetin toplu %iskonto çubuğuyla aynı desende).
+// Seçim, dosya listesi her yenilendiğinde (silme sonrası / manuel yenile /
+// otomatik prob) o an listede olmayan yolları eler.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _SavedFilesTab extends ConsumerWidget {
+class _SavedFilesTab extends ConsumerStatefulWidget {
   final bool compact;
   const _SavedFilesTab({required this.compact});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SavedFilesTab> createState() => _SavedFilesTabState();
+}
+
+class _SavedFilesTabState extends ConsumerState<_SavedFilesTab> {
+  final Set<String> _selected = {};
+
+  void _toggle(String path) {
+    setState(() {
+      if (!_selected.remove(path)) _selected.add(path);
+    });
+  }
+
+  void _toggleAll(List<SavedLabelFile> files) {
+    setState(() {
+      if (files.isNotEmpty && _selected.length == files.length) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(files.map((f) => f.path));
+      }
+    });
+  }
+
+  void _clearSelection() => setState(_selected.clear);
+
+  Future<void> _bulkDelete() async {
+    final count = _selected.length;
+    if (count == 0) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dosyaları Sil'),
+        content: Text('$count dosya kalıcı olarak silinsin mi?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: AppColors.textOnDark,
+            ),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final paths = _selected.toList();
+    try {
+      await ref.read(labelsStorageRepositoryProvider).removeMany(paths);
+      ref.invalidate(savedLabelFilesProvider);
+      setState(_selected.clear);
+      if (mounted) _snack(context, '$count dosya silindi');
+    } catch (e) {
+      if (mounted) _snack(context, 'Silinemedi: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final filesAsync = ref.watch(savedLabelFilesProvider);
 
     Widget body = filesAsync.when(
@@ -6634,10 +6703,19 @@ class _SavedFilesTab extends ConsumerWidget {
             ),
           );
         }
-        if (compact) {
+        // Listede artık olmayan (silinmiş/yenilenmiş) yolları seçimden düş.
+        final validPaths = files.map((f) => f.path).toSet();
+        _selected.removeWhere((p) => !validPaths.contains(p));
+
+        if (widget.compact) {
           return Column(
             children: [
-              for (final f in files) _SavedFileCard(file: f),
+              for (final f in files)
+                _SavedFileCard(
+                  file: f,
+                  selected: _selected.contains(f.path),
+                  onToggleSelect: () => _toggle(f.path),
+                ),
             ],
           );
         }
@@ -6645,12 +6723,20 @@ class _SavedFilesTab extends ConsumerWidget {
         return Expanded(
           child: Column(
             children: [
-              const _FilesHeaderRow(),
+              _FilesHeaderRow(
+                allSelected: files.isNotEmpty && _selected.length == files.length,
+                onToggleAll: () => _toggleAll(files),
+              ),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      for (final f in files) _SavedFileRow(file: f),
+                      for (final f in files)
+                        _SavedFileRow(
+                          file: f,
+                          selected: _selected.contains(f.path),
+                          onToggleSelect: () => _toggle(f.path),
+                        ),
                     ],
                   ),
                 ),
@@ -6666,7 +6752,7 @@ class _SavedFilesTab extends ConsumerWidget {
       padding: const EdgeInsets.all(AppSizes.space12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: widget.compact ? MainAxisSize.min : MainAxisSize.max,
         children: [
           Row(
             children: [
@@ -6682,6 +6768,14 @@ class _SavedFilesTab extends ConsumerWidget {
               ),
             ],
           ),
+          if (_selected.isNotEmpty) ...[
+            const SizedBox(height: AppSizes.space8),
+            _BulkDeleteBar(
+              count: _selected.length,
+              onDelete: _bulkDelete,
+              onClear: _clearSelection,
+            ),
+          ],
           const SizedBox(height: AppSizes.space8),
           body,
         ],
@@ -6690,9 +6784,103 @@ class _SavedFilesTab extends ConsumerWidget {
   }
 }
 
-// Masaüstü tablo başlığı (goldBg zemin).
+// Toplu silme çubuğu — sepet ekranındaki toplu %iskonto çubuğuyla (cart_table.dart
+// _buildDesktopBulkBar) aynı görsel dil: goldBg zemin, sayaç + aksiyon + "Seçimi
+// Temizle". Kompakt (mobil) ve masaüstü sekmesinde ORTAK — sekmeler arası genişlik
+// farkı yalnız Row'un doğal sarmasıyla çözülür.
+class _BulkDeleteBar extends StatelessWidget {
+  final int count;
+  final VoidCallback onDelete;
+  final VoidCallback onClear;
+
+  const _BulkDeleteBar({
+    required this.count,
+    required this.onDelete,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space12,
+        vertical: AppSizes.space8,
+      ),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: AppSizes.space12,
+        runSpacing: AppSizes.space4,
+        children: [
+          Text(
+            '$count dosya seçili',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_sweep_outlined, size: 15),
+            label: Text('Seçilenleri Sil ($count)'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: AppColors.textOnDark,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space12,
+                vertical: AppSizes.space8,
+              ),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onClear,
+            child: const Text('Seçimi Temizle'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Satır/kart seçim ikonu — sepet ekranındaki _RowSelectToggle ile AYNI ikon
+// çifti (check_circle / radio_button_unchecked) ve renk mantığı.
+class _FileSelectToggle extends StatelessWidget {
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FileSelectToggle({required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSizes.space4),
+        child: Icon(
+          selected ? Icons.check_circle : Icons.radio_button_unchecked,
+          size: 20,
+          color: selected ? AppColors.primary : AppColors.textMuted,
+        ),
+      ),
+    );
+  }
+}
+
+// Masaüstü tablo başlığı (goldBg zemin) — solda "tümünü seç" toggle'ı.
 class _FilesHeaderRow extends StatelessWidget {
-  const _FilesHeaderRow();
+  final bool allSelected;
+  final VoidCallback onToggleAll;
+
+  const _FilesHeaderRow({required this.allSelected, required this.onToggleAll});
 
   @override
   Widget build(BuildContext context) {
@@ -6704,11 +6892,15 @@ class _FilesHeaderRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
           horizontal: AppSizes.space12, vertical: AppSizes.space8),
       child: Row(
-        children: const [
-          Expanded(flex: 5, child: _HeaderCell('Ad')),
-          Expanded(flex: 3, child: _HeaderCell('Tarih')),
-          Expanded(flex: 2, child: _HeaderCell('Boyut')),
-          SizedBox(width: 132, child: _HeaderCell('İşlem')),
+        children: [
+          SizedBox(
+            width: 32,
+            child: _FileSelectToggle(selected: allSelected, onTap: onToggleAll),
+          ),
+          const Expanded(flex: 5, child: _HeaderCell('Ad')),
+          const Expanded(flex: 3, child: _HeaderCell('Tarih')),
+          const Expanded(flex: 2, child: _HeaderCell('Boyut')),
+          const SizedBox(width: 132, child: _HeaderCell('İşlem')),
         ],
       ),
     );
@@ -6736,18 +6928,29 @@ class _HeaderCell extends StatelessWidget {
 // Masaüstü tablo satırı.
 class _SavedFileRow extends ConsumerWidget {
   final SavedLabelFile file;
-  const _SavedFileRow({required this.file});
+  final bool selected;
+  final VoidCallback onToggleSelect;
+  const _SavedFileRow({
+    required this.file,
+    required this.selected,
+    required this.onToggleSelect,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      decoration: BoxDecoration(
+        color: selected ? AppColors.goldBg : null,
+        border: const Border(bottom: BorderSide(color: AppColors.divider)),
       ),
       padding: const EdgeInsets.symmetric(
           horizontal: AppSizes.space12, vertical: AppSizes.space8),
       child: Row(
         children: [
+          SizedBox(
+            width: 32,
+            child: _FileSelectToggle(selected: selected, onTap: onToggleSelect),
+          ),
           Expanded(
             flex: 5,
             child: Text(
@@ -6819,7 +7022,13 @@ class _SavedFileRow extends ConsumerWidget {
 // Mobil kart.
 class _SavedFileCard extends ConsumerWidget {
   final SavedLabelFile file;
-  const _SavedFileCard({required this.file});
+  final bool selected;
+  final VoidCallback onToggleSelect;
+  const _SavedFileCard({
+    required this.file,
+    required this.selected,
+    required this.onToggleSelect,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -6827,23 +7036,34 @@ class _SavedFileCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: AppSizes.space8),
       padding: const EdgeInsets.all(AppSizes.space12),
       decoration: BoxDecoration(
-        color: AppColors.cardBg,
+        color: selected ? AppColors.goldBg : AppColors.cardBg,
         borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(
+          color: selected ? AppColors.primary : AppColors.divider,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            file.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FileSelectToggle(selected: selected, onTap: onToggleSelect),
+              const SizedBox(width: AppSizes.space4),
+              Expanded(
+                child: Text(
+                  file.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSizes.space4),
           Row(
