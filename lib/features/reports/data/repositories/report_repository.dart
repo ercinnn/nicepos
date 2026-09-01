@@ -304,9 +304,10 @@ class ReportRepository {
   }
 
   /// Analiz sayfası "İndirim Önerileri" sekmesi — `discount_recommendations`
-  /// RPC'si (0050 migration) tüm ürünler için TEK sorguda veri-temelli
-  /// fiyat esnekliği fit edip ciro-artırıcı önerileri döner (bkz. migration
-  /// dosyasındaki metodoloji notu).
+  /// RPC'si (0050, kapsam genişletmesi 0051 migration) tüm ürünler için TEK
+  /// sorguda veri-temelli fiyat esnekliği fit edip ciro-artırıcı önerileri
+  /// döner (bkz. migration dosyalarındaki metodoloji notu). Eşiği geçemeyen
+  /// ürünler de `status` ile etiketlenip döner, elenmez.
   Future<List<DiscountRecommendation>> fetchDiscountRecommendations() async {
     final rows = await _client.rpc('discount_recommendations');
     return (rows as List)

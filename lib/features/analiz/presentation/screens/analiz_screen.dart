@@ -1095,11 +1095,11 @@ class _StatChip extends StatelessWidget {
 }
 
 // ── 2. sekme: İndirim Önerileri ─────────────────────────────────────────────
-// `discount_recommendations` RPC'sinin (0050 migration) döndürdüğü, veri-
+// `discount_recommendations` RPC'sinin (0051 migration) döndürdüğü, veri-
 // temelli (fiyat esnekliği regresyonu) ciro-artırıcı öneri listesi — bkz.
-// migration dosyasındaki metodoloji notu. Yalnızca yeterli geçmiş
-// fiyat/satış çeşitliliği olan ürünler burada görünür; çoğu ürün hiç
-// görünmeyebilir (bu beklenen/normal bir durumdur, hata değildir).
+// migration dosyasındaki metodoloji notu. v1'in (0050) aksine eşiği geçemeyen
+// ürünler ELENMEZ — `status` ile etiketlenip "Diğer Ürünler" bölümünde
+// gerekçesiyle görünür, hiçbir ürün sessizce kaybolmaz.
 class _DiscountRecommendationsTab extends ConsumerWidget {
   final void Function(DiscountRecommendation) onOpenProduct;
 
@@ -1146,23 +1146,39 @@ class _DiscountRecommendationsTab extends ConsumerWidget {
                   child: Padding(
                     padding: EdgeInsets.all(AppSizes.space24),
                     child: Text(
-                      'Şu an için veri-temelli bir indirim önerisi yok.\n'
-                      'Bu genelde ürünlerin geçmişte yeterince farklı '
-                      'fiyat/indirim seviyesinde satılmamış olmasından '
-                      'kaynaklanır.',
+                      'Henüz analiz edilebilir bir satış geçmişi yok.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                     ),
                   ),
                 );
               }
-              return ListView.separated(
-                itemCount: recs.length,
-                separatorBuilder: (_, _) => const SizedBox(height: AppSizes.space8),
-                itemBuilder: (context, i) => _DiscountRecommendationCard(
-                  rec: recs[i],
-                  onTap: () => onOpenProduct(recs[i]),
-                ),
+              final recommended = recs.where((r) => r.isRecommended).toList();
+              final others = recs.where((r) => !r.isRecommended).toList();
+              return ListView(
+                children: [
+                  if (recommended.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSizes.space24),
+                      child: Center(
+                        child: Text(
+                          'Şu an için ciro artırması beklenen bir indirim önerisi yok.\n'
+                          'Aşağıdaki "Diğer Ürünler" bölümünde nedenini görebilirsiniz.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  else
+                    for (final r in recommended) ...[
+                      _DiscountRecommendationCard(rec: r, onTap: () => onOpenProduct(r)),
+                      const SizedBox(height: AppSizes.space8),
+                    ],
+                  if (others.isNotEmpty) ...[
+                    const SizedBox(height: AppSizes.space8),
+                    _OtherProductsSection(others: others, onOpenProduct: onOpenProduct),
+                  ],
+                ],
               );
             },
           ),
@@ -1212,7 +1228,7 @@ class _DiscountRecommendationCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                _ConfidenceBadge(highConfidence: rec.isHighConfidence),
+                _ConfidenceBadge(confidence: rec.confidence, source: rec.source),
               ],
             ),
             const SizedBox(height: AppSizes.space12),
@@ -1223,21 +1239,21 @@ class _DiscountRecommendationCard extends StatelessWidget {
                 _StatChip('Önerilen İndirim', '%${rec.recommendedDiscountPercent}', AppColors.danger),
                 _StatChip(
                   'Fiyat',
-                  '${formatCurrency(rec.price1)} → ${formatCurrency(rec.recommendedPrice)}',
+                  '${formatCurrency(rec.price1)} → ${formatCurrency(rec.recommendedPrice ?? 0)}',
                   AppColors.primary,
                 ),
                 _StatChip(
                   'Tahmini Ciro Artışı',
-                  '+%${formatNumber(rec.revenueIncreasePercent)}',
+                  '+%${formatNumber(rec.revenueIncreasePercent ?? 0)}',
                   AppColors.success,
                 ),
               ],
             ),
             const SizedBox(height: AppSizes.space8),
             Text(
-              'Günlük ~${formatCurrency(rec.currentEstDailyRevenue)} → '
-              '~${formatCurrency(rec.recommendedEstDailyRevenue)} '
-              '(${rec.sampleCount} satış, R²=${rec.rSquared.toStringAsFixed(2)}, '
+              'Günlük ~${formatCurrency(rec.currentEstDailyRevenue ?? 0)} → '
+              '~${formatCurrency(rec.recommendedEstDailyRevenue ?? 0)} '
+              '(${rec.sampleCount} satış, R²=${(rec.rSquared ?? 0).toStringAsFixed(2)}, '
               'gözlenen fiyat aralığı ${formatCurrency(rec.historicalMinPrice)}–'
               '${formatCurrency(rec.historicalMaxPrice)})',
               style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
@@ -1249,13 +1265,132 @@ class _DiscountRecommendationCard extends StatelessWidget {
   }
 }
 
-class _ConfidenceBadge extends StatelessWidget {
-  final bool highConfidence;
-  const _ConfidenceBadge({required this.highConfidence});
+// ── Eşiği geçemeyen ürünler — elenmez, gerekçesiyle katlanır bir bölümde ───
+class _OtherProductsSection extends StatelessWidget {
+  final List<DiscountRecommendation> others;
+  final void Function(DiscountRecommendation) onOpenProduct;
+
+  const _OtherProductsSection({required this.others, required this.onOpenProduct});
 
   @override
   Widget build(BuildContext context) {
-    final color = highConfidence ? AppColors.success : AppColors.textSecondary;
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          title: Text(
+            'Diğer Ürünler (${others.length})',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+          subtitle: const Text(
+            'Öneri üretilemedi — gerekçesiyle',
+            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+          ),
+          childrenPadding: const EdgeInsets.only(bottom: AppSizes.space8),
+          children: [
+            for (final r in others)
+              _OtherProductRow(rec: r, onTap: () => onOpenProduct(r)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OtherProductRow extends StatelessWidget {
+  final DiscountRecommendation rec;
+  final VoidCallback onTap;
+
+  const _OtherProductRow({required this.rec, required this.onTap});
+
+  Color get _statusColor {
+    switch (rec.status) {
+      case DiscountRecommendationStatus.noSafeDiscount:
+        return AppColors.textSecondary;
+      case DiscountRecommendationStatus.notBeneficial:
+        return AppColors.danger;
+      case DiscountRecommendationStatus.insufficientData:
+      case DiscountRecommendationStatus.recommended:
+        return AppColors.textMuted;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space16,
+          vertical: AppSizes.space8,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    rec.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    rec.reasonLabel,
+                    style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSizes.space8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _statusColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                border: Border.all(color: _statusColor.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                switch (rec.status) {
+                  DiscountRecommendationStatus.noSafeDiscount => 'Güvenli aralık yok',
+                  DiscountRecommendationStatus.notBeneficial => 'Fayda yok',
+                  DiscountRecommendationStatus.insufficientData => 'Yetersiz veri',
+                  DiscountRecommendationStatus.recommended => '',
+                },
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: _statusColor),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfidenceBadge extends StatelessWidget {
+  final String? confidence;
+  final DiscountRecommendationSource source;
+  const _ConfidenceBadge({required this.confidence, required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (confidence) {
+      'yuksek' => AppColors.success,
+      'orta' => AppColors.primary,
+      _ => AppColors.textSecondary,
+    };
+    final confidenceLabel = switch (confidence) {
+      'yuksek' => 'Yüksek güven',
+      'orta' => 'Orta güven',
+      _ => 'Düşük güven',
+    };
+    final sourceLabel =
+        source == DiscountRecommendationSource.group ? 'Kategori ortalaması' : 'Kendi verisi';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -1263,9 +1398,18 @@ class _ConfidenceBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppSizes.radiusSm),
         border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
-      child: Text(
-        highConfidence ? 'Yüksek güven' : 'Orta güven',
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            confidenceLabel,
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
+          ),
+          Text(
+            sourceLabel,
+            style: TextStyle(fontSize: 9, color: color.withValues(alpha: 0.8)),
+          ),
+        ],
       ),
     );
   }
