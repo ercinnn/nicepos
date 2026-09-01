@@ -12,6 +12,7 @@ import '../../../products/application/products_provider.dart';
 import '../../../products/data/models/product.dart';
 import '../../../products/presentation/widgets/live_product_search_field.dart';
 import '../../../reports/application/reports_provider.dart';
+import '../../../reports/data/models/discount_recommendation.dart';
 import '../../../reports/data/models/product_sale_record.dart';
 import '../../../sales/data/models/sale.dart';
 import '../../../sales/data/repositories/sales_repository.dart';
@@ -32,7 +33,10 @@ class AnalizScreen extends ConsumerStatefulWidget {
   ConsumerState<AnalizScreen> createState() => _AnalizScreenState();
 }
 
-class _AnalizScreenState extends ConsumerState<AnalizScreen> {
+class _AnalizScreenState extends ConsumerState<AnalizScreen>
+    with SingleTickerProviderStateMixin {
+  late final _tabController = TabController(length: 2, vsync: this);
+
   final _barcodeCtrl = TextEditingController();
   final _barcodeFocus = FocusNode();
 
@@ -45,6 +49,7 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _barcodeCtrl.dispose();
     _barcodeFocus.dispose();
     super.dispose();
@@ -95,6 +100,16 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen> {
     _barcodeFocus.requestFocus();
   }
 
+  // İndirim Önerileri sekmesinde bir karta dokununca 1. sekmeye geçip o
+  // ürünün grafiğini yükler (barkod üzerinden — öneri satırı zaten Product
+  // nesnesini değil yalnız özet alanları taşıyor).
+  void _openFromRecommendation(DiscountRecommendation rec) {
+    _tabController.animateTo(0);
+    if (rec.barcode != null && rec.barcode!.isNotEmpty) {
+      _lookup(rec.barcode);
+    }
+  }
+
   Future<void> _scanCamera() async {
     await openBarcodeScanner(context, (value) {
       _lookup(value);
@@ -130,22 +145,103 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen> {
       children: [
         Text('Analiz', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSizes.space12),
-        _BarcodeRow(
-          controller: _barcodeCtrl,
-          focusNode: _barcodeFocus,
-          looking: _looking,
-          isMobile: isMobile,
-          onSubmit: () => _lookup(),
-          onScan: kIsWeb ? null : _scanCamera,
-          onProductSelected: _selectProduct,
+        TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelColor: AppColors.primary,
+          unselectedLabelColor: AppColors.textMuted,
+          indicatorColor: AppColors.primary,
+          tabs: const [
+            Tab(text: 'Ürün Analizi'),
+            Tab(text: 'İndirim Önerileri'),
+          ],
         ),
-        if (_error != null) ...[
+        const SizedBox(height: AppSizes.space12),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _ProductAnalysisTab(
+                barcodeCtrl: _barcodeCtrl,
+                barcodeFocus: _barcodeFocus,
+                looking: _looking,
+                error: _error,
+                product: _product,
+                start: _start,
+                end: _end,
+                isMobile: isMobile,
+                onSubmit: () => _lookup(),
+                onScan: kIsWeb ? null : _scanCamera,
+                onProductSelected: _selectProduct,
+                onPickStart: _pickStart,
+                onPickEnd: _pickEnd,
+              ),
+              _DiscountRecommendationsTab(
+                onOpenProduct: _openFromRecommendation,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── 1. sekme: mevcut barkod ara + ürün grafiği akışı (davranış DEĞİŞMEDİ) ───
+
+class _ProductAnalysisTab extends StatelessWidget {
+  final TextEditingController barcodeCtrl;
+  final FocusNode barcodeFocus;
+  final bool looking;
+  final String? error;
+  final Product? product;
+  final DateTime start;
+  final DateTime end;
+  final bool isMobile;
+  final VoidCallback onSubmit;
+  final VoidCallback? onScan;
+  final void Function(Product) onProductSelected;
+  final VoidCallback onPickStart;
+  final VoidCallback onPickEnd;
+
+  const _ProductAnalysisTab({
+    required this.barcodeCtrl,
+    required this.barcodeFocus,
+    required this.looking,
+    required this.error,
+    required this.product,
+    required this.start,
+    required this.end,
+    required this.isMobile,
+    required this.onSubmit,
+    required this.onScan,
+    required this.onProductSelected,
+    required this.onPickStart,
+    required this.onPickEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _BarcodeRow(
+          controller: barcodeCtrl,
+          focusNode: barcodeFocus,
+          looking: looking,
+          isMobile: isMobile,
+          onSubmit: onSubmit,
+          onScan: onScan,
+          onProductSelected: onProductSelected,
+        ),
+        if (error != null) ...[
           const SizedBox(height: AppSizes.space12),
-          _ErrorBanner(_error!),
+          _ErrorBanner(error!),
         ],
         const SizedBox(height: AppSizes.space16),
         Expanded(
-          child: _product == null
+          child: product == null
               ? const Center(
                   child: Text(
                     'Bir ürün barkodu okutun veya yazın — satış adedi grafiği burada görünür.',
@@ -154,13 +250,13 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen> {
                   ),
                 )
               : _AnalizContent(
-                  key: ValueKey(_product!.id),
-                  product: _product!,
-                  start: _start,
-                  end: _end,
+                  key: ValueKey(product!.id),
+                  product: product!,
+                  start: start,
+                  end: end,
                   isMobile: isMobile,
-                  onPickStart: _pickStart,
-                  onPickEnd: _pickEnd,
+                  onPickStart: onPickStart,
+                  onPickEnd: onPickEnd,
                 ),
         ),
       ],
@@ -993,6 +1089,183 @@ class _StatChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── 2. sekme: İndirim Önerileri ─────────────────────────────────────────────
+// `discount_recommendations` RPC'sinin (0050 migration) döndürdüğü, veri-
+// temelli (fiyat esnekliği regresyonu) ciro-artırıcı öneri listesi — bkz.
+// migration dosyasındaki metodoloji notu. Yalnızca yeterli geçmiş
+// fiyat/satış çeşitliliği olan ürünler burada görünür; çoğu ürün hiç
+// görünmeyebilir (bu beklenen/normal bir durumdur, hata değildir).
+class _DiscountRecommendationsTab extends ConsumerWidget {
+  final void Function(DiscountRecommendation) onOpenProduct;
+
+  const _DiscountRecommendationsTab({required this.onOpenProduct});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(discountRecommendationsProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Geçmiş satışlardaki fiyat-adet ilişkisinden hesaplanan, '
+                'ciroyu artırması beklenen indirim önerileri. Tahminler '
+                'istatistikseldir, kesin sonuç garanti etmez.',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ),
+            const SizedBox(width: AppSizes.space8),
+            IconButton(
+              tooltip: 'Yenile',
+              icon: const Icon(Icons.refresh, size: 20),
+              onPressed: () => ref.invalidate(discountRecommendationsProvider),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSizes.space12),
+        Expanded(
+          child: async.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSizes.space24),
+                child: Text('Hata: $e', textAlign: TextAlign.center),
+              ),
+            ),
+            data: (recs) {
+              if (recs.isEmpty) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(AppSizes.space24),
+                    child: Text(
+                      'Şu an için veri-temelli bir indirim önerisi yok.\n'
+                      'Bu genelde ürünlerin geçmişte yeterince farklı '
+                      'fiyat/indirim seviyesinde satılmamış olmasından '
+                      'kaynaklanır.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    ),
+                  ),
+                );
+              }
+              return ListView.separated(
+                itemCount: recs.length,
+                separatorBuilder: (_, _) => const SizedBox(height: AppSizes.space8),
+                itemBuilder: (context, i) => _DiscountRecommendationCard(
+                  rec: recs[i],
+                  onTap: () => onOpenProduct(recs[i]),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DiscountRecommendationCard extends StatelessWidget {
+  final DiscountRecommendation rec;
+  final VoidCallback onTap;
+
+  const _DiscountRecommendationCard({required this.rec, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+      child: Container(
+        decoration: AppSizes.cardDecoration(),
+        padding: const EdgeInsets.all(AppSizes.space12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        rec.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (rec.barcode != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Barkod: ${rec.barcode}',
+                          style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                _ConfidenceBadge(highConfidence: rec.isHighConfidence),
+              ],
+            ),
+            const SizedBox(height: AppSizes.space12),
+            Wrap(
+              spacing: AppSizes.space8,
+              runSpacing: AppSizes.space8,
+              children: [
+                _StatChip('Önerilen İndirim', '%${rec.recommendedDiscountPercent}', AppColors.danger),
+                _StatChip(
+                  'Fiyat',
+                  '${formatCurrency(rec.price1)} → ${formatCurrency(rec.recommendedPrice)}',
+                  AppColors.primary,
+                ),
+                _StatChip(
+                  'Tahmini Ciro Artışı',
+                  '+%${formatNumber(rec.revenueIncreasePercent)}',
+                  AppColors.success,
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSizes.space8),
+            Text(
+              'Günlük ~${formatCurrency(rec.currentEstDailyRevenue)} → '
+              '~${formatCurrency(rec.recommendedEstDailyRevenue)} '
+              '(${rec.sampleCount} satış, R²=${rec.rSquared.toStringAsFixed(2)}, '
+              'gözlenen fiyat aralığı ${formatCurrency(rec.historicalMinPrice)}–'
+              '${formatCurrency(rec.historicalMaxPrice)})',
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfidenceBadge extends StatelessWidget {
+  final bool highConfidence;
+  const _ConfidenceBadge({required this.highConfidence});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = highConfidence ? AppColors.success : AppColors.textSecondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        highConfidence ? 'Yüksek güven' : 'Orta güven',
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
       ),
     );
   }

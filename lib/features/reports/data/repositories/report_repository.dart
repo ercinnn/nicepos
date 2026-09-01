@@ -3,6 +3,7 @@ import '../../../customers/data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
 import '../models/best_seller_record.dart';
 import '../models/daily_report_summary.dart';
+import '../models/discount_recommendation.dart';
 import '../models/product_analysis_record.dart';
 import '../models/product_sale_record.dart';
 
@@ -300,6 +301,17 @@ class ReportRepository {
 
     records.sort((a, b) => b.saleDate.compareTo(a.saleDate));
     return records;
+  }
+
+  /// Analiz sayfası "İndirim Önerileri" sekmesi — `discount_recommendations`
+  /// RPC'si (0050 migration) tüm ürünler için TEK sorguda veri-temelli
+  /// fiyat esnekliği fit edip ciro-artırıcı önerileri döner (bkz. migration
+  /// dosyasındaki metodoloji notu).
+  Future<List<DiscountRecommendation>> fetchDiscountRecommendations() async {
+    final rows = await _client.rpc('discount_recommendations');
+    return (rows as List)
+        .map((r) => DiscountRecommendation.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
   }
 }
 

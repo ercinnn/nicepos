@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/models/best_seller_record.dart';
 import '../data/models/daily_report_summary.dart';
+import '../data/models/discount_recommendation.dart';
 import '../data/models/product_analysis_record.dart';
 import '../data/models/product_sale_record.dart';
 import '../data/repositories/report_repository.dart';
@@ -67,4 +68,12 @@ final productAnalysisProvider =
   (ref, param) => ref
       .watch(reportRepositoryProvider)
       .fetchProductAnalysis(start: param.start, end: param.end),
+);
+
+// ─── İndirim Önerileri (Analiz sayfası 2. sekme) ─────────────────────────────
+// Parametresiz — sunucu tüm ürünleri tek sorguda tarar, autoDispose: sekmeye
+// her dönüşte taze veri (dashboard/gorevler ile aynı karar).
+final discountRecommendationsProvider =
+    FutureProvider.autoDispose<List<DiscountRecommendation>>(
+  (ref) => ref.watch(reportRepositoryProvider).fetchDiscountRecommendations(),
 );
