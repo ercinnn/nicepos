@@ -2,6 +2,19 @@
 
 Bu dosya, Claude Code'a bu depoda çalışırken rehberlik eder.
 
+## ⏸️ Beklemede — Dış Onaya Takılı Büyük Girişimler
+
+Aşağıdaki dört iş şu an **ilerletilemez** — hepsi kullanıcının dışındaki bir hesap/onay adımını bekliyor. Aktif geliştirme sırasında bunlara dokunulmaz; ilgili bölüme "bitmemiş görünüyor" diye tekrar girmeden önce engelleyici adımın gerçekten kalkıp kalkmadığı kullanıcıya sorulur.
+
+| Girişim | Bekleyen adım | Detay bölüm |
+|---|---|---|
+| Kiracı Domain Satın Alma | Cloudflare Registrar hesabı/ödeme profili tam kurulup gerçek bir satın alma denenmeli | "Online Satış (Storefront) → Kiracı Domain Satın Alma" |
+| Mevcut Domain Bağlama | Cloudflare API token'ına `Pages: Edit` izni eklenmesi | "Mevcut Domain Bağlama" |
+| iyzico Ödeme Entegrasyonu | Kullanıcının iyzico üye işyeri başvurusu (KYC, süre belirsiz) | "Online Satış (Storefront) → Ödeme Entegrasyonu" |
+| Çok Kiracılı SaaS — Faz G (gerçek faturalama) | Yukarıdaki iyzico entegrasyonuyla aynı bağımlılık | "Çok Kiracılı Mimari → Faz G altyapısı" |
+
+Bunların dışındaki her şey (Satış/Ürünler/Etiket/Kasa/Raporlar/Analiz/Yardım Modu vb.) aktif, normal geliştirme kapsamındadır.
+
 ## Agent'lar
 
 `.claude/agents/` altında özel agent'lar tanımlı:
@@ -250,7 +263,7 @@ Gelir-gider defteri: Gelir (Nakit/POS banka kırılımı + mutabakat) · Gider (
 
 ## Veritabanı (Supabase)
 
-Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, Supabase SQL Editor'da elle uygulanır.
+Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, Supabase SQL Editor'da elle uygulanır. **Hangi migration'ın canlıya uygulandığı `supabase/migrations/APPLIED.md`'de takip edilir** — yeni bir migration yazınca veya kullanıcı Supabase SQL Editor'da bir migration'ı çalıştırdığını doğrulayınca oraya bir satır eklenir. Bu dosya olmadan "0050 mi 0051 mi uygulandı" belirsizliği çıkıyor (yaşanmış karışıklık).
 - `sales`: iskonto birebir saklanır (`discount_percent` + `discount_amount` + `discount_type`).
 - `customer_balances` view'ı borcu `customer_payments`'tan hesaplar.
 - `sales_revenue_between(start_ts,end_ts)` RPC — dashboard ciro kartları için tek `SUM()`.
@@ -296,7 +309,7 @@ NicePOS artık tek şirket için değil, birden çok şirkete SaaS olarak satıl
 
 **Faz D — Etiket şablonları (tamamlandı):** Geniş Logo (`genis_logo_figur.png`) ve İndirim Etiketi (`nice_logo_indirim.png` + sabit "EV GEREÇLERİ & HIRDAVAT" metni) artık kiracı-bazlı — sabit paket asset'leri KALDIRILDI. **KARAR (kullanıcı onaylı):** yeni tenant'lar için nötr/boş varsayılan; hardcoded NicePOS markası hiçbir tenant'a varsayılan olarak sızmaz. Bu iki sekme artık Raf/Poster/Ürün Etiketi'nin zaten kullandığı **paylaşılan** `LabelSheetState.logoDataUrl` mekanizmasını kullanır (`showLogoActions: true`, `LabelsStorageRepository.uploadLogo/fetchLogo/removeLogo` — yeni bir Storage anahtarı YOK) — bir kiracı Raf'ta logo yüklerse Geniş Logo/İndirim'de de otomatik görünür. **Tagline** (İndirim'in logo-altı metni) yeni bir Storage text-key ile (`LabelsStorageRepository.uploadTagline/fetchTagline`, anahtar `__store_tagline.txt`, `logoKey` ile birebir desen) kiracı-bazlı — boşsa satır hiç basılmaz, DB migration GEREKMEDİ. **⚠️ Genelleştirme gerçek bir layout işiydi, veri-kaynağı değişimi değil:** eski Geniş Logo hücresi `genis_logo_figur.png`'yi tam-hücre arka plan yapıp fiyat/ad/barkod'u SABİT ORANLI (`_kWFigPriceLeft` vb.) bu spesifik illüstrasyonun boş alanına bindiriyordu — rastgele bir kiracı logosuyla bu konumlandırma anlamsız kalırdı. Hücre bu yüzden **dikey `Expanded(flex:)` akışına** (logo → fiyat → ad → barkod → alt satır, düz zemin üstünde ortalı `BoxFit.contain` logo) yeniden tasarlandı — Flutter önizleme (`_WideLabelCell`), PDF (`label_pdf.dart` `_wideCell`) ve web print (`etiket_print_web.dart` `.wcell` CSS) ÜÇÜ de aynı oranları paylaşır. İndirim hücresi zaten Column-tabanlıydı, yalnız parametre değişti (logo/tagline artık argüman, sabit asset/metin değil).
 
-**Faz G altyapısı (kısmi — gerçek faturalama olmadan yapılabilecek kısım tamamlandı):** `tenants.plan`/`is_active` artık uygulama tarafında OKUNUYOR ve `is_active=false` gerçekten kilitliyor — `currentTenantProvider`/`TenantInfo` bu iki alanı da select eder (migration GEREKMEDİ, RLS zaten satır-bazlı izin veriyordu), `AppScaffold.build()` provizyon kontrolüyle AYNI desende (widget-seviyeli, router `redirect`'inde DEĞİL) `is_active=false` ise kilitleme ekranı + Çıkış Yap gösterir. **Bilinçli KARAR: self-servis plan değiştirme YOK** — `plan`/`is_active` platform-yönetim alanları, tenant'ın kendi owner/admin'i tarafından değiştirilemez (gerçek ödeme olmadan self-servis plan seçimi anlamsız kalırdı); kontrol yalnız Supabase Table Editor'dan elle yapılır — plan doc'unun öngördüğü "ileride kilitleme için kanca noktası" tam olarak budur. Gerçek faturalandırma/kartla-tahsilat (iyzico) hâlâ kapsam dışı.
+**⏸️ BEKLEMEDE — Faz G altyapısı (kısmi — gerçek faturalama olmadan yapılabilecek kısım tamamlandı):** `tenants.plan`/`is_active` artık uygulama tarafında OKUNUYOR ve `is_active=false` gerçekten kilitliyor — `currentTenantProvider`/`TenantInfo` bu iki alanı da select eder (migration GEREKMEDİ, RLS zaten satır-bazlı izin veriyordu), `AppScaffold.build()` provizyon kontrolüyle AYNI desende (widget-seviyeli, router `redirect`'inde DEĞİL) `is_active=false` ise kilitleme ekranı + Çıkış Yap gösterir. **Bilinçli KARAR: self-servis plan değiştirme YOK** — `plan`/`is_active` platform-yönetim alanları, tenant'ın kendi owner/admin'i tarafından değiştirilemez (gerçek ödeme olmadan self-servis plan seçimi anlamsız kalırdı); kontrol yalnız Supabase Table Editor'dan elle yapılır — plan doc'unun öngördüğü "ileride kilitleme için kanca noktası" tam olarak budur. Gerçek faturalandırma/kartla-tahsilat (iyzico) hâlâ kapsam dışı.
 
 **Faz F Adım 1 — storefront çoklu-kiracı filtreleme (tamamlandı, Supabase migration'ı elle uygulanmayı bekliyor):** Kullanıcı kararı — domain stratejisi **aşamalı**: önce (bugün) query param/slug ile çalışan bir çoklu-kiracı filtrelemesi, sonra (ayrı bir tur) gerçek özel domain bağlama. `0045_storefront_multi_tenant.sql` — anon'un okuyabildiği dar bir `store_tenants` view'ı (`id, name, slug`, `is_active=true` filtreli; `tenants` tablosunun kendisi anon'a kapalı, `current_tenant_id()` üyeliğe bağlı). `storefront/lib/core/tenant_resolver.dart` — `Uri.base`'den slug çözer: önce `?magaza=<slug>` query parametresi (bugün, hiçbir DNS işi olmadan `nicepos-online-satis.pages.dev` üzerinde çalışır), sonra alt alan adı (`<slug>.<wildcard-domain>`, Adım 2 kurulunca otomatik devreye girer), ikisi de yoksa `defaultTenantSlug` (`ilk-magaza`) — mevcut canlı site bookmark/QR kodları davranış değiştirmeden çalışmaya devam eder. Çözümleme `main.dart`'ta `runApp`'TEN ÖNCE bir kez yapılır (`currentTenantProvider.overrideWithValue`) — ekranlar async yükleme durumu yönetmez. `StoreRepository.fetchProducts/fetchProductById/fetchCategories` artık zorunlu `tenantId` alır (`online_products`/`product_groups` RLS'i anon'a hâlâ TÜM kiracıları açık bırakıyor — 0040/0029 — izolasyon istemci tarafı `.eq('tenant_id', ...)` ile sağlanır, aynı desen `online_products`'ın kendisinin zaten kurduğu desendir). Hardcoded "NicePOS" markası (`app.dart` title, `store_app_bar.dart`, `store_footer.dart`) kiracı adına döndü. Ana uygulamada `/online-satis` ekranına `_StorefrontLinkCard` eklendi — kiracı kendi mağaza linkini (`https://nicepos-online-satis.pages.dev/?magaza=<slug>`) kopyalayabilir (`TenantInfo`'ya `slug` alanı eklendi, `auth_provider.dart`). **⚠️ `0045_storefront_multi_tenant.sql` Supabase SQL Editor'da elle uygulanmadan storefront "Mağaza bilgisi yüklenemedi" hatası verir** (yerel testte doğrulandı — `store_tenants` view'ı yoksa `resolveTenant` `PostgrestException` fırlatıp `main.dart`'taki hata ekranına düşer, bu davranış kasıtlı/beklenen).
 
@@ -318,7 +331,7 @@ Ana POS'un dışında, **ayrı bir Flutter web projesi** olarak kurulu ikinci bi
 - **Tasarım sistemi AYRI:** `storefront/design/design-tokens.md` — ana uygulamanın koyu "Enstrüman Konsolu" diliyle KARIŞTIRILMAZ, sıcak/aydınlık perakende kimliği (Space Grotesk başlık + Inter gövde tipografik çifti, `google_fonts`; ana uygulamanın "altın ray" imzasının statik/ışıltısız yorumu — hero banner + AppBar alt çizgisi). Agent rosteri de ayrı (`magaza-tasarim-lideri`/`magaza-tasarimci`/`magaza-gorsel-elestirmen` — bkz. yukarıdaki "Agent'lar" bölümü).
 - **⚠️ Bilinen tuzak:** yatay `ListView` cross-axis'te çocuklarına DAR (tight) yükseklik zorlar — 200+ kategori bu yüzden `Wrap` (sabit `maxHeight` + dikey kaydırma) ile gösterilir, yatay `ListView` DEĞİL (kategori chip'i içeriden taşıyordu, yaşanmış hata).
 
-### Ödeme Entegrasyonu (planlandı, HENÜZ YAPILMADI)
+### ⏸️ BEKLEMEDE — Ödeme Entegrasyonu (planlandı, HENÜZ YAPILMADI)
 
 **Karar: iyzico.** Türkiye'de TL hesaba ödeme aktarımı yapan, hosted checkout/iframe sunan (kart bilgisi bize hiç dokunmaz, PCI yükü minimal) bir sağlayıcı gerekiyordu — Stripe TL/Türkiye tarafında sınırlı olduğundan elenmiş, PayTR ikinci sırada değerlendirilmişti. **Kullanıcının henüz bir iyzico üye işyeri hesabı YOK** — bu, entegrasyon çalışmasının önündeki ilk ve zorunlu adım (KYC/işletme doğrulaması gerektirir, Claude bunu kullanıcı adına yapamaz).
 
@@ -334,7 +347,7 @@ Ana POS'un dışında, **ayrı bir Flutter web projesi** olarak kurulu ikinci bi
 
 **⚠️ Bu bölümdeki iyzico entegrasyonu AYRI bir şey:** aşağıdaki "Kiracı Domain Satın Alma" da AYRI bir iyzico kullanımı içeriyor — orada tahsilat storefront MÜŞTERİSİNDEN değil, **kiracıdan (mağaza sahibinden)** yapılıyor (domain ücreti). İkisi de aynı iyzico üye işyeri hesabını paylaşır (tek başvuru yeterli), ama akışlar/kod tabanları farklı.
 
-### Kiracı Domain Satın Alma (Faz F Adım 2 — Aşama A tamamlandı, gerçek hesaplar bekleniyor)
+### ⏸️ BEKLEMEDE — Kiracı Domain Satın Alma (Faz F Adım 2 — Aşama A tamamlandı, gerçek hesaplar bekleniyor)
 
 Kullanıcı isteği: kiracılar `/online-satis` ekranından kendi domain'lerini arayıp bizim üzerimizden satın alabilsin, domain otomatik kaydedilip storefront'a bağlansın (tam otomatik, manuel adım yok). Detaylı plan: `~/.claude/plans/kullan-c-lar-kendi-hesaplar-ndayken-onli-lively-teacup.md`.
 
@@ -355,7 +368,7 @@ Kullanıcı isteği: kiracılar `/online-satis` ekranından kendi domain'lerini 
 - **Aşama C (bekliyor):** iyzico üye işyeri onayı (KYC, süre belirsiz) — `IYZICO_BASE_URL`/key'ler sandbox'tan production'a çevrilir, kod DEĞİŞMEZ.
 - **Aşama B başladı (2026-08-31) — Cloudflare hesabı bağlandı, `domain-search`/`domain-check` gerçek veriyle doğrulandı:** endpoint YOLU tahmini (`/accounts/{account_id}/registrar/...`) doğru çıktı, ama gerçek şema baştaki varsayımdan FARKLIYDI — `domain-search` parametresi `query` DEĞİL `q`; ikisi de `{result:{domains:[{name, registrable, tier, pricing?:{currency, registration_cost, renewal_cost}, reason?}]}}` döner (flat dizi DEĞİL) — `search` yalnız MÜSAİT adayları listeler (sorgulanan tam terim alınmışsa hiç ÇIKMAZ), `check` müsait olmayanı da `registrable:false`+`reason` ile döner. `_shared/cloudflare.ts` `mapDomainResult()` bunu `DomainCandidate`'e çeviriyor. **`registerDomain`/`getRegistrationStatus`/DNS/Pages custom domain uçları HÂLÂ DOĞRULANMADI** — gerçek para harcadıkları için yalnız salt-okunur `search`/`check` test edildi; ilk gerçek satın alma denemesinde bu üçü de aynı şekilde düzeltilmesi gerekebilir.
 
-### Mevcut Domain Bağlama (planlandı, HENÜZ YAPILMADI — ayrı bir akış, satın alma DEĞİL)
+### ⏸️ BEKLEMEDE — Mevcut Domain Bağlama (planlandı, HENÜZ YAPILMADI — ayrı bir akış, satın alma DEĞİL)
 
 Kullanıcı isteği (2026-08-31): kiracı bizim üzerimizden YENİ bir domain satın almak yerine, **halihazırda başka bir yerden sahip olduğu** bir domain'i (örn. `niceevgerecleri.com`, başka bir e-ticaret firması üzerinden alınmış) storefront'una bağlayabilsin. Yukarıdaki "Kiracı Domain Satın Alma" akışından TAMAMEN AYRI — ödeme/iyzico/Cloudflare Registrar kaydı YOK, yalnız DNS bağlama.
 
