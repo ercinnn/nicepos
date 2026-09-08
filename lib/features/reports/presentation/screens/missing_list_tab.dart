@@ -17,10 +17,25 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// Firma. Varsayılan sıralama adet azalan; masaüstünde her sütun başlığına
 /// dokununca `DataTable` yerleşik `sortColumnIndex`/`onSort` mekanizmasıyla
 /// azdan çoğa/çoktan aza değiştirilebilir (sıralama tamamen istemci
-/// tarafında, `records` zaten tek seferde tam çekildiğinden sayfalama yok —
-/// `products_list_screen.dart`'ın server-side sort'undan FARKLI, basit yerel
-/// `List.sort`). Filtre: tarih aralığı (default 2026-01-01 → bugün) —
-/// `best_sellers_tab.dart` ile aynı desen, yalnız min-fiyat filtresi yok.
+/// tarafında, `records` zaten tek seferde tam çekildiğinden sunucu tarafı
+/// sıralama yok — `products_list_screen.dart`'ın server-side sort'undan
+/// FARKLI, basit yerel `List.sort`). Firma sütunu da alfabetik sıralanır;
+/// `.toLowerCase().compareTo()` Unicode kod noktası sırasına göre çalıştığından
+/// rakamlar (0-9) harflerden ÖNCE gelir — kullanıcının istediği "numaralar
+/// başta" davranışı ekstra kod GEREKTİRMEDEN sağlanır.
+///
+/// **Sayfalama:** `_pageSize` (100) — tüm liste tek seferde çekilir
+/// (`records`), sayfalama yalnız GÖRÜNTÜLEME amaçlı istemci tarafı dilimleme
+/// (`List.sublist`). Sıra numarası (#) sayfalar arasında SÜREKLİ (101, 102...
+/// gibi), her sayfada 1'den başlamaz.
+///
+/// **%80 ciro vurgusu (Pareto/ABC):** `_computeTop80ProductIds` TÜM listeyi
+/// (mevcut sıralama/sayfadan BAĞIMSIZ) `totalRevenue` azalana göre sıralayıp
+/// kümülatif toplamı aralığın toplam cirosunun %80'ine ulaşana kadar
+/// işaretler (eşiği aşan son ürün DAHİL — klasik ABC "A sınıfı" tanımı).
+/// İşaretli satırlar `AppColors.success` @0.12 alfa ile açık yeşil boyanır.
+/// Filtre: tarih aralığı (default 2026-01-01 → bugün) — `best_sellers_tab.dart`
+/// ile aynı desen, yalnız min-fiyat filtresi yok.
 class MissingListTab extends ConsumerStatefulWidget {
   const MissingListTab({super.key});
 
@@ -29,6 +44,8 @@ class MissingListTab extends ConsumerStatefulWidget {
 }
 
 class _MissingListTabState extends ConsumerState<MissingListTab> {
+  static const _pageSize = 100;
+
   DateTime _start = DateTime(2026, 1, 1);
   DateTime _end = DateTime.now();
 
@@ -38,10 +55,13 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
   String _sortColumn = 'quantitySold';
   bool _sortAscending = false;
 
+  int _page = 0;
+
   void _onSort(String column, bool ascending) {
     setState(() {
       _sortColumn = column;
       _sortAscending = ascending;
+      _page = 0;
     });
   }
 
@@ -71,6 +91,27 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
     return sorted;
   }
 
+  // Seçili aralıktaki TÜM ürünlerin toplam cirosunun %80'ine kümülatif
+  // olarak ulaşan (eşiği aşan son ürün DAHİL) ürün id'lerini döner —
+  // mevcut sıralama/sayfadan bağımsız, her zaman `totalRevenue` azalana
+  // göre hesaplanır (klasik ABC/Pareto "A sınıfı" tanımı).
+  Set<String> _computeTop80ProductIds(List<MissingListRecord> records) {
+    final byRevenue = List<MissingListRecord>.from(records)
+      ..sort((a, b) => b.totalRevenue.compareTo(a.totalRevenue));
+    final grandTotal = byRevenue.fold<num>(0, (sum, r) => sum + r.totalRevenue);
+    if (grandTotal <= 0) return {};
+    num cumulative = 0;
+    final ids = <String>{};
+    for (final r in byRevenue) {
+      final beforePercent = cumulative / grandTotal * 100;
+      cumulative += r.totalRevenue;
+      if (beforePercent < 80) {
+        ids.add(r.productId);
+      }
+    }
+    return ids;
+  }
+
   Future<void> _pickStart() async {
     final p = await showDatePicker(
       context: context,
@@ -78,7 +119,7 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (p != null) setState(() => _start = p);
+    if (p != null) setState(() { _start = p; _page = 0; });
   }
 
   Future<void> _pickEnd() async {
@@ -88,7 +129,7 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (p != null) setState(() => _end = p);
+    if (p != null) setState(() { _end = p; _page = 0; });
   }
 
   @override
@@ -121,19 +162,62 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
                 );
               }
               final sorted = _sortRecords(records);
+              final topProductIds = _computeTop80ProductIds(records);
+
+              final pageCount = (sorted.length / _pageSize).ceil();
+              final safePage = _page.clamp(0, pageCount - 1);
+              final startIdx = safePage * _pageSize;
+              final endIdx = (startIdx + _pageSize).clamp(0, sorted.length);
+              final pageRecords = sorted.sublist(startIdx, endIdx);
+
               return SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSizes.space8),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                          const SizedBox(width: AppSizes.space8),
+                          const Text(
+                            'Açık yeşil: cironun %80\'ini oluşturan ürünler',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     ReportTableCard(
                       child: isMobile
-                          ? _MissingListMobileList(records: sorted)
+                          ? _MissingListMobileList(
+                              records: pageRecords,
+                              startIndex: startIdx,
+                              topProductIds: topProductIds,
+                            )
                           : _MissingListTable(
-                              records: sorted,
+                              records: pageRecords,
+                              startIndex: startIdx,
+                              topProductIds: topProductIds,
                               sortColumn: _sortColumn,
                               sortAscending: _sortAscending,
                               onSort: _onSort,
                             ),
+                    ),
+                    const SizedBox(height: AppSizes.space12),
+                    _buildPagination(
+                      page: safePage,
+                      pageCount: pageCount,
+                      totalCount: sorted.length,
                     ),
                     const SizedBox(height: AppSizes.space24),
                   ],
@@ -141,6 +225,41 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
               );
             },
           ),
+        ),
+      ],
+    );
+  }
+
+  // ── Sayfalama kontrolü ─────────────────────────────────────────────────────
+  Widget _buildPagination({
+    required int page,
+    required int pageCount,
+    required int totalCount,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        TextButton.icon(
+          onPressed:
+              page > 0 ? () => setState(() => _page = page - 1) : null,
+          icon: const Icon(Icons.chevron_left),
+          label: const Text('Önceki'),
+        ),
+        const SizedBox(width: AppSizes.space16),
+        Text(
+          'Sayfa ${page + 1} / $pageCount  ·  toplam ${formatNumber(totalCount)} ürün',
+          style: const TextStyle(
+            fontSize: 13,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(width: AppSizes.space16),
+        TextButton.icon(
+          onPressed: page < pageCount - 1
+              ? () => setState(() => _page = page + 1)
+              : null,
+          icon: const Icon(Icons.chevron_right),
+          label: const Text('Sonraki'),
         ),
       ],
     );
@@ -216,12 +335,16 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
 
 class _MissingListTable extends StatelessWidget {
   final List<MissingListRecord> records;
+  final int startIndex;
+  final Set<String> topProductIds;
   final String sortColumn;
   final bool sortAscending;
   final void Function(String column, bool ascending) onSort;
 
   const _MissingListTable({
     required this.records,
+    required this.startIndex,
+    required this.topProductIds,
     required this.sortColumn,
     required this.sortAscending,
     required this.onSort,
@@ -288,9 +411,15 @@ class _MissingListTable extends StatelessWidget {
           final r = records[i];
           final hasBarcode = r.barcode != null && r.barcode!.isNotEmpty;
           final lowStock = r.stockQuantity <= 0;
-          return DataRow(cells: [
+          final isTop80 = topProductIds.contains(r.productId);
+          return DataRow(
+            color: isTop80
+                ? WidgetStateProperty.all(
+                    AppColors.success.withValues(alpha: 0.12))
+                : null,
+            cells: [
             DataCell(Text(
-              '${i + 1}',
+              '${startIndex + i + 1}',
               style: const TextStyle(
                 color: AppColors.textMuted,
                 fontSize: 12,
@@ -369,7 +498,13 @@ class _MissingListTable extends StatelessWidget {
 
 class _MissingListMobileList extends StatelessWidget {
   final List<MissingListRecord> records;
-  const _MissingListMobileList({required this.records});
+  final int startIndex;
+  final Set<String> topProductIds;
+  const _MissingListMobileList({
+    required this.records,
+    required this.startIndex,
+    required this.topProductIds,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -383,7 +518,12 @@ class _MissingListMobileList extends StatelessWidget {
         final r = records[i];
         final hasBarcode = r.barcode != null && r.barcode!.isNotEmpty;
         final lowStock = r.stockQuantity <= 0;
-        return Padding(
+        final isTop80 = topProductIds.contains(r.productId);
+        return Container(
+          color: isTop80
+              ? AppColors.success.withValues(alpha: 0.12)
+              : null,
+          child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSizes.space12,
             vertical: AppSizes.space12,
@@ -394,7 +534,7 @@ class _MissingListMobileList extends StatelessWidget {
               SizedBox(
                 width: 28,
                 child: Text(
-                  '${i + 1}',
+                  '${startIndex + i + 1}',
                   style: const TextStyle(
                     color: AppColors.textMuted,
                     fontSize: 12,
@@ -482,6 +622,7 @@ class _MissingListMobileList extends StatelessWidget {
                 ],
               ),
             ],
+          ),
           ),
         );
       },
