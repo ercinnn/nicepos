@@ -352,6 +352,9 @@ class ReportRepository {
       }
     }
 
+    final grandTotalRevenue =
+        agg.values.fold<num>(0, (sum, a) => sum + a.totalRevenue);
+
     final records = agg.entries
         .map((e) => MissingListRecord(
               productId: e.key,
@@ -361,6 +364,9 @@ class ReportRepository {
               quantitySold: e.value.quantity,
               stockQuantity: e.value.stockQuantity,
               totalRevenue: e.value.totalRevenue,
+              revenueSharePercent: grandTotalRevenue > 0
+                  ? e.value.totalRevenue / grandTotalRevenue * 100
+                  : 0,
             ))
         .toList();
     records.sort((a, b) => b.quantitySold.compareTo(a.quantitySold));

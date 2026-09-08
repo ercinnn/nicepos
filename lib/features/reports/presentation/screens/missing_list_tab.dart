@@ -12,7 +12,8 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// Eksik Listesi sekmesi (Raporlar 6. sekme).
 ///
 /// Tarama/analiz ekranı → HERO YOK. Kolonlar: Sıra · Ürün (+ barkod) · Adet
-/// (aralıkta satılan) · Toplam Ciro (gerçek/indirim-sonrası) · Firma · Stok
+/// (aralıkta satılan) · Toplam Ciro (gerçek/indirim-sonrası) · Ciro Payı
+/// (seçili aralıktaki TÜM ürünlerin toplam cirosuna oranı, %) · Firma · Stok
 /// (güncel). Sıralama adet azalan. Filtre: tarih aralığı (default 2026-01-01
 /// → bugün) — `best_sellers_tab.dart` ile aynı desen, yalnız min-fiyat
 /// filtresi yok.
@@ -179,6 +180,7 @@ class _MissingListTable extends StatelessWidget {
           DataColumn(label: Text('Ürün')),
           DataColumn(label: Text('Adet'), numeric: true),
           DataColumn(label: Text('Toplam Ciro'), numeric: true),
+          DataColumn(label: Text('Ciro Payı'), numeric: true),
           DataColumn(label: Text('Firma')),
           DataColumn(label: Text('Stok'), numeric: true),
         ],
@@ -230,6 +232,14 @@ class _MissingListTable extends StatelessWidget {
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            )),
+            DataCell(Text(
+              _formatRevenueShare(r.revenueSharePercent),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
                 fontFeatures: [FontFeature.tabularFigures()],
               ),
             )),
@@ -350,6 +360,16 @@ class _MissingListMobileList extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSizes.space4),
                   Text(
+                    _formatRevenueShare(r.revenueSharePercent),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.space4),
+                  Text(
                     'Stok: ${formatNumber(r.stockQuantity)}',
                     style: TextStyle(
                       fontSize: 12,
@@ -368,3 +388,6 @@ class _MissingListMobileList extends StatelessWidget {
     );
   }
 }
+
+// Ciro Payı hücresi biçimi: nokta sonrası daima 2 hane, boşluksuz (%2.50).
+String _formatRevenueShare(num value) => '%${value.toStringAsFixed(2)}';
