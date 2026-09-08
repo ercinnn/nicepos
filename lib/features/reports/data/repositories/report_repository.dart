@@ -236,12 +236,21 @@ class ReportRepository {
 
   /// Eksik Listesi (Raporlar 6. sekme). Seçili tarih aralığında satılan
   /// ürünleri adet azalan sırayla, güncel stok + Firma (products.description
-  /// alanının ilk parçası, bkz. product_form_screen._applyDescription) ile
-  /// birlikte döndürür.
+  /// alanının ilk parçası, bkz. product_form_screen._applyDescription) +
+  /// gerçek (indirim sonrası) toplam ciro ile birlikte döndürür.
   ///
-  /// Aggregation (Dart tarafı): `product_id`'ye göre grupla → adet = Σ
-  /// quantity. Firma/stok/ad/barkod ürün satırından bir kez alınır (satış
-  /// başına değişmez).
+  /// Aggregation (Dart tarafı) iki geçişli:
+  /// 1. Satır satır gelen kalemler ÖNCE `sale_id`'ye göre gruplanır — bir
+  ///    satışın genel indirimini (`sales.discount_amount`, her zaman TL)
+  ///    yalnız o satıştaki kalemlere dağıtabilmek için.
+  /// 2. Her satış grubunda: kendi satırında indirimi OLAN kalemler
+  ///    (`discount_value > 0`) `total`'larını aynen korur (genel indirimden
+  ///    etkilenmez); kendi satırında indirimi OLMAYAN kalemler satışın genel
+  ///    indirim tutarını kendi `total`'larının o grup içindeki payına
+  ///    (`nonDiscountedSubtotal`) orantılı olarak paylaşır. Sonuç, `product_id`
+  ///    bazında `totalRevenue` olarak birikir (adet = Σ quantity ile aynı
+  ///    desende). Firma/stok/ad/barkod ürün satırından bir kez alınır (satış
+  ///    başına değişmez).
   Future<List<MissingListRecord>> fetchMissingList({
     required DateTime start,
     required DateTime end,
@@ -258,7 +267,7 @@ class ReportRepository {
       final page = await _client
           .from('sale_items')
           .select(
-              'quantity, product_id, sales!inner(sale_date), products(name, barcode, description, stock_quantity)')
+              'sale_id, quantity, discount_value, total, product_id, sales!inner(sale_date, discount_amount), products(name, barcode, description, stock_quantity)')
           .gte('sales.sale_date', startDay.toUtc().toIso8601String())
           .lt('sales.sale_date', endDay.toUtc().toIso8601String())
           .order('product_id')
@@ -271,33 +280,75 @@ class ReportRepository {
       from += pageSize;
     }
 
-    final agg = <String, _MissingListAgg>{};
+    // 1. geçiş: sale_id'ye göre grupla.
+    final saleGroups = <String, List<Map<String, dynamic>>>{};
     for (final row in rows) {
-      final productId = row['product_id'] as String?;
-      if (productId == null) continue;
+      final saleId = row['sale_id'] as String?;
+      if (saleId == null) continue;
+      saleGroups.putIfAbsent(saleId, () => []).add(row);
+    }
 
-      final rawProduct = row['products'];
-      final product = rawProduct is Map
-          ? Map<String, dynamic>.from(rawProduct)
-          : rawProduct is List && rawProduct.isNotEmpty
-              ? Map<String, dynamic>.from(rawProduct.first as Map)
+    final agg = <String, _MissingListAgg>{};
+
+    // 2. geçiş: her satış grubunda genel indirimi orantılı dağıt.
+    for (final saleRows in saleGroups.values) {
+      final rawSale = saleRows.first['sales'];
+      final saleMap = rawSale is Map
+          ? Map<String, dynamic>.from(rawSale)
+          : rawSale is List && rawSale.isNotEmpty
+              ? Map<String, dynamic>.from(rawSale.first as Map)
               : null;
-      if (product == null) continue; // silinmiş ürün → atla
+      final saleDiscountAmount = (saleMap?['discount_amount'] as num?) ?? 0;
 
-      final quantity = (row['quantity'] as num?) ?? 0;
+      num nonDiscountedSubtotal = 0;
+      for (final row in saleRows) {
+        final rowDiscount = (row['discount_value'] as num?) ?? 0;
+        if (rowDiscount <= 0) {
+          nonDiscountedSubtotal += (row['total'] as num?) ?? 0;
+        }
+      }
 
-      final existing = agg[productId];
-      if (existing == null) {
-        agg[productId] = _MissingListAgg(
-          name: (product['name'] as String?) ?? '-',
-          barcode: product['barcode'] as String?,
-          companyName:
-              _parseFirmaFromDescription(product['description'] as String?),
-          stockQuantity: (product['stock_quantity'] as num?) ?? 0,
-          quantity: quantity,
-        );
-      } else {
-        existing.quantity += quantity;
+      for (final row in saleRows) {
+        final productId = row['product_id'] as String?;
+        if (productId == null) continue;
+
+        final rawProduct = row['products'];
+        final product = rawProduct is Map
+            ? Map<String, dynamic>.from(rawProduct)
+            : rawProduct is List && rawProduct.isNotEmpty
+                ? Map<String, dynamic>.from(rawProduct.first as Map)
+                : null;
+        if (product == null) continue; // silinmiş ürün → atla
+
+        final quantity = (row['quantity'] as num?) ?? 0;
+        final rowTotal = (row['total'] as num?) ?? 0;
+        final rowDiscount = (row['discount_value'] as num?) ?? 0;
+
+        final num realRevenue;
+        if (rowDiscount > 0 || nonDiscountedSubtotal <= 0) {
+          // Kendi satırında indirim var → genel indirimden etkilenmez.
+          // (veya dağıtılacak indirimsiz grup yoksa → olduğu gibi say.)
+          realRevenue = rowTotal;
+        } else {
+          realRevenue = rowTotal -
+              saleDiscountAmount * (rowTotal / nonDiscountedSubtotal);
+        }
+
+        final existing = agg[productId];
+        if (existing == null) {
+          agg[productId] = _MissingListAgg(
+            name: (product['name'] as String?) ?? '-',
+            barcode: product['barcode'] as String?,
+            companyName:
+                _parseFirmaFromDescription(product['description'] as String?),
+            stockQuantity: (product['stock_quantity'] as num?) ?? 0,
+            quantity: quantity,
+            totalRevenue: realRevenue,
+          );
+        } else {
+          existing.quantity += quantity;
+          existing.totalRevenue += realRevenue;
+        }
       }
     }
 
@@ -309,6 +360,7 @@ class ReportRepository {
               companyName: e.value.companyName,
               quantitySold: e.value.quantity,
               stockQuantity: e.value.stockQuantity,
+              totalRevenue: e.value.totalRevenue,
             ))
         .toList();
     records.sort((a, b) => b.quantitySold.compareTo(a.quantitySold));
@@ -422,6 +474,7 @@ class _MissingListAgg {
   final String companyName;
   final num stockQuantity;
   num quantity;
+  num totalRevenue;
 
   _MissingListAgg({
     required this.name,
@@ -429,6 +482,7 @@ class _MissingListAgg {
     required this.companyName,
     required this.stockQuantity,
     required this.quantity,
+    required this.totalRevenue,
   });
 }
 

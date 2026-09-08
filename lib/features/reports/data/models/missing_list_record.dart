@@ -2,7 +2,8 @@
 ///
 /// Bir ürünün seçili tarih aralığındaki toplam satış adedini, Firma bilgisini
 /// (`products.description` alanının ilk parçası, bkz. `ReportRepository`
-/// `_parseFirmaFromDescription`) ve güncel stok adedini taşır.
+/// `_parseFirmaFromDescription`), güncel stok adedini ve gerçek (indirim
+/// sonrası) toplam cirosunu taşır.
 class MissingListRecord {
   final String productId;
   final String name;
@@ -10,6 +11,7 @@ class MissingListRecord {
   final String companyName; // description'dan parse edilir, boşsa '-'
   final num quantitySold; // Seçili aralıkta satılan toplam miktar (Σ quantity)
   final num stockQuantity; // Ürünün güncel stok adedi (products.stock_quantity)
+  final num totalRevenue; // Gerçek ciro: satır indirimi + orantılı genel indirim düşülmüş toplam (bkz. ReportRepository.fetchMissingList)
 
   const MissingListRecord({
     required this.productId,
@@ -18,5 +20,6 @@ class MissingListRecord {
     required this.companyName,
     required this.quantitySold,
     required this.stockQuantity,
+    required this.totalRevenue,
   });
 }

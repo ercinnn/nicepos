@@ -12,9 +12,10 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// Eksik Listesi sekmesi (Raporlar 6. sekme).
 ///
 /// Tarama/analiz ekranı → HERO YOK. Kolonlar: Sıra · Ürün (+ barkod) · Adet
-/// (aralıkta satılan) · Firma · Stok (güncel). Sıralama adet azalan. Filtre:
-/// tarih aralığı (default 2026-01-01 → bugün) — `best_sellers_tab.dart` ile
-/// aynı desen, yalnız min-fiyat filtresi yok.
+/// (aralıkta satılan) · Toplam Ciro (gerçek/indirim-sonrası) · Firma · Stok
+/// (güncel). Sıralama adet azalan. Filtre: tarih aralığı (default 2026-01-01
+/// → bugün) — `best_sellers_tab.dart` ile aynı desen, yalnız min-fiyat
+/// filtresi yok.
 class MissingListTab extends ConsumerStatefulWidget {
   const MissingListTab({super.key});
 
@@ -177,6 +178,7 @@ class _MissingListTable extends StatelessWidget {
           DataColumn(label: Text('#')),
           DataColumn(label: Text('Ürün')),
           DataColumn(label: Text('Adet'), numeric: true),
+          DataColumn(label: Text('Toplam Ciro'), numeric: true),
           DataColumn(label: Text('Firma')),
           DataColumn(label: Text('Stok'), numeric: true),
         ],
@@ -220,6 +222,14 @@ class _MissingListTable extends StatelessWidget {
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 color: AppColors.primary,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            )),
+            DataCell(Text(
+              formatCurrency(r.totalRevenue),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
                 fontFeatures: [FontFeature.tabularFigures()],
               ),
             )),
@@ -325,6 +335,16 @@ class _MissingListMobileList extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                       color: AppColors.primary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.space4),
+                  Text(
+                    formatCurrency(r.totalRevenue),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
