@@ -324,5 +324,137 @@ class _BestSellersProviderElement
   num get minPrice => (origin as BestSellersProvider).minPrice;
 }
 
+String _$missingListHash() => r'f75f00d0d186b6fef8a29370867e30856cc075b3';
+
+/// See also [missingList].
+@ProviderFor(missingList)
+const missingListProvider = MissingListFamily();
+
+/// See also [missingList].
+class MissingListFamily extends Family<AsyncValue<List<MissingListRecord>>> {
+  /// See also [missingList].
+  const MissingListFamily();
+
+  /// See also [missingList].
+  MissingListProvider call({required DateTime start, required DateTime end}) {
+    return MissingListProvider(start: start, end: end);
+  }
+
+  @override
+  MissingListProvider getProviderOverride(
+    covariant MissingListProvider provider,
+  ) {
+    return call(start: provider.start, end: provider.end);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'missingListProvider';
+}
+
+/// See also [missingList].
+class MissingListProvider
+    extends AutoDisposeFutureProvider<List<MissingListRecord>> {
+  /// See also [missingList].
+  MissingListProvider({required DateTime start, required DateTime end})
+    : this._internal(
+        (ref) => missingList(ref as MissingListRef, start: start, end: end),
+        from: missingListProvider,
+        name: r'missingListProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$missingListHash,
+        dependencies: MissingListFamily._dependencies,
+        allTransitiveDependencies: MissingListFamily._allTransitiveDependencies,
+        start: start,
+        end: end,
+      );
+
+  MissingListProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.start,
+    required this.end,
+  }) : super.internal();
+
+  final DateTime start;
+  final DateTime end;
+
+  @override
+  Override overrideWith(
+    FutureOr<List<MissingListRecord>> Function(MissingListRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: MissingListProvider._internal(
+        (ref) => create(ref as MissingListRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        start: start,
+        end: end,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<List<MissingListRecord>> createElement() {
+    return _MissingListProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is MissingListProvider &&
+        other.start == start &&
+        other.end == end;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, start.hashCode);
+    hash = _SystemHash.combine(hash, end.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin MissingListRef on AutoDisposeFutureProviderRef<List<MissingListRecord>> {
+  /// The parameter `start` of this provider.
+  DateTime get start;
+
+  /// The parameter `end` of this provider.
+  DateTime get end;
+}
+
+class _MissingListProviderElement
+    extends AutoDisposeFutureProviderElement<List<MissingListRecord>>
+    with MissingListRef {
+  _MissingListProviderElement(super.provider);
+
+  @override
+  DateTime get start => (origin as MissingListProvider).start;
+  @override
+  DateTime get end => (origin as MissingListProvider).end;
+}
+
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
