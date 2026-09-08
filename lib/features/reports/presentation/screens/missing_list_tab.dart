@@ -5,6 +5,8 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../products/application/products_provider.dart';
+import '../../../products/presentation/widgets/company_autocomplete_field.dart';
 import '../../application/reports_provider.dart';
 import '../../data/models/missing_list_record.dart';
 import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
@@ -23,6 +25,21 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// `.toLowerCase().compareTo()` Unicode kod noktası sırasına göre çalıştığından
 /// rakamlar (0-9) harflerden ÖNCE gelir — kullanıcının istediği "numaralar
 /// başta" davranışı ekstra kod GEREKTİRMEDEN sağlanır.
+///
+/// **Firma hücresi tıkla-düzenle (yalnız masaüstü):** `products_list_screen.dart`
+/// `_cell`/`_editableField` ile BENZER desen — hücreye dokununca paylaşılan
+/// `CompanyAutocompleteField` (bkz. `company_autocomplete_field.dart`, aynı
+/// "akıllı" P→2 eşleşme/PA→PALA/PE→PERDECİ davranışı ürün formuyla PAYLAŞILIR)
+/// açılır. Kaydetme Enter'da VEYA odak kaybında (`FocusNode` listener)
+/// tetiklenir — `TapRegion.onTapOutside` KASITLI kullanılmaz: öneri overlay'i
+/// `OverlayPortal` ile hücrenin render alt ağacının DIŞINDA çizildiğinden bir
+/// `TapRegion` öneriye tıklamayı pointer-down anında "dışarı" sayıp seçim
+/// tamamlanmadan kaydedip controller'ı erken dispose ederdi; `_select()` odağı
+/// KORUDUĞUNDAN (`requestFocus()`) öneriye tıklamak odak kaybı SAYILMAZ.
+/// Kaydetme `ProductRepository.updateFirma()` ile ürünün `description`
+/// alanının firma parçasını değiştirir (tarih/durum KORUNUR), ardından
+/// `missingListProvider` invalidate edilip taze veriyle güncellenir (Analiz
+/// sayfasındaki `productSalesHistoryProvider` invalidate deseniyle AYNI).
 ///
 /// **Sayfalama:** `_pageSize` (100) — tüm liste tek seferde çekilir
 /// (`records`), sayfalama yalnız GÖRÜNTÜLEME amaçlı istemci tarafı dilimleme
@@ -56,6 +73,93 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
   bool _sortAscending = false;
 
   int _page = 0;
+
+  // Firma hücresi tıkla-düzenle — yalnız masaüstü tablo, aynı anda tek satır
+  // düzenlenebilir (`products_list_screen.dart` `_editingIds` tekil desenden
+  // farklı olarak burada tek hücre için basitleştirildi). Kaydetme odak
+  // KAYBINDA tetiklenir (`TapRegion.onTapOutside` DEĞİL) — `CompanyAutocompleteField`
+  // önerisi ayrı bir `OverlayPortal`/`TextFieldTapRegion` içinde render edilir
+  // (hücrenin render alt ağacının DIŞINDA), bir `TapRegion` önce
+  // pointer-down'da tetiklenip öneriye tıklamayı "dışarı" sayardı — seçim
+  // tamamlanmadan kaydedip controller'ı erken dispose ederdi. `_select()`
+  // odağı kasıtlı KORUDUĞUNDAN (`widget.focusNode.requestFocus()`) öneriye
+  // tıklamak odak kaybı SAYILMAZ; yalnız gerçekten hücre dışına tıklamak/
+  // Tab'lamak tetikler.
+  MissingListRecord? _editingFirmaRecord;
+  TextEditingController? _firmaCtrl;
+  FocusNode? _firmaFocus;
+  bool _savingFirma = false;
+
+  void _enterFirmaEdit(MissingListRecord r) {
+    _firmaFocus?.removeListener(_onFirmaFocusChange);
+    _firmaCtrl?.dispose();
+    _firmaFocus?.dispose();
+    final focus = FocusNode();
+    focus.addListener(_onFirmaFocusChange);
+    setState(() {
+      _editingFirmaRecord = r;
+      _firmaCtrl = TextEditingController(
+        text: r.companyName == '-' ? '' : r.companyName,
+      );
+      _firmaFocus = focus;
+    });
+  }
+
+  void _onFirmaFocusChange() {
+    if (_firmaFocus != null && !_firmaFocus!.hasFocus) {
+      final r = _editingFirmaRecord;
+      if (r != null) _saveFirma(r);
+    }
+  }
+
+  void _exitFirmaEdit() {
+    _firmaFocus?.removeListener(_onFirmaFocusChange);
+    _firmaCtrl?.dispose();
+    _firmaFocus?.dispose();
+    setState(() {
+      _editingFirmaRecord = null;
+      _firmaCtrl = null;
+      _firmaFocus = null;
+    });
+  }
+
+  Future<void> _saveFirma(MissingListRecord r) async {
+    final ctrl = _firmaCtrl;
+    if (ctrl == null || _editingFirmaRecord?.productId != r.productId) return;
+    final newValue = ctrl.text.trim();
+    final unchanged =
+        newValue == r.companyName || (newValue.isEmpty && r.companyName == '-');
+    if (unchanged) {
+      _exitFirmaEdit();
+      return;
+    }
+    setState(() => _savingFirma = true);
+    try {
+      await ref.read(productRepositoryProvider).updateFirma(r.productId, newValue);
+      final start = _start.isBefore(_end) ? _start : _end;
+      final end = _start.isBefore(_end) ? _end : _start;
+      ref.invalidate(missingListProvider(start: start, end: end));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Firma güncellenemedi: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _savingFirma = false);
+        _exitFirmaEdit();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _firmaFocus?.removeListener(_onFirmaFocusChange);
+    _firmaCtrl?.dispose();
+    _firmaFocus?.dispose();
+    super.dispose();
+  }
 
   void _onSort(String column, bool ascending) {
     setState(() {
@@ -211,6 +315,12 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
                               sortColumn: _sortColumn,
                               sortAscending: _sortAscending,
                               onSort: _onSort,
+                              editingFirmaProductId: _editingFirmaRecord?.productId,
+                              firmaController: _firmaCtrl,
+                              firmaFocusNode: _firmaFocus,
+                              savingFirma: _savingFirma,
+                              onFirmaTap: _enterFirmaEdit,
+                              onFirmaSave: _saveFirma,
                             ),
                     ),
                     const SizedBox(height: AppSizes.space12),
@@ -341,6 +451,14 @@ class _MissingListTable extends StatelessWidget {
   final bool sortAscending;
   final void Function(String column, bool ascending) onSort;
 
+  // Firma hücresi tıkla-düzenle — bkz. _MissingListTabState.
+  final String? editingFirmaProductId;
+  final TextEditingController? firmaController;
+  final FocusNode? firmaFocusNode;
+  final bool savingFirma;
+  final void Function(MissingListRecord r) onFirmaTap;
+  final void Function(MissingListRecord r) onFirmaSave;
+
   const _MissingListTable({
     required this.records,
     required this.startIndex,
@@ -348,6 +466,12 @@ class _MissingListTable extends StatelessWidget {
     required this.sortColumn,
     required this.sortAscending,
     required this.onSort,
+    required this.editingFirmaProductId,
+    required this.firmaController,
+    required this.firmaFocusNode,
+    required this.savingFirma,
+    required this.onFirmaTap,
+    required this.onFirmaSave,
   });
 
   // Sütun sırası: #(0, sıralanamaz) · Ürün(1) · Adet(2) · Stok(3, öne alındı
@@ -480,15 +604,58 @@ class _MissingListTable extends StatelessWidget {
                 fontFeatures: [FontFeature.tabularFigures()],
               ),
             )),
-            DataCell(Text(
-              r.companyName,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            )),
+            DataCell(_buildFirmaCell(r)),
           ]);
         }),
+      ),
+    );
+  }
+
+  // Firma hücresi: normalde tıkla-düzenlemeye geçen salt-okunur `Text`;
+  // düzenlenen satırda paylaşılan `CompanyAutocompleteField` (akıllı P→2
+  // eşleşme/PA→PALA/PE→PERDECİ önerisi). Kaydetme odak kaybında VEYA Enter'da
+  // tetiklenir (bkz. _MissingListTabState._onFirmaFocusChange — `TapRegion`
+  // KASITLI kullanılmaz, öneri overlay'i hücrenin dışında render edildiğinden
+  // yanlış "dışarı tıklama" sayılırdı).
+  Widget _buildFirmaCell(MissingListRecord r) {
+    if (editingFirmaProductId == r.productId &&
+        firmaController != null &&
+        firmaFocusNode != null) {
+      if (savingFirma) {
+        return const SizedBox(
+          width: 160,
+          height: 20,
+          child: Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      }
+      return SizedBox(
+        width: 160,
+        child: CompanyAutocompleteField(
+          controller: firmaController!,
+          focusNode: firmaFocusNode!,
+          dense: true,
+          autofocus: true,
+          onSubmitted: (_) => onFirmaSave(r),
+        ),
+      );
+    }
+    return InkWell(
+      onTap: () => onFirmaTap(r),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSizes.space6),
+        child: Text(
+          r.companyName,
+          style: const TextStyle(
+            fontSize: 13,
+            color: AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }

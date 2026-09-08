@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/supabase/tenant_context.dart';
@@ -421,6 +422,26 @@ class ProductRepository {
         .update({'is_online_active': value}).eq('id', productId);
   }
 
+  // Yalnızca Firma'yı (description'ın ilk parçası, "$firma & $ggaayy & $durum"
+  // biçimi — bkz. product_form_screen.dart _applyDescription/_composeDescription)
+  // günceller; tarih/durum KORUNUR. Güncel description'ı önce taze çeker
+  // (raporlardaki liste bayat olabilir, çakışma riskine karşı) — Eksik Listesi
+  // Firma hücresi tıkla-düzenle akışı kullanır (bkz. missing_list_tab.dart).
+  Future<void> updateFirma(String productId, String newFirma) async {
+    final row = await _client
+        .from('products')
+        .select('description')
+        .eq('id', productId)
+        .single();
+    final newDescription = _composeDescriptionWithFirma(
+      row['description'] as String?,
+      newFirma,
+    );
+    await _client
+        .from('products')
+        .update({'description': newDescription}).eq('id', productId);
+  }
+
   // Online Satış kontrol panelinde gösterilen, halihazırda mağazada aktif
   // ürünler listesi.
   Future<List<Product>> fetchOnlineActive() async {
@@ -514,4 +535,27 @@ class ProductRepository {
     await _client.storage.from('product-images').uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
     return _client.storage.from('product-images').getPublicUrl(path);
   }
+}
+
+/// "$firma & $ggaayy & $durum" biçimini koruyarak yalnız firma parçasını
+/// değiştirir (bkz. product_form_screen.dart `_applyDescription`/
+/// `_composeDescription` ile AYNI kural, ayrı bir kopyası — o widget'a bağlı
+/// state alanları (`_detailDate`/`_statusLetter`) taşımadığından top-level
+/// bir fonksiyon olarak burada tutulur). Eski açıklama geçerli 3 parçalı
+/// biçimdeyse (son parça 'Y' veya 'G') tarih/durum AYNEN korunur; aksi halde
+/// (boş/eski serbest metin) tarih=bugün, durum='Y' varsayılır — geriye dönük
+/// uyumluluk için `_applyDescription`'ın fallback'iyle birebir aynı.
+String _composeDescriptionWithFirma(String? oldDescription, String newFirma) {
+  final raw = (oldDescription ?? '').trim();
+  final parts = raw.split(' & ');
+  String ggaayy;
+  String durum;
+  if (parts.length == 3 && (parts[2] == 'Y' || parts[2] == 'G')) {
+    ggaayy = parts[1];
+    durum = parts[2];
+  } else {
+    ggaayy = DateFormat('dd/MM/yy', 'tr_TR').format(DateTime.now());
+    durum = 'Y';
+  }
+  return '${newFirma.trim()} & $ggaayy & $durum';
 }
