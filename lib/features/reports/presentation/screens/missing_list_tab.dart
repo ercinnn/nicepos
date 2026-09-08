@@ -6,6 +6,8 @@ import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../products/application/products_provider.dart';
+import '../../../products/data/repositories/product_repository.dart'
+    show composeDescriptionWithFirma;
 import '../../../products/presentation/widgets/company_autocomplete_field.dart';
 import '../../application/reports_provider.dart';
 import '../../data/models/missing_list_record.dart';
@@ -74,6 +76,31 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
 
   int _page = 0;
 
+  // Firma kaydından sonra ekranı YALNIZ o hücre için güncellemek üzere:
+  // sunucudan taze veri çekmek (`ref.invalidate(missingListProvider(...))`)
+  // hem YAVAŞ (tüm `fetchMissingList` sorgusu — çok sayfalı `sale_items`
+  // sorgusu — baştan çalışırdı) hem de TÜM tabloyu yeniden yükleyip
+  // spinner'a düşürürdü (kullanıcı şikayeti: "çok uzun sürüyor" +
+  // "ekran anında yenilenmesin, sadece değişen hücre yenilensin"). Bunun
+  // yerine `records` listesi provider'dan geldiği gibi bırakılır, yalnız bu
+  // iki override map'i üzerinden görüntüleme anında yamanır (bkz.
+  // `_applyFirmaOverrides`) — provider bir sonraki GERÇEK sebeple (tarih
+  // aralığı değişince) yeniden çektiğinde zaten güncel veriyle örtüşür.
+  final Map<String, String> _firmaNameOverrides = {};
+  final Map<String, String> _firmaDescriptionOverrides = {};
+
+  List<MissingListRecord> _applyFirmaOverrides(List<MissingListRecord> records) {
+    if (_firmaNameOverrides.isEmpty) return records;
+    return records.map((r) {
+      final name = _firmaNameOverrides[r.productId];
+      if (name == null) return r;
+      return r.copyWith(
+        companyName: name,
+        rawDescription: _firmaDescriptionOverrides[r.productId],
+      );
+    }).toList();
+  }
+
   // Firma hücresi tıkla-düzenle — yalnız masaüstü tablo, aynı anda tek satır
   // düzenlenebilir (`products_list_screen.dart` `_editingIds` tekil desenden
   // farklı olarak burada tek hücre için basitleştirildi). Kaydetme odak
@@ -135,10 +162,18 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
     }
     setState(() => _savingFirma = true);
     try {
-      await ref.read(productRepositoryProvider).updateFirma(r.productId, newValue);
-      final start = _start.isBefore(_end) ? _start : _end;
-      final end = _start.isBefore(_end) ? _end : _start;
-      ref.invalidate(missingListProvider(start: start, end: end));
+      // Ham description elimizde (rapor satırından/önceki override'dan) —
+      // sunucudan tekrar SELECT ETMEDEN tek UPDATE ile kaydeder (hız şikayeti
+      // buradan geliyordu, bkz. ProductRepository.updateDescription notu).
+      final newDescription =
+          composeDescriptionWithFirma(r.rawDescription, newValue);
+      await ref
+          .read(productRepositoryProvider)
+          .updateDescription(r.productId, newDescription);
+      setState(() {
+        _firmaNameOverrides[r.productId] = newValue.isEmpty ? '-' : newValue;
+        _firmaDescriptionOverrides[r.productId] = newDescription;
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -223,7 +258,14 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (p != null) setState(() { _start = p; _page = 0; });
+    if (p != null) {
+      setState(() {
+        _start = p;
+        _page = 0;
+        _firmaNameOverrides.clear();
+        _firmaDescriptionOverrides.clear();
+      });
+    }
   }
 
   Future<void> _pickEnd() async {
@@ -233,7 +275,14 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
-    if (p != null) setState(() { _end = p; _page = 0; });
+    if (p != null) {
+      setState(() {
+        _end = p;
+        _page = 0;
+        _firmaNameOverrides.clear();
+        _firmaDescriptionOverrides.clear();
+      });
+    }
   }
 
   @override
@@ -259,12 +308,16 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
           child: recordsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text('Hata: $e')),
-            data: (records) {
-              if (records.isEmpty) {
+            data: (rawRecords) {
+              if (rawRecords.isEmpty) {
                 return const ReportEmptyCard(
                   'Seçili aralıkta satılan ürün bulunamadı.',
                 );
               }
+              // Firma kaydı sonrası tam sunucu round-trip'i YERİNE yerel
+              // yama (bkz. _firmaNameOverrides doc'u) — yalnız değişen
+              // hücre(ler) güncellenmiş görünür, tablo yeniden yüklenmez.
+              final records = _applyFirmaOverrides(rawRecords);
               final sorted = _sortRecords(records);
               final topProductIds = _computeTop80ProductIds(records);
 

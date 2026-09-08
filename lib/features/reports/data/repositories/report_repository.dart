@@ -341,6 +341,7 @@ class ReportRepository {
             barcode: product['barcode'] as String?,
             companyName:
                 _parseFirmaFromDescription(product['description'] as String?),
+            rawDescription: product['description'] as String?,
             stockQuantity: (product['stock_quantity'] as num?) ?? 0,
             quantity: quantity,
             totalRevenue: realRevenue,
@@ -367,6 +368,7 @@ class ReportRepository {
               revenueSharePercent: grandTotalRevenue > 0
                   ? e.value.totalRevenue / grandTotalRevenue * 100
                   : 0,
+              rawDescription: e.value.rawDescription,
             ))
         .toList();
     records.sort((a, b) => b.quantitySold.compareTo(a.quantitySold));
@@ -478,6 +480,7 @@ class _MissingListAgg {
   final String name;
   final String? barcode;
   final String companyName;
+  final String? rawDescription;
   final num stockQuantity;
   num quantity;
   num totalRevenue;
@@ -486,6 +489,7 @@ class _MissingListAgg {
     required this.name,
     required this.barcode,
     required this.companyName,
+    required this.rawDescription,
     required this.stockQuantity,
     required this.quantity,
     required this.totalRevenue,

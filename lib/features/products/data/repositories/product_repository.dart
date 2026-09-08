@@ -422,24 +422,18 @@ class ProductRepository {
         .update({'is_online_active': value}).eq('id', productId);
   }
 
-  // Yalnızca Firma'yı (description'ın ilk parçası, "$firma & $ggaayy & $durum"
-  // biçimi — bkz. product_form_screen.dart _applyDescription/_composeDescription)
-  // günceller; tarih/durum KORUNUR. Güncel description'ı önce taze çeker
-  // (raporlardaki liste bayat olabilir, çakışma riskine karşı) — Eksik Listesi
-  // Firma hücresi tıkla-düzenle akışı kullanır (bkz. missing_list_tab.dart).
-  Future<void> updateFirma(String productId, String newFirma) async {
-    final row = await _client
-        .from('products')
-        .select('description')
-        .eq('id', productId)
-        .single();
-    final newDescription = _composeDescriptionWithFirma(
-      row['description'] as String?,
-      newFirma,
-    );
+  // Yalnızca description'ı (Firma & GG/AA/YY & Durum biçimi) günceller — TEK
+  // round-trip (`updatePrice1`/`setOnlineActive` ile aynı hedefli-update
+  // deseni). Eksik Listesi Firma hücresi tıkla-düzenle akışı (bkz.
+  // missing_list_tab.dart) yeni description'ı `composeDescriptionWithFirma()`
+  // ile ÖNCEDEN elindeki (rapor satırından gelen) ham description'dan
+  // istemci tarafında kurup buraya hazır geçirir — önceki sürüm burada önce
+  // bir SELECT ile description'ı taze çekiyordu (2 round-trip), bu da Firma
+  // düzenlemesini gözle görülür yavaşlatıyordu (kullanıcı şikayeti).
+  Future<void> updateDescription(String productId, String description) async {
     await _client
         .from('products')
-        .update({'description': newDescription}).eq('id', productId);
+        .update({'description': description}).eq('id', productId);
   }
 
   // Online Satış kontrol panelinde gösterilen, halihazırda mağazada aktif
@@ -544,8 +538,13 @@ class ProductRepository {
 /// bir fonksiyon olarak burada tutulur). Eski açıklama geçerli 3 parçalı
 /// biçimdeyse (son parça 'Y' veya 'G') tarih/durum AYNEN korunur; aksi halde
 /// (boş/eski serbest metin) tarih=bugün, durum='Y' varsayılır — geriye dönük
-/// uyumluluk için `_applyDescription`'ın fallback'iyle birebir aynı.
-String _composeDescriptionWithFirma(String? oldDescription, String newFirma) {
+/// uyumluluk için `_applyDescription`'ın fallback'iyle birebir aynı. Public
+/// (top-level, `_` önekisiz) — `missing_list_tab.dart` Firma hücresi
+/// tıkla-düzenle akışı elindeki (rapor satırından gelen) ham description'ı
+/// bu fonksiyonla istemci tarafında yeniden kurup `ProductRepository.
+/// updateDescription()`'a hazır geçirir (ekstra bir SELECT round-trip'i
+/// GEREKMEZ).
+String composeDescriptionWithFirma(String? oldDescription, String newFirma) {
   final raw = (oldDescription ?? '').trim();
   final parts = raw.split(' & ');
   String ggaayy;
