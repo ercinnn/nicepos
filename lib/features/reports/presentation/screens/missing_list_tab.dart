@@ -12,11 +12,15 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// Eksik Listesi sekmesi (Raporlar 6. sekme).
 ///
 /// Tarama/analiz ekranı → HERO YOK. Kolonlar: Sıra · Ürün (+ barkod) · Adet
-/// (aralıkta satılan) · Toplam Ciro (gerçek/indirim-sonrası) · Ciro Payı
-/// (seçili aralıktaki TÜM ürünlerin toplam cirosuna oranı, %) · Firma · Stok
-/// (güncel). Sıralama adet azalan. Filtre: tarih aralığı (default 2026-01-01
-/// → bugün) — `best_sellers_tab.dart` ile aynı desen, yalnız min-fiyat
-/// filtresi yok.
+/// (aralıkta satılan) · Stok (güncel) · Toplam Ciro (gerçek/indirim-sonrası) ·
+/// Ciro Payı (seçili aralıktaki TÜM ürünlerin toplam cirosuna oranı, %) ·
+/// Firma. Varsayılan sıralama adet azalan; masaüstünde her sütun başlığına
+/// dokununca `DataTable` yerleşik `sortColumnIndex`/`onSort` mekanizmasıyla
+/// azdan çoğa/çoktan aza değiştirilebilir (sıralama tamamen istemci
+/// tarafında, `records` zaten tek seferde tam çekildiğinden sayfalama yok —
+/// `products_list_screen.dart`'ın server-side sort'undan FARKLI, basit yerel
+/// `List.sort`). Filtre: tarih aralığı (default 2026-01-01 → bugün) —
+/// `best_sellers_tab.dart` ile aynı desen, yalnız min-fiyat filtresi yok.
 class MissingListTab extends ConsumerStatefulWidget {
   const MissingListTab({super.key});
 
@@ -27,6 +31,45 @@ class MissingListTab extends ConsumerStatefulWidget {
 class _MissingListTabState extends ConsumerState<MissingListTab> {
   DateTime _start = DateTime(2026, 1, 1);
   DateTime _end = DateTime.now();
+
+  // Masaüstü tablo sütun sıralaması — yerel (client-side), `records` zaten
+  // tam çekildiği için sunucuya gitmez. Varsayılan: adet azalan (repository
+  // ile aynı).
+  String _sortColumn = 'quantitySold';
+  bool _sortAscending = false;
+
+  void _onSort(String column, bool ascending) {
+    setState(() {
+      _sortColumn = column;
+      _sortAscending = ascending;
+    });
+  }
+
+  List<MissingListRecord> _sortRecords(List<MissingListRecord> records) {
+    final sorted = List<MissingListRecord>.from(records);
+    int compare(MissingListRecord a, MissingListRecord b) {
+      switch (_sortColumn) {
+        case 'name':
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        case 'companyName':
+          return a.companyName
+              .toLowerCase()
+              .compareTo(b.companyName.toLowerCase());
+        case 'stockQuantity':
+          return a.stockQuantity.compareTo(b.stockQuantity);
+        case 'totalRevenue':
+          return a.totalRevenue.compareTo(b.totalRevenue);
+        case 'revenueSharePercent':
+          return a.revenueSharePercent.compareTo(b.revenueSharePercent);
+        case 'quantitySold':
+        default:
+          return a.quantitySold.compareTo(b.quantitySold);
+      }
+    }
+
+    sorted.sort((a, b) => _sortAscending ? compare(a, b) : compare(b, a));
+    return sorted;
+  }
 
   Future<void> _pickStart() async {
     final p = await showDatePicker(
@@ -77,14 +120,20 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
                   'Seçili aralıkta satılan ürün bulunamadı.',
                 );
               }
+              final sorted = _sortRecords(records);
               return SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ReportTableCard(
                       child: isMobile
-                          ? _MissingListMobileList(records: records)
-                          : _MissingListTable(records: records),
+                          ? _MissingListMobileList(records: sorted)
+                          : _MissingListTable(
+                              records: sorted,
+                              sortColumn: _sortColumn,
+                              sortAscending: _sortAscending,
+                              onSort: _onSort,
+                            ),
                     ),
                     const SizedBox(height: AppSizes.space24),
                   ],
@@ -167,7 +216,34 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
 
 class _MissingListTable extends StatelessWidget {
   final List<MissingListRecord> records;
-  const _MissingListTable({required this.records});
+  final String sortColumn;
+  final bool sortAscending;
+  final void Function(String column, bool ascending) onSort;
+
+  const _MissingListTable({
+    required this.records,
+    required this.sortColumn,
+    required this.sortAscending,
+    required this.onSort,
+  });
+
+  // Sütun sırası: #(0, sıralanamaz) · Ürün(1) · Adet(2) · Stok(3, öne alındı
+  // — kullanıcı geniş Toplam Ciro/Ciro Payı sütunları arkasında kaldığından
+  // "görünmüyor" şikayeti etti) · Toplam Ciro(4) · Ciro Payı(5) · Firma(6).
+  static const _columnKeys = [
+    null,
+    'name',
+    'quantitySold',
+    'stockQuantity',
+    'totalRevenue',
+    'revenueSharePercent',
+    'companyName',
+  ];
+
+  int? get _sortColumnIndex {
+    final idx = _columnKeys.indexOf(sortColumn);
+    return idx == -1 ? null : idx;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -175,14 +251,38 @@ class _MissingListTable extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: DataTable(
         headingRowColor: WidgetStateProperty.all(AppColors.tableHeader),
-        columns: const [
-          DataColumn(label: Text('#')),
-          DataColumn(label: Text('Ürün')),
-          DataColumn(label: Text('Adet'), numeric: true),
-          DataColumn(label: Text('Toplam Ciro'), numeric: true),
-          DataColumn(label: Text('Ciro Payı'), numeric: true),
-          DataColumn(label: Text('Firma')),
-          DataColumn(label: Text('Stok'), numeric: true),
+        sortColumnIndex: _sortColumnIndex,
+        sortAscending: sortAscending,
+        columns: [
+          const DataColumn(label: Text('#')),
+          DataColumn(
+            label: const Text('Ürün'),
+            onSort: (_, ascending) => onSort('name', ascending),
+          ),
+          DataColumn(
+            label: const Text('Adet'),
+            numeric: true,
+            onSort: (_, ascending) => onSort('quantitySold', ascending),
+          ),
+          DataColumn(
+            label: const Text('Stok'),
+            numeric: true,
+            onSort: (_, ascending) => onSort('stockQuantity', ascending),
+          ),
+          DataColumn(
+            label: const Text('Toplam Ciro'),
+            numeric: true,
+            onSort: (_, ascending) => onSort('totalRevenue', ascending),
+          ),
+          DataColumn(
+            label: const Text('Ciro Payı'),
+            numeric: true,
+            onSort: (_, ascending) => onSort('revenueSharePercent', ascending),
+          ),
+          DataColumn(
+            label: const Text('Firma'),
+            onSort: (_, ascending) => onSort('companyName', ascending),
+          ),
         ],
         rows: List.generate(records.length, (i) {
           final r = records[i];
@@ -228,6 +328,14 @@ class _MissingListTable extends StatelessWidget {
               ),
             )),
             DataCell(Text(
+              formatNumber(r.stockQuantity),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: lowStock ? AppColors.danger : AppColors.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            )),
+            DataCell(Text(
               formatCurrency(r.totalRevenue),
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
@@ -248,14 +356,6 @@ class _MissingListTable extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.textSecondary,
-              ),
-            )),
-            DataCell(Text(
-              formatNumber(r.stockQuantity),
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: lowStock ? AppColors.danger : AppColors.textPrimary,
-                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             )),
           ]);
@@ -350,6 +450,17 @@ class _MissingListMobileList extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSizes.space4),
                   Text(
+                    'Stok: ${formatNumber(r.stockQuantity)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color:
+                          lowStock ? AppColors.danger : AppColors.textSecondary,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(height: AppSizes.space4),
+                  Text(
                     formatCurrency(r.totalRevenue),
                     style: const TextStyle(
                       fontSize: 12,
@@ -366,17 +477,6 @@ class _MissingListMobileList extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: AppColors.textSecondary,
                       fontFeatures: [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  const SizedBox(height: AppSizes.space4),
-                  Text(
-                    'Stok: ${formatNumber(r.stockQuantity)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          lowStock ? AppColors.danger : AppColors.textSecondary,
-                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
