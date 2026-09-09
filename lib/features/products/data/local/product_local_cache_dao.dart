@@ -133,6 +133,17 @@ class ProductLocalCacheDao {
     return _fromRow(rows.first);
   }
 
+  /// Mobil "Yeni Ürün" ekranındaki "+ barkod üret" butonunun offline/ağ-hatası
+  /// yolu — bugünün YYMMDD önekiyle başlayan barkodları döner. Barkod
+  /// sayısal olduğundan `searchCached`'teki Türkçe-katlama sorunu (SQL
+  /// `LIKE` yalnız ASCII katlar) burada geçerli değil, doğrudan SQL güvenli.
+  Future<Set<String>> fetchBarcodesWithPrefix(String prefix) async {
+    final db = await _appDb.database;
+    final rows = await db.query('products_cache',
+        columns: ['barcode'], where: 'barcode LIKE ?', whereArgs: ['$prefix%']);
+    return {for (final r in rows) if (r['barcode'] != null) r['barcode'] as String};
+  }
+
   /// Tek bir ürünü yerelde yazar/günceller (offline optimistic upsert veya
   /// başarılı bir online yükleme sonrası fırsatçı önbellekleme için).
   Future<void> upsert(Product product, {required String syncState}) async {

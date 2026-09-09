@@ -14,9 +14,10 @@ typedef KasaReconcileResult = ({num systemBase, num adjustmentAmount, String? sa
 ///  2. `adjustment_amount` = kullanıcının beyan ettiği tutar (expected) −
 ///     system_base. Fark > 0 ise +düzeltme satışı (ek gelir), < 0 ise
 ///     −düzeltme (iade), = 0 ise düzeltme satışı oluşturulmaz (varsa silinir).
-///  3. `kasa_reconciliations` (UNIQUE fiscal_year+entry_date+channel) idempotent
-///     upsert'lenir; aynı gün+kanal yeniden kaydedilince yeni hayalet üretilmez,
-///     mevcut düzeltme satışı yeni farkla GÜNCELLENİR.
+///  3. `kasa_reconciliations` (UNIQUE tenant_id+fiscal_year+entry_date+channel,
+///     bkz. 0038_tenant_unique_constraints.sql) idempotent upsert'lenir; aynı
+///     gün+kanal yeniden kaydedilince yeni hayalet üretilmez, mevcut düzeltme
+///     satışı yeni farkla GÜNCELLENİR.
 ///
 /// Düzeltme satışı KALEMSİZ + STOKSUZ oluşturulur: `sale_items` insert edilmez,
 /// stok RPC'leri (`decrement`/`increment`) ÇAĞRILMAZ, müşteri borç hareketi
@@ -24,7 +25,7 @@ typedef KasaReconcileResult = ({num systemBase, num adjustmentAmount, String? sa
 ///
 /// ⚠️ ŞEMA BAĞIMLILIĞI (Faz A migration): `sales` tablosunda `is_adjustment`
 /// (boolean) ve `adjustment_channel` (text) kolonları ile `kasa_reconciliations`
-/// tablosu (UNIQUE fiscal_year, entry_date, channel + expected_amount,
+/// tablosu (UNIQUE tenant_id, fiscal_year, entry_date, channel + expected_amount,
 /// system_base, adjustment_amount, sale_id, updated_at) bu servisin çalışması
 /// için DB'de mevcut olmalıdır.
 class KasaReconciliationService {
@@ -195,7 +196,7 @@ class KasaReconciliationService {
         'adjustment_amount': adjustment,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       },
-      onConflict: 'fiscal_year,entry_date,channel',
+      onConflict: 'tenant_id,fiscal_year,entry_date,channel',
     );
 
     return (systemBase: systemBase, adjustmentAmount: adjustment, saleId: saleId);

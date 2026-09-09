@@ -3,6 +3,9 @@ import '../../../customers/data/models/customer_payment.dart';
 import '../../../sales/data/models/sale.dart';
 import '../models/best_seller_record.dart';
 import '../models/daily_report_summary.dart';
+import '../models/discount_recommendation.dart';
+import '../models/missing_list_record.dart';
+import '../models/product_analysis_record.dart';
 import '../models/product_sale_record.dart';
 
 class ReportRepository {
@@ -231,10 +234,172 @@ class ReportRepository {
     return records;
   }
 
+  /// Eksik Listesi (Raporlar 6. sekme). Seçili tarih aralığında satılan
+  /// ürünleri adet azalan sırayla, güncel stok + Firma (products.description
+  /// alanının ilk parçası, bkz. product_form_screen._applyDescription) +
+  /// gerçek (indirim sonrası) toplam ciro ile birlikte döndürür.
+  ///
+  /// Aggregation (Dart tarafı) iki geçişli:
+  /// 1. Satır satır gelen kalemler ÖNCE `sale_id`'ye göre gruplanır — bir
+  ///    satışın genel indirimini (`sales.discount_amount`, her zaman TL)
+  ///    yalnız o satıştaki kalemlere dağıtabilmek için.
+  /// 2. Her satış grubunda: kendi satırında indirimi OLAN kalemler
+  ///    (`discount_value > 0`) `total`'larını aynen korur (genel indirimden
+  ///    etkilenmez); kendi satırında indirimi OLMAYAN kalemler satışın genel
+  ///    indirim tutarını kendi `total`'larının o grup içindeki payına
+  ///    (`nonDiscountedSubtotal`) orantılı olarak paylaşır. Sonuç, `product_id`
+  ///    bazında `totalRevenue` olarak birikir (adet = Σ quantity ile aynı
+  ///    desende). Firma/stok/ad/barkod ürün satırından bir kez alınır (satış
+  ///    başına değişmez).
+  Future<List<MissingListRecord>> fetchMissingList({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    // Yerel gece yarısı sınırları → UTC (Türkiye UTC+3). Bitiş günü dahil edilir.
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay =
+        DateTime(end.year, end.month, end.day).add(const Duration(days: 1));
+
+    const pageSize = 1000;
+    final rows = <Map<String, dynamic>>[];
+    var from = 0;
+    while (true) {
+      final page = await _client
+          .from('sale_items')
+          .select(
+              'sale_id, quantity, discount_value, total, product_id, sales!inner(sale_date, discount_amount), products(name, barcode, description, stock_quantity)')
+          .gte('sales.sale_date', startDay.toUtc().toIso8601String())
+          .lt('sales.sale_date', endDay.toUtc().toIso8601String())
+          .order('product_id')
+          .range(from, from + pageSize - 1);
+      final list = (page as List)
+          .map((r) => Map<String, dynamic>.from(r as Map))
+          .toList();
+      rows.addAll(list);
+      if (list.length < pageSize) break;
+      from += pageSize;
+    }
+
+    // 1. geçiş: sale_id'ye göre grupla.
+    final saleGroups = <String, List<Map<String, dynamic>>>{};
+    for (final row in rows) {
+      final saleId = row['sale_id'] as String?;
+      if (saleId == null) continue;
+      saleGroups.putIfAbsent(saleId, () => []).add(row);
+    }
+
+    final agg = <String, _MissingListAgg>{};
+
+    // 2. geçiş: her satış grubunda genel indirimi orantılı dağıt.
+    for (final saleRows in saleGroups.values) {
+      final rawSale = saleRows.first['sales'];
+      final saleMap = rawSale is Map
+          ? Map<String, dynamic>.from(rawSale)
+          : rawSale is List && rawSale.isNotEmpty
+              ? Map<String, dynamic>.from(rawSale.first as Map)
+              : null;
+      final saleDiscountAmount = (saleMap?['discount_amount'] as num?) ?? 0;
+
+      num nonDiscountedSubtotal = 0;
+      for (final row in saleRows) {
+        final rowDiscount = (row['discount_value'] as num?) ?? 0;
+        if (rowDiscount <= 0) {
+          nonDiscountedSubtotal += (row['total'] as num?) ?? 0;
+        }
+      }
+
+      for (final row in saleRows) {
+        final productId = row['product_id'] as String?;
+        if (productId == null) continue;
+
+        final rawProduct = row['products'];
+        final product = rawProduct is Map
+            ? Map<String, dynamic>.from(rawProduct)
+            : rawProduct is List && rawProduct.isNotEmpty
+                ? Map<String, dynamic>.from(rawProduct.first as Map)
+                : null;
+        if (product == null) continue; // silinmiş ürün → atla
+
+        final quantity = (row['quantity'] as num?) ?? 0;
+        final rowTotal = (row['total'] as num?) ?? 0;
+        final rowDiscount = (row['discount_value'] as num?) ?? 0;
+
+        final num realRevenue;
+        if (rowDiscount > 0 || nonDiscountedSubtotal <= 0) {
+          // Kendi satırında indirim var → genel indirimden etkilenmez.
+          // (veya dağıtılacak indirimsiz grup yoksa → olduğu gibi say.)
+          realRevenue = rowTotal;
+        } else {
+          realRevenue = rowTotal -
+              saleDiscountAmount * (rowTotal / nonDiscountedSubtotal);
+        }
+
+        final existing = agg[productId];
+        if (existing == null) {
+          agg[productId] = _MissingListAgg(
+            name: (product['name'] as String?) ?? '-',
+            barcode: product['barcode'] as String?,
+            companyName:
+                _parseFirmaFromDescription(product['description'] as String?),
+            rawDescription: product['description'] as String?,
+            stockQuantity: (product['stock_quantity'] as num?) ?? 0,
+            quantity: quantity,
+            totalRevenue: realRevenue,
+          );
+        } else {
+          existing.quantity += quantity;
+          existing.totalRevenue += realRevenue;
+        }
+      }
+    }
+
+    final grandTotalRevenue =
+        agg.values.fold<num>(0, (sum, a) => sum + a.totalRevenue);
+
+    final records = agg.entries
+        .map((e) => MissingListRecord(
+              productId: e.key,
+              name: e.value.name,
+              barcode: e.value.barcode,
+              companyName: e.value.companyName,
+              quantitySold: e.value.quantity,
+              stockQuantity: e.value.stockQuantity,
+              totalRevenue: e.value.totalRevenue,
+              revenueSharePercent: grandTotalRevenue > 0
+                  ? e.value.totalRevenue / grandTotalRevenue * 100
+                  : 0,
+              rawDescription: e.value.rawDescription,
+            ))
+        .toList();
+    records.sort((a, b) => b.quantitySold.compareTo(a.quantitySold));
+    return records;
+  }
+
+  /// Ürün Analizi (Raporlar 5. sekme). Seçili tarih aralığındaki dönemsel
+  /// ciro/adet + TÜM ZAMANLARIN son satış tarihini (aralıktan bağımsız)
+  /// birlikte döndürür — durağan gün eşiği istemci tarafında hesaplanır,
+  /// yeniden fetch GEREKTİRMEZ.
+  Future<List<ProductAnalysisRecord>> fetchProductAnalysis({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay = DateTime(end.year, end.month, end.day).add(const Duration(days: 1));
+    final rows = await _client.rpc('product_analysis', params: {
+      'p_start': startDay.toUtc().toIso8601String(),
+      'p_end': endDay.toUtc().toIso8601String(),
+    });
+    return (rows as List)
+        .map((r) => ProductAnalysisRecord.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
+  }
+
   Future<List<ProductSaleRecord>> fetchProductSalesHistory(String productId) async {
     final rows = await _client
         .from('sale_items')
-        .select('quantity, unit_price, total, sales(id, sale_code, sale_date, customers(name))')
+        .select('quantity, unit_price, total, sales(id, sale_code, sale_date, '
+            'total_amount, discount_percent, discount_amount, discount_type, '
+            'payment_type, note, customers(name))')
         .eq('product_id', productId)
         .limit(2000);
 
@@ -266,11 +431,30 @@ class ReportRepository {
         unitPrice: itemMap['unit_price'] as num? ?? 0,
         total: itemMap['total'] as num? ?? 0,
         customerName: customerMap?['name'] as String?,
+        saleTotalAmount: saleMap['total_amount'] as num? ?? 0,
+        discountPercent: saleMap['discount_percent'] as num? ?? 0,
+        discountAmount: saleMap['discount_amount'] as num? ?? 0,
+        discountType: saleMap['discount_type'] as String? ?? 'percent',
+        paymentType:
+            PaymentTypeX.fromDb(saleMap['payment_type'] as String? ?? 'nakit'),
+        note: saleMap['note'] as String?,
       ));
     }
 
     records.sort((a, b) => b.saleDate.compareTo(a.saleDate));
     return records;
+  }
+
+  /// Analiz sayfası "İndirim Önerileri" sekmesi — `discount_recommendations`
+  /// RPC'si (0050, kapsam genişletmesi 0051 migration) tüm ürünler için TEK
+  /// sorguda veri-temelli fiyat esnekliği fit edip ciro-artırıcı önerileri
+  /// döner (bkz. migration dosyalarındaki metodoloji notu). Eşiği geçemeyen
+  /// ürünler de `status` ile etiketlenip döner, elenmez.
+  Future<List<DiscountRecommendation>> fetchDiscountRecommendations() async {
+    final rows = await _client.rpc('discount_recommendations');
+    return (rows as List)
+        .map((r) => DiscountRecommendation.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
   }
 }
 
@@ -289,4 +473,40 @@ class _BestSellerAgg {
     required this.quantity,
     required this.lastSaleDate,
   });
+}
+
+/// Eksik Listesi aggregation'ı için değişebilir (mutable) ara birikim kabı.
+class _MissingListAgg {
+  final String name;
+  final String? barcode;
+  final String companyName;
+  final String? rawDescription;
+  final num stockQuantity;
+  num quantity;
+  num totalRevenue;
+
+  _MissingListAgg({
+    required this.name,
+    required this.barcode,
+    required this.companyName,
+    required this.rawDescription,
+    required this.stockQuantity,
+    required this.quantity,
+    required this.totalRevenue,
+  });
+}
+
+/// `products.description` alanından Firma'yı çözer — `product_form_screen.dart`
+/// `_applyDescription`'ın birebir aynısı: "$firma & $ggaayy & $durum" biçimi
+/// (3 parça, son parça {'Y','G'}) ise ilk parça firma; aksi halde eski serbest
+/// metin olduğu gibi firma sayılır (geriye dönük uyumluluk). Boşsa "-".
+String _parseFirmaFromDescription(String? description) {
+  final raw = (description ?? '').trim();
+  if (raw.isEmpty) return '-';
+  final parts = raw.split(' & ');
+  if (parts.length == 3 && (parts[2] == 'Y' || parts[2] == 'G')) {
+    final firma = parts[0].trim();
+    return firma.isEmpty ? '-' : firma;
+  }
+  return raw;
 }

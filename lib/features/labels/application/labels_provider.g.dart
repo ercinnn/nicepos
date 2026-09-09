@@ -48,7 +48,197 @@ final savedLabelFilesProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef SavedLabelFilesRef = AutoDisposeFutureProviderRef<List<SavedLabelFile>>;
-String _$labelSheetHash() => r'0841c322011ac99e9ca0ac63999bc3c175acb3d7';
+String _$labelPoolRepositoryHash() =>
+    r'e6b2eae36c9e0df3b4dc844fe624279f606fb8ef';
+
+/// See also [labelPoolRepository].
+@ProviderFor(labelPoolRepository)
+final labelPoolRepositoryProvider = Provider<LabelPoolRepository>.internal(
+  labelPoolRepository,
+  name: r'labelPoolRepositoryProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$labelPoolRepositoryHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LabelPoolRepositoryRef = ProviderRef<LabelPoolRepository>;
+String _$labelPoolPendingHash() => r'37ceac49b1e67c9c4eff551b3446724be00e8033';
+
+/// Copied from Dart SDK
+class _SystemHash {
+  _SystemHash._();
+
+  static int combine(int hash, int value) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + value);
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
+    return hash ^ (hash >> 6);
+  }
+
+  static int finish(int hash) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
+    // ignore: parameter_assignments
+    hash = hash ^ (hash >> 11);
+    return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
+  }
+}
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+///
+/// Copied from [labelPoolPending].
+@ProviderFor(labelPoolPending)
+const labelPoolPendingProvider = LabelPoolPendingFamily();
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+///
+/// Copied from [labelPoolPending].
+class LabelPoolPendingFamily extends Family<AsyncValue<List<LabelPoolItem>>> {
+  /// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+  /// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+  /// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+  /// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+  ///
+  /// Copied from [labelPoolPending].
+  const LabelPoolPendingFamily();
+
+  /// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+  /// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+  /// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+  /// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+  ///
+  /// Copied from [labelPoolPending].
+  LabelPoolPendingProvider call(String labelType) {
+    return LabelPoolPendingProvider(labelType);
+  }
+
+  @override
+  LabelPoolPendingProvider getProviderOverride(
+    covariant LabelPoolPendingProvider provider,
+  ) {
+    return call(provider.labelType);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'labelPoolPendingProvider';
+}
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+///
+/// Copied from [labelPoolPending].
+class LabelPoolPendingProvider
+    extends AutoDisposeFutureProvider<List<LabelPoolItem>> {
+  /// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+  /// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+  /// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+  /// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+  ///
+  /// Copied from [labelPoolPending].
+  LabelPoolPendingProvider(String labelType)
+    : this._internal(
+        (ref) => labelPoolPending(ref as LabelPoolPendingRef, labelType),
+        from: labelPoolPendingProvider,
+        name: r'labelPoolPendingProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$labelPoolPendingHash,
+        dependencies: LabelPoolPendingFamily._dependencies,
+        allTransitiveDependencies:
+            LabelPoolPendingFamily._allTransitiveDependencies,
+        labelType: labelType,
+      );
+
+  LabelPoolPendingProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.labelType,
+  }) : super.internal();
+
+  final String labelType;
+
+  @override
+  Override overrideWith(
+    FutureOr<List<LabelPoolItem>> Function(LabelPoolPendingRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: LabelPoolPendingProvider._internal(
+        (ref) => create(ref as LabelPoolPendingRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        labelType: labelType,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<List<LabelPoolItem>> createElement() {
+    return _LabelPoolPendingProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is LabelPoolPendingProvider && other.labelType == labelType;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, labelType.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin LabelPoolPendingRef on AutoDisposeFutureProviderRef<List<LabelPoolItem>> {
+  /// The parameter `labelType` of this provider.
+  String get labelType;
+}
+
+class _LabelPoolPendingProviderElement
+    extends AutoDisposeFutureProviderElement<List<LabelPoolItem>>
+    with LabelPoolPendingRef {
+  _LabelPoolPendingProviderElement(super.provider);
+
+  @override
+  String get labelType => (origin as LabelPoolPendingProvider).labelType;
+}
+
+String _$labelSheetHash() => r'dda50b377e8c3ba91477a441245cb4e81188ea0d';
 
 /// Etiket sayfası durumunu tutar. `keepAlive` — kullanıcı başka sekmeye geçip
 /// dönünce 24 hane + logo korunur (oturum içi kalıcılık; localStorage opsiyonel
@@ -88,6 +278,70 @@ final labelWideSheetProvider =
     );
 
 typedef _$LabelWideSheet = Notifier<LabelWideSheetState>;
+String _$labelTelSheetHash() => r'db8bb78540f059bb8453ed9d7f4d75466a7cb976';
+
+/// Tel Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 32 hane
+/// korunur (Raf/Geniş Logo provider'larıyla KARIŞMAZ).
+///
+/// Copied from [LabelTelSheet].
+@ProviderFor(LabelTelSheet)
+final labelTelSheetProvider =
+    NotifierProvider<LabelTelSheet, LabelTelSheetState>.internal(
+      LabelTelSheet.new,
+      name: r'labelTelSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelTelSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelTelSheet = Notifier<LabelTelSheetState>;
+String _$labelTelDiscountSheetHash() =>
+    r'60fedf1412272c1b1807fe436572e3272669ed17';
+
+/// Tel İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme
+/// değişiminde 32 hane + genel indirim korunur (diğer etiket
+/// provider'larıyla KARIŞMAZ).
+///
+/// Copied from [LabelTelDiscountSheet].
+@ProviderFor(LabelTelDiscountSheet)
+final labelTelDiscountSheetProvider =
+    NotifierProvider<
+      LabelTelDiscountSheet,
+      LabelTelDiscountSheetState
+    >.internal(
+      LabelTelDiscountSheet.new,
+      name: r'labelTelDiscountSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelTelDiscountSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelTelDiscountSheet = Notifier<LabelTelDiscountSheetState>;
+String _$labelDiscountSheetHash() =>
+    r'733219c893571be24f6e8ee95ada9e5c1ece3ae3';
+
+/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde
+/// hane listesi korunur (diğer etiket provider'larıyla KARIŞMAZ). Liste
+/// sınırsız büyür (4/sayfa taşan A4, bkz. `paginateDiscountSlots`).
+///
+/// Copied from [LabelDiscountSheet].
+@ProviderFor(LabelDiscountSheet)
+final labelDiscountSheetProvider =
+    NotifierProvider<LabelDiscountSheet, LabelDiscountSheetState>.internal(
+      LabelDiscountSheet.new,
+      name: r'labelDiscountSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelDiscountSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelDiscountSheet = Notifier<LabelDiscountSheetState>;
 String _$labelPosterSheetHash() => r'4b298861d1dfb0c92c553a95aa5c189c0eb0685d';
 
 /// Poster sayfası durumunu tutar. `keepAlive` — sekme değişiminde liste/

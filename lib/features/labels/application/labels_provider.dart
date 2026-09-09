@@ -1,8 +1,12 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../data/label_pool_repository.dart';
 import '../data/labels_storage_repository.dart';
+import '../data/models/discount_label_slot.dart';
+import '../data/models/label_pool_item.dart';
 import '../data/models/label_slot.dart';
 import '../data/models/product_label_item.dart';
+import '../data/models/tel_discount_label_slot.dart';
 
 part 'labels_provider.g.dart';
 
@@ -16,14 +20,27 @@ const int kWideCols = 2;
 const int kWideRows = 5;
 const int kWideCount = kWideCols * kWideRows; // 10
 
+/// Tel Etiketi sayfası sabitleri: Raf Etiketi ile birebir aynı yükseklik/stil,
+/// yalnız yan yana 4 adet (satır sayısı aynı kalır) → 4×8 = 32 etiket.
+const int kTelColumns = 4;
+const int kTelRows = kLabelRows;
+const int kTelCount = kTelColumns * kTelRows; // 32
+
 
 /// Etiket sayfasının durumu: 24 hanelik liste (`null` = boş hane) + mağaza logosu
-/// (data URL / base64; hem önizleme hem baskıda kullanılır).
+/// (data URL / base64; hem önizleme hem baskıda kullanılır) + İndirim
+/// Etiketi'nin logo-altı tagline metni (Faz D — kiracı-bazlı marka, ikisi de
+/// tüm sekmelerde PAYLAŞILAN tek kaynak).
 class LabelSheetState {
   final List<LabelSlot?> slots;
   final String? logoDataUrl;
+  final String? taglineText;
 
-  const LabelSheetState({required this.slots, this.logoDataUrl});
+  const LabelSheetState({
+    required this.slots,
+    this.logoDataUrl,
+    this.taglineText,
+  });
 
   factory LabelSheetState.initial() => LabelSheetState(
         slots: List<LabelSlot?>.filled(kLabelCount, null),
@@ -35,10 +52,14 @@ class LabelSheetState {
     List<LabelSlot?>? slots,
     String? logoDataUrl,
     bool clearLogo = false,
+    String? taglineText,
+    bool clearTagline = false,
   }) {
     return LabelSheetState(
       slots: slots ?? this.slots,
       logoDataUrl: clearLogo ? null : (logoDataUrl ?? this.logoDataUrl),
+      taglineText:
+          clearTagline ? null : (taglineText ?? this.taglineText),
     );
   }
 }
@@ -79,6 +100,16 @@ class LabelSheet extends _$LabelSheet {
       state = state.copyWith(clearLogo: true);
     } else {
       state = state.copyWith(logoDataUrl: dataUrl);
+    }
+  }
+
+  /// İndirim Etiketi tagline'ını ayarlar. `null`/boş → tagline kaldır (satır
+  /// basılmaz).
+  void setTagline(String? text) {
+    if (text == null || text.isEmpty) {
+      state = state.copyWith(clearTagline: true);
+    } else {
+      state = state.copyWith(taglineText: text);
     }
   }
 }
@@ -128,6 +159,317 @@ class LabelWideSheet extends _$LabelWideSheet {
 
   void clearAll() {
     state = state.copyWith(slots: List<LabelSlot?>.filled(kWideCount, null));
+  }
+}
+
+// ─── Tel Etiketi sayfası ──────────────────────────────────────────────────────
+
+/// Tel Etiketi sayfasının durumu: 32 hanelik liste (`null` = boş hane). Raf
+/// Etiketi ile birebir aynı hücre tasarımını paylaşır (yalnız 4×8 ızgara);
+/// mağaza logosu ayrı YÜKLENMEZ, Raf'ın kalıcı `LabelSheetState.logoDataUrl`
+/// alanı doğrudan yeniden kullanılır (Poster sekmesinin zaten yaptığı gibi).
+class LabelTelSheetState {
+  final List<LabelSlot?> slots;
+
+  const LabelTelSheetState({required this.slots});
+
+  factory LabelTelSheetState.initial() => LabelTelSheetState(
+        slots: List<LabelSlot?>.filled(kTelCount, null),
+      );
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  LabelTelSheetState copyWith({List<LabelSlot?>? slots}) {
+    return LabelTelSheetState(slots: slots ?? this.slots);
+  }
+}
+
+/// Tel Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde 32 hane
+/// korunur (Raf/Geniş Logo provider'larıyla KARIŞMAZ).
+@Riverpod(keepAlive: true)
+class LabelTelSheet extends _$LabelTelSheet {
+  @override
+  LabelTelSheetState build() => LabelTelSheetState.initial();
+
+  void setSlot(int index, LabelSlot slot) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = slot;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearSlot(int index) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<LabelSlot?>.from(state.slots);
+    next[index] = null;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(slots: List<LabelSlot?>.filled(kTelCount, null));
+  }
+}
+
+// ─── Tel İndirim Etiketi sayfası ──────────────────────────────────────────────
+
+/// Tel İndirim Etiketi sayfasının durumu: Tel Etiketi ile AYNI sabit 32 hane
+/// (`kTelCount`/`kTelColumns`/`kTelRows` yeniden kullanılır — yeni bir ızgara
+/// sabiti YOK, aynı fiziksel boyut). Sayfa geneli bir indirim türü+değeri
+/// (`generalKind`/`generalValue`) tutar; hane kendi `useGeneral`'ı false ise
+/// bu genelden etkilenmez (bkz. `TelDiscountLabelSlot`). Mağaza logosu ayrı
+/// YÜKLENMEZ, Tel/Raf'ın kalıcı `LabelSheetState.logoDataUrl`'i paylaşılır.
+class LabelTelDiscountSheetState {
+  final List<TelDiscountLabelSlot?> slots;
+  final TelDiscountKind generalKind;
+  final num generalValue;
+
+  const LabelTelDiscountSheetState({
+    required this.slots,
+    this.generalKind = TelDiscountKind.percent,
+    this.generalValue = 0,
+  });
+
+  factory LabelTelDiscountSheetState.initial() => LabelTelDiscountSheetState(
+        slots: List<TelDiscountLabelSlot?>.filled(kTelCount, null),
+      );
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  LabelTelDiscountSheetState copyWith({
+    List<TelDiscountLabelSlot?>? slots,
+    TelDiscountKind? generalKind,
+    num? generalValue,
+  }) {
+    return LabelTelDiscountSheetState(
+      slots: slots ?? this.slots,
+      generalKind: generalKind ?? this.generalKind,
+      generalValue: generalValue ?? this.generalValue,
+    );
+  }
+}
+
+/// Tel İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme
+/// değişiminde 32 hane + genel indirim korunur (diğer etiket
+/// provider'larıyla KARIŞMAZ).
+@Riverpod(keepAlive: true)
+class LabelTelDiscountSheet extends _$LabelTelDiscountSheet {
+  @override
+  LabelTelDiscountSheetState build() => LabelTelDiscountSheetState.initial();
+
+  void setSlot(int index, TelDiscountLabelSlot slot) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = slot;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearSlot(int index) {
+    if (index < 0 || index >= kTelCount) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = null;
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(
+      slots: List<TelDiscountLabelSlot?>.filled(kTelCount, null),
+    );
+  }
+
+  /// [index] hanesinin "genel indirimi kullan" tikini ayarlar (barkod/ürün/
+  /// fiyat AYNI kalır).
+  void setSlotUseGeneral(int index, bool value) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = TelDiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      createdAt: current.createdAt,
+      useGeneral: value,
+      ownKind: current.ownKind,
+      ownValue: current.ownValue,
+    );
+    state = state.copyWith(slots: next);
+  }
+
+  /// [index] hanesinin kendi indirim türünü ayarlar (yalnız `useGeneral`
+  /// false iken etkilidir).
+  void setSlotOwnKind(int index, TelDiscountKind kind) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = TelDiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      createdAt: current.createdAt,
+      useGeneral: current.useGeneral,
+      ownKind: kind,
+      ownValue: current.ownValue,
+    );
+    state = state.copyWith(slots: next);
+  }
+
+  /// [index] hanesinin kendi indirim değerini ayarlar (yalnız `useGeneral`
+  /// false iken etkilidir).
+  void setSlotOwnValue(int index, num? value) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<TelDiscountLabelSlot?>.from(state.slots);
+    next[index] = TelDiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      createdAt: current.createdAt,
+      useGeneral: current.useGeneral,
+      ownKind: current.ownKind,
+      ownValue: value,
+    );
+    state = state.copyWith(slots: next);
+  }
+
+  /// Sayfa geneli indirim türünü ayarlar (% / ₺) — kendi türünü seçmemiş
+  /// (`useGeneral: true`) tüm haneleri etkiler.
+  void setGeneralKind(TelDiscountKind kind) {
+    state = state.copyWith(generalKind: kind);
+  }
+
+  /// Sayfa geneli indirim değerini ayarlar.
+  void setGeneralValue(num value) {
+    state = state.copyWith(generalValue: value);
+  }
+}
+
+// ─── İndirim Etiketi sayfası ──────────────────────────────────────────────────
+
+/// İndirim Etiketi sayfasının durumu: sınırsız büyüyebilen hane listesi (2×2
+/// A4 ızgara, 4/sayfa — barkod okutuldukça 2., 3. sayfaya taşar, bkz.
+/// `paginateDiscountSlots`). `slots` her zaman TEK bir trailing `null`
+/// (henüz taranmamış hane) ile biter; doldurulunca yeni bir `null` eklenir
+/// (büyüme), dolu bir hane silinince liste küçülür. Raf/Tel ile aynı hücre
+/// dilini paylaşır; mağaza logosu Faz D'den itibaren kiracı-bazlı (Geniş
+/// Logo/Raf ile PAYLAŞILAN `LabelSheetState.logoDataUrl`) — hane başı
+/// `DiscountLabelSlot.showLogo` tiki bu logonun o etikette basılıp
+/// basılmayacağını belirler.
+/// [defaultPercent] — sayfa geneli "ana indirim %"; hane kendi yüzdesini
+/// GİRMEMİŞSE (`DiscountLabelSlot.discountPercent == null`) bu değer geçerli
+/// olur. Hane kendi yüzdesini girdiyse genel yüzde değişse bile o haneyi
+/// ETKİLEMEZ.
+class LabelDiscountSheetState {
+  final List<DiscountLabelSlot?> slots;
+  final num defaultPercent;
+
+  const LabelDiscountSheetState({
+    required this.slots,
+    this.defaultPercent = 0,
+  });
+
+  factory LabelDiscountSheetState.initial() =>
+      LabelDiscountSheetState(slots: [null]);
+
+  int get filledCount => slots.where((s) => s != null).length;
+
+  /// Baskıda oluşacak A4 sayfa sayısı (en az 1) — Ürün Etiketi'nin
+  /// `pageCount` deseniyle aynı.
+  int get pageCount => filledCount == 0
+      ? 1
+      : (filledCount + kDiscountCount - 1) ~/ kDiscountCount;
+
+  LabelDiscountSheetState copyWith({
+    List<DiscountLabelSlot?>? slots,
+    num? defaultPercent,
+  }) {
+    return LabelDiscountSheetState(
+      slots: slots ?? this.slots,
+      defaultPercent: defaultPercent ?? this.defaultPercent,
+    );
+  }
+}
+
+/// İndirim Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde
+/// hane listesi korunur (diğer etiket provider'larıyla KARIŞMAZ). Liste
+/// sınırsız büyür (4/sayfa taşan A4, bkz. `paginateDiscountSlots`).
+@Riverpod(keepAlive: true)
+class LabelDiscountSheet extends _$LabelDiscountSheet {
+  @override
+  LabelDiscountSheetState build() => LabelDiscountSheetState.initial();
+
+  /// [index]'teki haneyi ayarlar. Doldurulan hane listenin SON (boş) hanesiyse
+  /// büyüme için yeni bir boş hane EKLENİR — liste her zaman tek bir boş
+  /// hane ile biter (bir sonraki taramaya hazır, ekran tarafı bunu
+  /// `_syncDiscountControllers` ile ayna görür).
+  void setSlot(int index, DiscountLabelSlot slot) {
+    if (index < 0 || index >= state.slots.length) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots);
+    next[index] = slot;
+    if (index == next.length - 1) next.add(null);
+    state = state.copyWith(slots: next);
+  }
+
+  /// Yalnız yüzdeyi günceller (barkod/ürün/fiyat AYNI kalır) — "İndirim %"
+  /// hanesine yazarken her tuş vuruşunda ürünü yeniden çözmeye gerek yok.
+  /// `null` → hane kendi yüzdesini TEMİZLER (genel yüzdeye geri döner).
+  void setDiscountPercent(int index, num? percent) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots);
+    next[index] = DiscountLabelSlot(
+      barcode: current.barcode,
+      productName: current.productName,
+      oldPrice: current.oldPrice,
+      discountPercent: percent,
+      showLogo: current.showLogo,
+      createdAt: current.createdAt,
+    );
+    state = state.copyWith(slots: next);
+  }
+
+  /// Hane-başı "logo göster" tiki (varsayılan false — bkz.
+  /// `DiscountLabelSlot.showLogo`).
+  void setShowLogo(int index, bool value) {
+    if (index < 0 || index >= state.slots.length) return;
+    final current = state.slots[index];
+    if (current == null) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots);
+    next[index] = current.copyWith(showLogo: value);
+    state = state.copyWith(slots: next);
+  }
+
+  /// Sayfa geneli "ana indirim %"sini ayarlar — kendi yüzdesi olmayan (`null`)
+  /// tüm haneleri etkiler.
+  void setDefaultPercent(num percent) {
+    state = state.copyWith(defaultPercent: percent);
+  }
+
+  /// "Ana İndirim %" satırındaki toplu tik — o anda DOLU olan TÜM hanelerin
+  /// `showLogo`'sunu tek seferde [value] yapar (yalnız o an var olan haneleri
+  /// etkiler, sonradan taranacak yeni haneler yine tiksiz başlar).
+  void setAllShowLogo(bool value) {
+    final next = [
+      for (final s in state.slots) s?.copyWith(showLogo: value),
+    ];
+    state = state.copyWith(slots: next);
+  }
+
+  /// [index] zaten boşsa (trailing hane) no-op. DOLU bir haneyse listeden
+  /// tamamen ÇIKARIR (sonraki haneler bir yukarı kayar) — liste her zaman
+  /// tek bir trailing `null` ile bitecek şekilde korunur.
+  void removeSlot(int index) {
+    if (index < 0 || index >= state.slots.length) return;
+    if (state.slots[index] == null) return;
+    final next = List<DiscountLabelSlot?>.from(state.slots)..removeAt(index);
+    if (next.isEmpty || next.last != null) next.add(null);
+    state = state.copyWith(slots: next);
+  }
+
+  void clearAll() {
+    state = state.copyWith(slots: [null]);
   }
 }
 
@@ -300,4 +642,26 @@ LabelsStorageRepository labelsStorageRepository(
 @riverpod
 Future<List<SavedLabelFile>> savedLabelFiles(SavedLabelFilesRef ref) {
   return ref.watch(labelsStorageRepositoryProvider).list();
+}
+
+// ─── Etiket Havuzu (0032_label_pool.sql) ─────────────────────────────────────
+// Mobil ürün formundaki "Etiket" butonundan beslenen, kullanıcılar/cihazlar
+// arası PAYLAŞILAN kuyruk (yukarıdaki tüm provider'ların oturum-içi `keepAlive`
+// deseninin AKSİNE — DB'de kalıcı). Etiket sayfasındaki "Havuz" sekmesi bunu
+// kullanır.
+
+@Riverpod(keepAlive: true)
+LabelPoolRepository labelPoolRepository(LabelPoolRepositoryRef ref) =>
+    LabelPoolRepository();
+
+/// [labelType] için henüz PDF'e alınmamış (kontrol=0) Havuz kalemleri.
+/// keepAlive DEĞİL (diğer etiket state provider'larının aksine) — bu
+/// paylaşılan sunucu verisi, Havuz sekmesinden çıkılınca serbest bırakılır,
+/// tekrar girilince TAZE çekilir (başka kullanıcının eklediği görünsün diye).
+@riverpod
+Future<List<LabelPoolItem>> labelPoolPending(
+  LabelPoolPendingRef ref,
+  String labelType,
+) {
+  return ref.watch(labelPoolRepositoryProvider).fetchPending(labelType);
 }

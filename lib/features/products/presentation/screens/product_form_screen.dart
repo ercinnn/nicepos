@@ -10,6 +10,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -17,16 +18,31 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
+import '../../../labels/application/labels_provider.dart';
+import '../../../labels/data/models/label_pool_item.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../application/product_sync_service.dart';
 import '../../application/products_provider.dart';
 import '../../application/sync_status.dart';
 import '../../data/local/pending_change_dao.dart';
 import '../../data/local/product_local_cache_dao.dart';
-import '../../data/models/company.dart';
 import '../../data/models/pending_change.dart';
 import '../../data/models/product.dart';
+import '../widgets/company_autocomplete_field.dart';
 import '../widgets/equivalent_barcode_section.dart';
+
+/// [prefix] (ör. "260814") ile başlayan, henüz [existing] kümesinde olmayan
+/// ilk "XXX" (001..999) barkodu üretir — mobil "Yeni Ürün" ekranındaki
+/// "+ barkod üret" butonu kullanır. Top-level (private değil) tutulur ki
+/// test dosyasından ağ/widget kurulumu gerektirmeden doğrudan sınanabilsin.
+/// Boşluk bulunmazsa (pratikte imkânsız, günde 999 barkod) son numarayı döner.
+String nextBarcodeCandidate(String prefix, Set<String> existing) {
+  for (var i = 1; i <= 999; i++) {
+    final candidate = '$prefix${i.toString().padLeft(3, '0')}';
+    if (!existing.contains(candidate)) return candidate;
+  }
+  return '${prefix}999';
+}
 
 class ProductFormScreen extends ConsumerStatefulWidget {
   /// null ise yeni ürün, aksi halde düzenlenecek ürünün id'si.
@@ -42,6 +58,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late TextEditingController _barcodeCtrl;
+  late FocusNode _barcodeFocus;
   late TextEditingController _nameCtrl;
   late TextEditingController _price1Ctrl;
   late TextEditingController _price2Ctrl;
@@ -55,6 +72,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   late TextEditingController _stockCodeCtrl;
   late TextEditingController _weightCtrl;
   late TextEditingController _quickOrderCtrl;
+
+  // Mobil "Ürün Bilgisi" sekmesinde Alış/Kâr%/Satış/Stok hanelerinden birine
+  // odaklanınca tüm ekranı kaplayan (app bar + alt menü dahil) büyük-puntolu
+  // onay overlay'i tetikler — kullanıcı hangi haneye girdiğinden emin olsun
+  // diye (Alış=kıpkırmızı/Satış=yemyeşil, `_colorCodedDecoration`'daki aynı
+  // semantik renk burada arka plana taşınır). `Overlay.of(rootOverlay: true)`
+  // ile eklenir ki AppScaffold'un app bar'ı/alt menüsü de gizlensin.
+  late FocusNode _purchasePriceFocus;
+  late FocusNode _price1Focus;
+  late FocusNode _profitMarginFocus;
+  late FocusNode _stockFocus;
+  OverlayEntry? _bigValueOverlay;
+  TextEditingController? _bigValueOverlayCtrl;
 
   // "Diğer Detaylar" → Firma / Tarih / Durum.
   // Ürün Detayı (description) alanı bu üç parçayı ' & ' ayracıyla saklar:
@@ -86,6 +116,24 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   /// Senkron metotlarında karşılıklı tetiklenmeyi önleyen yeniden-giriş kilidi.
   bool _syncing = false;
 
+  /// Barkod hanesi doldurulduğunda (taranarak/üretilerek/elle) `true` olur —
+  /// mobilde ekranın ortasında "Ürünü Getir" belirir, barkod hanesi + kamera
+  /// + "barkod üret" ikonu DIŞINDA her şey (sekmeler, Kaydet/Sil barı) devre
+  /// dışı kalır. `_fetchByBarcode()` başında (Enter/orta buton/kamera akışı
+  /// hepsi oradan geçer) `false`'a döner — kullanıcı bir kez "getir" deyince
+  /// kilit kalkar (sonuç bulunsa da bulunmasa da).
+  bool _awaitingFetch = false;
+
+  /// "+ barkod üret" butonunun ağ/yerel-önbellek sorgusu sürerken küçük bir
+  /// spinner göstermek için.
+  bool _generatingBarcode = false;
+
+  /// Ürün Adı mikrofon-ile-giriş (mobil/native, `!kIsWeb`) — `speech_to_text`
+  /// yalnız ilk mikrofon dokunuşunda `initialize()` edilir (izin isteğini
+  /// ekran açılışına değil, kullanıcı eylemine bağlar).
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
+
   /// `ProductSyncService`'in son prob sonucu zaten "offline" diyorsa `true` —
   /// bu durumda `_loadProduct`/`_fetchByBarcode`/`_save` her seferinde 6sn'lik
   /// ağ timeout'unu tekrar tekrar beklemez, doğrudan yerel yola düşer. Bir
@@ -112,6 +160,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     super.initState();
     _currentId = widget.productId;
     _barcodeCtrl = TextEditingController();
+    _barcodeFocus = FocusNode();
     _nameCtrl = TextEditingController();
     _price1Ctrl = TextEditingController(text: '0');
     _price2Ctrl = TextEditingController(text: '0');
@@ -127,6 +176,19 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _quickOrderCtrl = TextEditingController();
     _companyCtrl = TextEditingController();
     _companyFocus = FocusNode();
+
+    _purchasePriceFocus = FocusNode();
+    _price1Focus = FocusNode();
+    _profitMarginFocus = FocusNode();
+    _stockFocus = FocusNode();
+    _bindBigValueFocus(_purchasePriceFocus,
+        label: 'ALIŞ FİYATI', controller: _purchasePriceCtrl, background: const Color(0xFFD50000), prefix: '₺');
+    _bindBigValueFocus(_price1Focus,
+        label: 'SATIŞ FİYATI', controller: _price1Ctrl, background: const Color(0xFF00C853), prefix: '₺');
+    _bindBigValueFocus(_profitMarginFocus,
+        label: 'KÂR ORANI', controller: _profitMargin1Ctrl, background: AppColors.primaryDeep, suffix: '%');
+    _bindBigValueFocus(_stockFocus,
+        label: 'STOK', controller: _stockCtrl, background: AppColors.primaryDeep);
 
     if (widget.productId != null) {
       _loadProduct(widget.productId!);
@@ -172,6 +234,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     setState(() {
       _loaded = true;
       _pendingSync = pendingSync;
+      _awaitingFetch = false;
     });
   }
 
@@ -199,6 +262,43 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _isOnlineActive = p.isOnlineActive;
     _groupId = p.groupId;
     _imageUrl = p.imageUrl;
+  }
+
+  /// Formu `initState`'teki boş "Yeni Ürün" durumuna döndürür — iki çağıran:
+  /// (1) `_fetchByBarcode` barkodun KESİN kayıtlı olmadığını öğrenince (eski
+  /// ürünün bilgileri ekranda kalıp kafa karıştırmasın diye, [clearBarcode]
+  /// `false` — kullanıcının az önce girdiği barkod korunur); (2) yeni bir
+  /// ürün başarıyla kaydedilince, ekrandan çıkmadan sıradaki ürüne geçmek
+  /// için ([clearBarcode] `true`). Çağıran taraf `setState` içine almalı.
+  void _resetProductFields({required bool clearBarcode}) {
+    _currentId = null;
+    if (clearBarcode) _barcodeCtrl.clear();
+    _nameCtrl.clear();
+    _price1Ctrl.text = '0';
+    _price2Ctrl.text = '0';
+    _purchasePriceCtrl.text = '0';
+    _stockCtrl.text = '0';
+    _criticalStockCtrl.text = '0';
+    _vatRateCtrl.text = '20';
+    _profitMargin1Ctrl.text = '0';
+    _unitCtrl.text = 'Adet';
+    _originCtrl.clear();
+    _stockCodeCtrl.clear();
+    _weightCtrl.clear();
+    _quickOrderCtrl.clear();
+    _companyCtrl.clear();
+    _detailDate = DateTime.now();
+    _statusLetter = 'Y';
+    _price1VatIncluded = true;
+    _price2VatIncluded = true;
+    _purchaseVatIncluded = true;
+    _isOnlineActive = false;
+    _groupId = null;
+    _imageUrl = null;
+    _pickedImageBytes = null;
+    _pickedImageExt = 'jpg';
+    _pendingSync = false;
+    _awaitingFetch = false;
   }
 
   String _fmt(num value) {
@@ -244,7 +344,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   @override
   void dispose() {
+    if (_isListening) _speech.stop();
+    _hideBigValueOverlay();
+    _purchasePriceFocus.dispose();
+    _price1Focus.dispose();
+    _profitMarginFocus.dispose();
+    _stockFocus.dispose();
     _barcodeCtrl.dispose();
+    _barcodeFocus.dispose();
     _nameCtrl.dispose();
     _price1Ctrl.dispose();
     _price2Ctrl.dispose();
@@ -261,6 +368,62 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _companyCtrl.dispose();
     _companyFocus.dispose();
     super.dispose();
+  }
+
+  /// [node] odak aldığında/kaybettiğinde büyük-puntolu onay overlay'ini
+  /// açıp/kapatan dinleyiciyi bağlar (bkz. `_purchasePriceFocus` notu).
+  void _bindBigValueFocus(
+    FocusNode node, {
+    required String label,
+    required TextEditingController controller,
+    required Color background,
+    String prefix = '',
+    String suffix = '',
+  }) {
+    node.addListener(() {
+      if (node.hasFocus) {
+        _showBigValueOverlay(
+          label: label,
+          controller: controller,
+          background: background,
+          prefix: prefix,
+          suffix: suffix,
+        );
+      } else {
+        _hideBigValueOverlay();
+      }
+    });
+  }
+
+  void _showBigValueOverlay({
+    required String label,
+    required TextEditingController controller,
+    required Color background,
+    String prefix = '',
+    String suffix = '',
+  }) {
+    _hideBigValueOverlay();
+    _bigValueOverlayCtrl = controller;
+    controller.addListener(_rebuildBigValueOverlay);
+    _bigValueOverlay = OverlayEntry(
+      builder: (_) => _BigValueOverlay(
+        label: label,
+        controller: controller,
+        background: background,
+        prefix: prefix,
+        suffix: suffix,
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(_bigValueOverlay!);
+  }
+
+  void _rebuildBigValueOverlay() => _bigValueOverlay?.markNeedsBuild();
+
+  void _hideBigValueOverlay() {
+    _bigValueOverlayCtrl?.removeListener(_rebuildBigValueOverlay);
+    _bigValueOverlayCtrl = null;
+    _bigValueOverlay?.remove();
+    _bigValueOverlay = null;
   }
 
   num _num(TextEditingController c) => num.tryParse(c.text.replaceAll(',', '.')) ?? 0;
@@ -336,7 +499,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   /// Detaylar" hem mobil "Ürün Bilgisi" (Firma/Tarih/Durum mobilde buraya
   /// taşındı) sekmelerinden paylaşılan alt-widget'lar.
   Widget _buildFirmaField() {
-    return _CompanyAutocompleteField(controller: _companyCtrl, focusNode: _companyFocus);
+    return CompanyAutocompleteField(controller: _companyCtrl, focusNode: _companyFocus);
   }
 
   Widget _buildTarihField() {
@@ -374,6 +537,32 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           onSelectionChanged: (s) => setState(() => _statusLetter = s.first),
         ),
       ],
+    );
+  }
+
+  /// "Etiket" — Durum kontrolünün yanında; Etiket Havuzu'na (Supabase
+  /// `label_pool_items`, bkz. 0032_label_pool.sql) bu ürünün etiketini
+  /// kuyruğa eklemek için `_LabelPoolDialog`'u açar. Barkod hanesi boşken
+  /// devre dışı — Havuz kalemleri barkod olmadan anlamsız (Code128 gerekir).
+  Widget _buildEtiketButton() {
+    final barcode = _barcodeCtrl.text.trim();
+    return OutlinedButton.icon(
+      onPressed: barcode.isEmpty ? null : _openLabelPoolDialog,
+      icon: const Icon(Icons.local_offer_outlined, size: 18),
+      label: const Text('Etiket'),
+    );
+  }
+
+  Future<void> _openLabelPoolDialog() async {
+    final barcode = _barcodeCtrl.text.trim();
+    if (barcode.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _LabelPoolDialog(
+        barcode: barcode,
+        productName: _nameCtrl.text.trim(),
+        price: _num(_price1Ctrl),
+      ),
     );
   }
 
@@ -421,6 +610,10 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   Future<void> _fetchByBarcode() async {
     final barcode = _barcodeCtrl.text.trim();
     if (barcode.isEmpty) return;
+    // Orta ekrandaki "Ürünü Getir" / Enter / kamera akışının hepsi buradan
+    // geçer — kilit sonuç ne olursa olsun (bulundu/bulunamadı/hata) hemen
+    // kalkar, kullanıcı BİR KEZ "getir" dedikten sonra formu düzenleyebilir.
+    if (mounted) setState(() => _awaitingFetch = false);
 
     Product? product;
     var fromCache = false;
@@ -446,6 +639,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       final String message;
       if (!networkFailed) {
         message = 'Bu barkoda ait ürün bulunamadı, yeni ürün oluşturabilirsiniz.';
+        // Sunucu KESİN "yok" dedi (ağ sorunu değil) — önceki barkodun (varsa)
+        // hâlâ ekranda duran bilgileri kafa karıştırmasın diye formu boşaltır
+        // (barkod hanesi KORUNUR — kullanıcı o barkotla yeni ürün oluşturur).
+        // networkFailed=true dallarında (bağlantı yok/timeout) BOŞALTMAYIZ —
+        // ürün gerçekte var olabilir, yalnız şu an sorgulanamadı; kullanıcının
+        // henüz kaydetmediği elle girdiği değerleri silmek yanlış olur.
+        setState(() => _resetProductFields(clearBarcode: false));
       } else if (kIsWeb) {
         message = 'Bağlantı hatası — barkod sorgulanamadı, tekrar deneyin.';
       } else {
@@ -472,6 +672,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     setState(() {
       _applyProduct(product!);
       _pendingSync = pendingSync;
+      _awaitingFetch = false;
     });
 
     if (fromCache && mounted) {
@@ -481,6 +682,84 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 Text('Çevrimdışı kayıttan yüklendi — veriler son senkronizasyondan bu yana değişmiş olabilir.')),
       );
     }
+  }
+
+  /// "+ barkod üret" ikonu — bugünün YYMMDD önekiyle başlayan, henüz
+  /// kullanılmamış ilk XXX'i bulup hanaye yazar (ör. 260814001, doluysa
+  /// 260814002, ...). `_loadProduct`/`_fetchByBarcode` ile aynı "önce ağ
+  /// (timeout'lu), olmazsa (`!kIsWeb`) yerel önbellek" desenini kullanır.
+  Future<void> _generateBarcode() async {
+    if (_generatingBarcode) return;
+    setState(() => _generatingBarcode = true);
+    try {
+      final now = DateTime.now();
+      final prefix = '${(now.year % 100).toString().padLeft(2, '0')}'
+          '${now.month.toString().padLeft(2, '0')}'
+          '${now.day.toString().padLeft(2, '0')}';
+
+      Set<String> existing;
+      if (_knownOffline) {
+        existing = !kIsWeb
+            ? await ref.read(productLocalCacheDaoProvider).fetchBarcodesWithPrefix(prefix)
+            : const <String>{};
+      } else {
+        try {
+          existing = await withNetworkTimeout(
+              ref.read(productRepositoryProvider).fetchBarcodesWithPrefix(prefix));
+        } catch (_) {
+          existing = !kIsWeb
+              ? await ref.read(productLocalCacheDaoProvider).fetchBarcodesWithPrefix(prefix)
+              : const <String>{};
+        }
+      }
+      if (!mounted) return;
+
+      final candidate = nextBarcodeCandidate(prefix, existing);
+      setState(() {
+        _barcodeCtrl.text = candidate;
+        _awaitingFetch = true;
+      });
+    } finally {
+      if (mounted) setState(() => _generatingBarcode = false);
+    }
+  }
+
+  /// Ürün Adı mikrofon butonu — dinlerken tekrar basılırsa durdurur.
+  /// `result.recognizedWords` her callback'te O ANA KADAR tanınan TÜM
+  /// tümceyi taşır (delta değil) — bu yüzden hane her seferinde DEĞİŞTİRİLİR
+  /// (append edilmez), tek bir dikte oturumu = tek bir ürün adı.
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      await _speech.stop();
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if ((status == 'notListening' || status == 'done') && mounted) {
+          setState(() => _isListening = false);
+        }
+      },
+      onError: (_) {
+        if (mounted) setState(() => _isListening = false);
+      },
+    );
+    if (!available) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Ses tanıma kullanılamıyor (mikrofon izni gerekebilir).')));
+      }
+      return;
+    }
+    setState(() => _isListening = true);
+    await _speech.listen(
+      listenOptions: stt.SpeechListenOptions(localeId: 'tr_TR'),
+      onResult: (result) {
+        _nameCtrl.text = result.recognizedWords;
+        _nameCtrl.selection = TextSelection.collapsed(offset: _nameCtrl.text.length);
+        if (result.finalResult && mounted) setState(() => _isListening = false);
+      },
+    );
   }
 
   Future<void> _pickImage() async {
@@ -565,7 +844,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                 content:
                     Text('Ürün kaydedildi, ancak resim yüklenemedi — bağlantı gelince otomatik yüklenecek.')));
-            context.go('/products');
+            _afterSaveOrStay(isNew: isNew);
           }
           return;
         }
@@ -578,7 +857,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ürün kaydedildi')));
-        context.go('/products');
+        _afterSaveOrStay(isNew: isNew);
       }
     } on PostgrestException catch (e) {
       // Sunucu YANIT VERDİ — gerçek red (ör. barkod çakışması ONLINE iken).
@@ -603,6 +882,20 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     }
   }
 
+  /// Kayıt başarıyla bittikten sonra (tam başarı/yalnız-görsel-hata/offline-
+  /// kuyruk — üçü de bunu çağırır): ARTIK HİÇBİR DURUMDA `/products`'a
+  /// GİTMEZ. YENİ ürün kaydıysa formu boşaltıp (barkod dahil) barkod
+  /// hanesine odaklanır, kullanıcı ekrandan çıkmadan sıradaki ürünü
+  /// kaydedebilsin diye. Mevcut bir ürün düzenlemesiyse form olduğu gibi
+  /// (kaydedilen değerlerle) ekranda kalır — kullanıcı listeye dönmeden
+  /// düzenlemeye devam edebilir, geri dönmek isterse geri okunu kullanır.
+  void _afterSaveOrStay({required bool isNew}) {
+    if (isNew) {
+      setState(() => _resetProductFields(clearBarcode: true));
+      _barcodeFocus.requestFocus();
+    }
+  }
+
   /// Ürünü senkron kuyruğuna yazar ve kullanıcıyı bilgilendirip ekrandan
   /// çıkar — hem "zaten offline olduğu biliniyordu" kısayolundan hem de
   /// "ağ denemesi timeout'la başarısız oldu" dalından çağrılır.
@@ -613,7 +906,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Bağlantı yok — ürün çevrimdışı kaydedildi, bağlantı gelince otomatik gönderilecek.')));
-      context.go('/products');
+      _afterSaveOrStay(isNew: isNew);
     }
   }
 
@@ -728,35 +1021,87 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
                 Expanded(
                   child: TextField(
                     controller: _barcodeCtrl,
+                    focusNode: _barcodeFocus,
                     decoration: const InputDecoration(hintText: 'Ürün barkodunu okutunuz...'),
                     onSubmitted: (_) => _fetchByBarcode(),
+                    // Elle ilk karakter girilince kilit açılır (orta "Ürünü
+                    // Getir" belirir); hane boşalınca kilit kalkar.
+                    onChanged: (v) => setState(() => _awaitingFetch = v.trim().isNotEmpty),
                   ),
                 ),
-                // Kamera ile barkod okut — sadece mobil/native
+                // Kamera + "barkod üret" — sadece mobil/native. "Ürünü Getir"
+                // masaüstünde satırda kalır; mobilde yerini orta-ekran
+                // overlay'e bırakır (bkz. aşağıdaki kilit Stack'i).
                 if (!kIsWeb && context.isMobile) ...[
                   const SizedBox(width: 8),
-                  SizedBox(
-                    height: 48,
-                    width: 48,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: _scanBarcode,
-                      child: const Icon(Icons.camera_alt_outlined, size: 22),
-                    ),
+                  _buildSquareIconButton(
+                    icon: const Icon(Icons.camera_alt_outlined, size: 22),
+                    color: AppColors.primary,
+                    onPressed: _scanBarcode,
                   ),
+                  const SizedBox(width: 8),
+                  _buildSquareIconButton(
+                    icon: const Badge(
+                      label: Icon(Icons.add, size: 10, color: Colors.white),
+                      backgroundColor: AppColors.success,
+                      child: Icon(Icons.qr_code_2, size: 22),
+                    ),
+                    color: AppColors.success,
+                    onPressed: _generatingBarcode ? null : _generateBarcode,
+                    loading: _generatingBarcode,
+                  ),
+                ] else ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton(onPressed: _fetchByBarcode, child: const Text('Ürünü Getir')),
                 ],
-                const SizedBox(width: 8),
-                OutlinedButton(onPressed: _fetchByBarcode, child: const Text('Ürünü Getir')),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
+        _buildFormArea(groupsAsync),
+      ],
+    );
+  }
+
+  /// Barkod kartındaki kamera/üret ikonları için ortak 48×48 kare buton
+  /// iskeleti (DRY — ikisi de aynı görünüm, yalnız ikon/renk/eylem değişir).
+  Widget _buildSquareIconButton({
+    required Widget icon,
+    required Color color,
+    required VoidCallback? onPressed,
+    bool loading = false,
+  }) {
+    return SizedBox(
+      height: 48,
+      width: 48,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        onPressed: onPressed,
+        child: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : icon,
+      ),
+    );
+  }
+
+  /// Sekmeler + Kaydet/Sil barı. Mobilde barkod hanesi doldurulup henüz
+  /// "Ürünü Getir" ile onaylanmadıysa (`_awaitingFetch`) bu bölge dim +
+  /// dokunmaz hale gelir, ortasında büyük "Ürünü Getir" belirir — kullanıcı
+  /// önce barkodu netleştirsin diye (üst başlık/geri oku ve barkod kartı bu
+  /// kilidin DIŞINDadır, her zaman erişilebilir kalır).
+  Widget _buildFormArea(AsyncValue<List<dynamic>> groupsAsync) {
+    final formArea = Column(
+      children: [
         Expanded(
           child: Form(
             key: _formKey,
@@ -787,6 +1132,22 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         const SizedBox(height: 12),
         _buildBottomBar(),
       ],
+    );
+
+    final locked = !kIsWeb && context.isMobile && _awaitingFetch;
+    if (!locked) return Expanded(child: formArea);
+
+    return Expanded(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: AbsorbPointer(
+              child: Opacity(opacity: 0.25, child: formArea),
+            ),
+          ),
+          Center(child: _CenterFetchButton(onTap: _fetchByBarcode)),
+        ],
+      ),
     );
   }
 
@@ -1109,7 +1470,21 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       children: [
         TextFormField(
           controller: _nameCtrl,
-          decoration: const InputDecoration(labelText: 'Ürün Adı *'),
+          decoration: InputDecoration(
+            labelText: 'Ürün Adı *',
+            // Ses ile ürün adı girişi — yalnız mobil/native (kamera/barkod
+            // üret ikonlarıyla aynı koşul).
+            suffixIcon: (!kIsWeb && context.isMobile)
+                ? IconButton(
+                    tooltip: 'Ses ile gir',
+                    icon: Icon(
+                      _isListening ? Icons.mic : Icons.mic_none,
+                      color: _isListening ? AppColors.danger : null,
+                    ),
+                    onPressed: _toggleListening,
+                  )
+                : null,
+          ),
           validator: (v) =>
               (v == null || v.trim().isEmpty) ? 'Ürün adı giriniz' : null,
         ),
@@ -1119,6 +1494,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _purchasePriceCtrl,
+                focusNode: _purchasePriceFocus,
                 decoration: _colorCodedDecoration('Alış', AppColors.danger),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -1133,6 +1509,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _profitMargin1Ctrl,
+                focusNode: _profitMarginFocus,
                 decoration:
                     const InputDecoration(labelText: 'Kar %', suffixText: '%'),
                 keyboardType:
@@ -1152,6 +1529,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _price1Ctrl,
+                focusNode: _price1Focus,
                 decoration: _colorCodedDecoration('Satış', AppColors.success),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -1166,6 +1544,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
             Expanded(
               child: TextFormField(
                 controller: _stockCtrl,
+                focusNode: _stockFocus,
                 decoration: const InputDecoration(labelText: 'Stok'),
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -1184,7 +1563,14 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        _buildDurumField(),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(child: _buildDurumField()),
+            const SizedBox(width: 12),
+            _buildEtiketButton(),
+          ],
+        ),
       ],
     );
   }
@@ -1266,10 +1652,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         _buildFirmaField(),
         const SizedBox(height: 12),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(child: _buildTarihField()),
             const SizedBox(width: 12),
             Expanded(child: _buildDurumField()),
+            const SizedBox(width: 12),
+            _buildEtiketButton(),
           ],
         ),
         const SizedBox(height: 12),
@@ -1381,168 +1770,249 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   }
 }
 
-/// Firma otomatik tamamlama alanı.
-/// KURAL: girilen önek (starts with, Türkçe-duyarlı) TAM 1 firmayla eşleşirse
-/// overlay o tek öğeyi gösterir; 0 ya da ≥2 eşleşmede overlay HİÇ açılmaz.
-/// Örn. firmalar = {PALA, PERDECİ}: "P"→2 eşleşme→kapalı, "PA"→1→PALA,
-/// "PE"→1→PERDECİ. Seçim/Enter → alan tam firma adıyla dolar.
-/// Overlay görünümü satış ekranındaki _LiveProductSearchField ile aynı
-/// (cardBg yüzey, AppColors.divider hairline, AppSizes.radiusMd).
-class _CompanyAutocompleteField extends ConsumerStatefulWidget {
+/// Alış/Kâr%/Satış/Stok hanelerinden birine odaklanınca tüm ekranı kaplayan
+/// büyük-puntolu onay overlay'i (bkz. `_ProductFormScreenState._bindBigValueFocus`).
+/// Controller değiştikçe (`markNeedsBuild` ile) canlı güncellenir; herhangi
+/// bir yere dokunmak odağı kaldırıp overlay'i kapatır.
+class _BigValueOverlay extends StatelessWidget {
+  final String label;
   final TextEditingController controller;
-  final FocusNode focusNode;
+  final Color background;
+  final String prefix;
+  final String suffix;
 
-  const _CompanyAutocompleteField({
+  const _BigValueOverlay({
+    required this.label,
     required this.controller,
-    required this.focusNode,
+    required this.background,
+    this.prefix = '',
+    this.suffix = '',
   });
 
   @override
-  ConsumerState<_CompanyAutocompleteField> createState() =>
-      _CompanyAutocompleteFieldState();
+  Widget build(BuildContext context) {
+    final raw = controller.text.trim();
+    final display = raw.isEmpty ? '0' : raw;
+
+    return Positioned.fill(
+      child: GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: Material(
+          color: background,
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '$prefix$display$suffix',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 64,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    'Devam etmek için dokun',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _CompanyAutocompleteFieldState
-    extends ConsumerState<_CompanyAutocompleteField> {
-  final _link = LayerLink();
-  final _portal = OverlayPortalController();
-  double _fieldWidth = 320;
-  Company? _match; // önekle eşleşen TEK firma (varsa)
+/// Barkod hanesi kilitliyken (`_awaitingFetch`) ekranın ortasında beliren
+/// büyük "Ürünü Getir" düğmesi — mobil barkod-kilit overlay'inin tek aktif
+/// eylemi (bkz. `_ProductFormScreenState._buildFormArea`).
+class _CenterFetchButton extends StatelessWidget {
+  final VoidCallback onTap;
 
-  // Türkçe küçük harf: önce I→ı, İ→i eşle, sonra toLowerCase().
-  // (product_repository.dart'taki katlama mantığının aynısı.)
-  static String _trLower(String s) =>
-      s.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
+  const _CenterFetchButton({required this.onTap});
 
   @override
-  void initState() {
-    super.initState();
-    widget.focusNode.addListener(_onFocusChange);
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(100),
+        onTap: onTap,
+        child: Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primary,
+            boxShadow: const [
+              BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, 4)),
+            ],
+          ),
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.download_outlined, color: Colors.white, size: 36),
+              SizedBox(height: 6),
+              Text(
+                'Ürünü\nGetir',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
+}
+
+/// "Etiket" butonuyla açılan diyalog — Raf/Tel/Geniş/Ürün alt alta, her
+/// birinin yanında onay kutusu + (işaretliyken açılan, varsayılan '1') adet
+/// hanesi. "Ekle" işaretli her tür için Etiket Havuzu'na (Supabase
+/// `label_pool_items`, bkz. 0032_label_pool.sql) bu ürünün [quantity] kadar
+/// kopyasını ekler — kullanıcılar/cihazlar arası PAYLAŞILAN kalıcı kuyruk
+/// (bkz. `labels_provider.dart` `labelPoolRepositoryProvider`). Offline kuyruk
+/// YOK (bilinçli basitleştirme) — bağlantı hatasında snackbar gösterir.
+class _LabelPoolDialog extends ConsumerStatefulWidget {
+  final String barcode;
+  final String productName;
+  final num price;
+
+  const _LabelPoolDialog({
+    required this.barcode,
+    required this.productName,
+    required this.price,
+  });
+
+  @override
+  ConsumerState<_LabelPoolDialog> createState() => _LabelPoolDialogState();
+}
+
+class _LabelPoolDialogState extends ConsumerState<_LabelPoolDialog> {
+  static const _labels = {
+    kLabelPoolTypeRaf: 'Raf',
+    kLabelPoolTypeTel: 'Tel',
+    kLabelPoolTypeGenis: 'Geniş',
+    kLabelPoolTypeUrun: 'Ürün',
+  };
+
+  final Map<String, bool> _checked = {
+    for (final key in _labels.keys) key: false,
+  };
+  final Map<String, TextEditingController> _qtyCtrls = {
+    for (final key in _labels.keys) key: TextEditingController(text: '1'),
+  };
+
+  bool _saving = false;
 
   @override
   void dispose() {
-    widget.focusNode.removeListener(_onFocusChange);
+    for (final c in _qtyCtrls.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  void _onFocusChange() {
-    if (!widget.focusNode.hasFocus) _portal.hide();
-  }
-
-  void _onChanged(String value) {
-    final prefix = value.trim();
-    if (prefix.isEmpty) {
-      _match = null;
-      _portal.hide();
+  Future<void> _confirm() async {
+    final selected = _labels.keys.where((k) => _checked[k] == true).toList();
+    if (selected.isEmpty) {
+      Navigator.of(context).pop();
       return;
     }
-    final companies = ref.read(companiesProvider).value ?? const <Company>[];
-    final needle = _trLower(prefix);
-    // "starts with" önek filtresi (Türkçe-duyarlı).
-    final matches =
-        companies.where((c) => _trLower(c.name).startsWith(needle)).toList();
-    // Overlay yalnızca TAM 1 eşleşmede açılır.
-    if (matches.length == 1) {
-      setState(() => _match = matches.first);
-      if (widget.focusNode.hasFocus) _portal.show();
-    } else {
-      _match = null;
-      _portal.hide();
+    setState(() => _saving = true);
+    try {
+      final repo = ref.read(labelPoolRepositoryProvider);
+      for (final type in selected) {
+        final qty = int.tryParse(_qtyCtrls[type]!.text.trim()) ?? 0;
+        if (qty <= 0) continue;
+        await repo.add(
+          labelType: type,
+          barcode: widget.barcode,
+          productName: widget.productName,
+          price: type == kLabelPoolTypeUrun ? null : widget.price,
+          quantity: qty,
+        );
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Etiket Havuza eklendi.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Havuza eklenemedi: $e')),
+      );
     }
-  }
-
-  void _select(Company company) {
-    widget.controller.text = company.name;
-    widget.controller.selection = TextSelection.collapsed(
-      offset: company.name.length,
-    );
-    _match = null;
-    _portal.hide();
-    widget.focusNode.requestFocus();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Firma listesini yükle/aboneliği canlı tut (onChanged ref.read ile okur).
-    ref.watch(companiesProvider);
-    return OverlayPortal(
-      controller: _portal,
-      overlayChildBuilder: (context) {
-        final match = _match;
-        if (match == null) return const SizedBox.shrink();
-        return CompositedTransformFollower(
-          link: _link,
-          targetAnchor: Alignment.bottomLeft,
-          followerAnchor: Alignment.topLeft,
-          offset: const Offset(0, 4),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: TextFieldTapRegion(
-              child: SizedBox(
-                width: _fieldWidth,
-                child: _buildDropdown(match),
+    return AlertDialog(
+      title: const Text('Etiket Havuzuna Ekle'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: _labels.keys.map((key) {
+          final isChecked = _checked[key] == true;
+          return Row(
+            children: [
+              Checkbox(
+                value: isChecked,
+                onChanged: _saving
+                    ? null
+                    : (v) => setState(() => _checked[key] = v ?? false),
               ),
-            ),
-          ),
-        );
-      },
-      child: CompositedTransformTarget(
-        link: _link,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth.isFinite) {
-              _fieldWidth = constraints.maxWidth;
-            }
-            return TextField(
-              controller: widget.controller,
-              focusNode: widget.focusNode,
-              decoration: const InputDecoration(labelText: 'Firma'),
-              onChanged: _onChanged,
-              onSubmitted: (_) {
-                final match = _match;
-                if (match != null) _select(match);
-                _portal.hide();
-              },
-            );
-          },
-        ),
+              Expanded(child: Text(_labels[key]!)),
+              if (isChecked)
+                SizedBox(
+                  width: 64,
+                  child: TextField(
+                    controller: _qtyCtrls[key],
+                    enabled: !_saving,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        }).toList(),
       ),
-    );
-  }
-
-  Widget _buildDropdown(Company match) {
-    return Material(
-      elevation: 8,
-      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-      shadowColor: Colors.black26,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-          border: Border.all(color: AppColors.border),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Vazgeç'),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _select(match),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSizes.space12,
-              vertical: AppSizes.space8,
-            ),
-            child: Text(
-              match.name,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+        ElevatedButton(
+          onPressed: _saving ? null : _confirm,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Ekle'),
         ),
-      ),
+      ],
     );
   }
 }

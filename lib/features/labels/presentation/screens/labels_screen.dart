@@ -20,19 +20,42 @@ import '../../../products/application/products_provider.dart';
 import '../../../products/data/local/product_local_cache_dao.dart';
 import '../../../products/data/models/product.dart';
 import '../../../sales/application/barcode_cache.dart';
+import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../application/labels_provider.dart';
 import '../../data/label_pdf.dart';
 import '../../data/labels_storage_repository.dart';
+import '../../data/models/discount_label_slot.dart';
+import '../../data/models/label_pool_item.dart';
 import '../../data/models/label_slot.dart';
 import '../../data/models/product_label_item.dart';
+import '../../data/models/tel_discount_label_slot.dart';
 import '../widgets/etiket_print.dart';
 import '../widgets/label_open.dart';
 import '../widgets/label_scan_sheet.dart';
 
-// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.21 / v1.23): dar 24-hane akışı +
-// Geniş Logo 10-hane akışı + Poster (barkod okutulan ürünlerin profesyonel
-// A4 listesi) + Ürün Etiketi (adet-tabanlı 6×12) + kayıtlı PDF'ler.
-enum _LabelTab { yeni, genis, poster, urun, kayitli }
+// Etiket ekranı üst sekmeleri (KARAR v1.14 / v1.21 / v1.23 / Etiket Havuzu):
+// Havuz (kullanıcılar/cihazlar arası paylaşılan bekleyen etiket kuyruğu, bkz.
+// 0032_label_pool.sql — mobil ürün formundaki "Etiket" butonu besler) + Raf
+// Etiketi (eski "Yeni Etiket") 24-hane akışı + Tel Etiketi (Raf ile birebir
+// aynı hücre/yükseklik, yalnız 4×8=32 ızgara) + Geniş Logo 10-hane akışı +
+// Poster (barkod okutulan ürünlerin profesyonel A4 listesi) + Ürün Etiketi
+// (adet-tabanlı 6×12) + İndirim Etiketi (4 hane, 2×2 — eski/yeni fiyat +
+// indirim rozeti) + kayıtlı PDF'ler.
+enum _LabelTab {
+  havuz,
+  raf,
+  tel,
+  telIndirim,
+  genis,
+  poster,
+  urun,
+  indirim,
+  kayitli,
+}
+
+// _InputColumn/_SlotInputRow'un hangi hane provider'ını izleyeceğini seçer
+// (Raf/Geniş Logo/Tel — üçü de aynı giriş-sütunu/satır widget'larını paylaşır).
+enum _LabelSlotSource { raf, wide, tel }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Etiket (raf etiketi A4 yazdırma) ekranı — KARAR v1.10
@@ -63,12 +86,51 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   final Set<int> _errors = {}; // çözülemeyen hane indeksleri (danger uyarı)
   int _activeIndex = 0; // aktif (odaklı) hane — aktif durum altını
 
-  // Geniş Logo sekmesi (KARAR v1.14) — 10 haneli ayrı giriş durumu.
+  // Geniş Logo sekmesi (KARAR v1.14) — 10 haneli ayrı giriş durumu. Faz D:
+  // sabit marka figürü kaldırıldı, mağaza logosu (kiracı-bazlı) Raf'ın kalıcı
+  // `labelSheetProvider.logoDataUrl`'inden PAYLAŞILIR (Poster ile aynı desen).
   late final List<TextEditingController> _wideControllers;
   late final List<FocusNode> _wideFocusNodes;
   final Set<int> _wideErrors = {};
   int _wideActiveIndex = 0;
-  Uint8List? _figurBytes; // marka figürü (yazdırma için bir kez okunur)
+
+  // Tel Etiketi sekmesi — Raf ile birebir aynı akış, 32 haneli ayrı giriş
+  // durumu (mağaza logosu Raf'ın kalıcı logoDataUrl'ini paylaşır).
+  late final List<TextEditingController> _telControllers;
+  late final List<FocusNode> _telFocusNodes;
+  final Set<int> _telErrors = {};
+  int _telActiveIndex = 0;
+
+  // Tel İndirim Etiketi sekmesi — Tel ile AYNI sabit 32 haneli giriş
+  // (mağaza logosu da Tel/Raf'la aynı kaynaktan paylaşılır). Her hanenin
+  // barkod alanının yanında kendi %/₺ değeri için ayrı bir controller +
+  // sayfa geneli tek bir "Genel %/₺" değeri (bkz. labels_provider.dart
+  // LabelTelDiscountSheetState.generalKind/generalValue).
+  late final List<TextEditingController> _telDiscountControllers;
+  late final List<FocusNode> _telDiscountFocusNodes;
+  late final List<TextEditingController> _telDiscountOwnValueControllers;
+  final Set<int> _telDiscountErrors = {};
+  int _telDiscountActiveIndex = 0;
+  late final TextEditingController _telDiscountGeneralValueController;
+
+  // İndirim Etiketi sekmesi — sınırsız büyüyen giriş listesi (2×2 ızgara,
+  // 4/sayfa — bkz. labels_provider.dart LabelDiscountSheetState). Her hane:
+  // barkod input'u + (ürün çözülünce görünen) indirim yüzdesi input'u + logo
+  // tiki; logo Faz D'den itibaren kiracı-bazlı (Geniş Logo/Raf ile
+  // PAYLAŞILAN `labelSheetProvider.logoDataUrl`) — hane-başı tik yalnız o
+  // etikette basılıp basılmayacağını belirler. Bu üç liste her zaman
+  // provider'ın `slots` uzunluğuyla birebir eşlenir (bkz.
+  // `_syncDiscountControllers`).
+  late final List<TextEditingController> _discountBarcodeControllers;
+  late final List<TextEditingController> _discountPercentControllers;
+  late final List<FocusNode> _discountBarcodeFocusNodes;
+  final Set<int> _discountErrors = {};
+  int _discountActiveIndex = 0;
+  // Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneleri
+  // etkiler (bkz. labels_provider.dart LabelDiscountSheetState.defaultPercent).
+  late final TextEditingController _discountDefaultPercentController;
+  // İndirim Etiketi tagline'ı (Faz D — kiracı-bazlı marka metni, logo altı).
+  late final TextEditingController _taglineController;
 
   // Poster sekmesi (KARAR v1.23 / v1.24) — barkod VEYA ürün adı ile serbest
   // liste; sabit hane sayısı YOK, tek giriş satırı (satış ekranı
@@ -90,7 +152,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   bool _prodError = false; // son barkod çözülemedi (danger uyarı)
   bool _prodBarcodeActive = false; // barkod hanesi odaklı mı (aktif altını)
 
-  _LabelTab _tab = _LabelTab.yeni; // aktif sekme
+  _LabelTab _tab = _LabelTab.raf; // aktif sekme
 
   @override
   void initState() {
@@ -113,6 +175,57 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       });
       return node;
     });
+    _telControllers =
+        List.generate(kTelCount, (_) => TextEditingController());
+    _telFocusNodes = List.generate(kTelCount, (i) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus && mounted) setState(() => _telActiveIndex = i);
+      });
+      return node;
+    });
+    _telDiscountControllers =
+        List.generate(kTelCount, (_) => TextEditingController());
+    _telDiscountFocusNodes = List.generate(kTelCount, (i) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus && mounted) {
+          setState(() => _telDiscountActiveIndex = i);
+        }
+      });
+      return node;
+    });
+    _telDiscountOwnValueControllers =
+        List.generate(kTelCount, (_) => TextEditingController());
+    // keepAlive provider'dan mevcut genel değeri geri yükle (sekme değişince korunur).
+    final initialTelDiscountValue =
+        ref.read(labelTelDiscountSheetProvider).generalValue;
+    _telDiscountGeneralValueController = TextEditingController(
+      text: initialTelDiscountValue == 0
+          ? ''
+          : initialTelDiscountValue.toString(),
+    );
+    // Ekran yeniden mount olursa (ör. sekmeler arası navigasyon) `keepAlive`
+    // provider'daki mevcut hane sayısına göre başlar — metin içeriği restore
+    // EDİLMEZ (diğer etiket sekmeleriyle aynı mevcut davranış), yalnız liste
+    // UZUNLUĞU senkron başlar (aksi halde ListView.builder itemCount'u
+    // provider'ın filledCount'undan geride kalır).
+    final discountInitLen = ref.read(labelDiscountSheetProvider).slots.length;
+    _discountBarcodeControllers =
+        List.generate(discountInitLen, (_) => TextEditingController());
+    _discountPercentControllers =
+        List.generate(discountInitLen, (_) => TextEditingController());
+    _discountBarcodeFocusNodes =
+        List.generate(discountInitLen, (_) => _makeDiscountFocusNode());
+    // keepAlive provider'dan mevcut ana yüzdeyi geri yükle (sekme değişince korunur).
+    final initialDefaultPercent =
+        ref.read(labelDiscountSheetProvider).defaultPercent;
+    _discountDefaultPercentController = TextEditingController(
+      text: initialDefaultPercent == 0 ? '' : initialDefaultPercent.toString(),
+    );
+    // keepAlive provider'dan mevcut tagline'ı geri yükle (sekme değişince korunur).
+    _taglineController =
+        TextEditingController(text: ref.read(labelSheetProvider).taglineText ?? '');
     _posterBarcodeController = TextEditingController();
     _posterBarcodeFocus = FocusNode();
     _posterBarcodeFocus.addListener(() {
@@ -139,6 +252,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     // Kayıtlı mağaza logosunu Storage'dan geri yükle (KARAR v1.12) — login/logout
     // sonrası korunur. Fire-and-forget (await gerekmez).
     _loadPersistedLogo();
+    // Kayıtlı İndirim Etiketi tagline'ını geri yükle (Faz D).
+    _loadPersistedTagline();
   }
 
   // Storage'da kayıtlı logoyu (varsa) sayfaya geri yükler (KARAR v1.12).
@@ -148,6 +263,25 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     final dataUrl = await ref.read(labelsStorageRepositoryProvider).fetchLogo();
     if (!mounted || dataUrl == null || dataUrl.isEmpty) return;
     ref.read(labelSheetProvider.notifier).setLogo(dataUrl);
+  }
+
+  // Storage'da kayıtlı İndirim Etiketi tagline'ını (varsa) geri yükler (Faz D).
+  Future<void> _loadPersistedTagline() async {
+    if (ref.read(labelSheetProvider).taglineText != null) return;
+    final text =
+        await ref.read(labelsStorageRepositoryProvider).fetchTagline();
+    if (!mounted || text == null || text.isEmpty) return;
+    ref.read(labelSheetProvider.notifier).setTagline(text);
+    _taglineController.text = text;
+  }
+
+  // Tagline değişince state'i günceller + Storage'a yazar (logo _pickLogo
+  // deseniyle aynı — hata olsa da önizleme çalışsın).
+  Future<void> _onTaglineChanged(String value) async {
+    ref.read(labelSheetProvider.notifier).setTagline(value);
+    try {
+      await ref.read(labelsStorageRepositoryProvider).uploadTagline(value);
+    } catch (_) {}
   }
 
   @override
@@ -164,6 +298,33 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     for (final n in _wideFocusNodes) {
       n.dispose();
     }
+    for (final c in _telControllers) {
+      c.dispose();
+    }
+    for (final n in _telFocusNodes) {
+      n.dispose();
+    }
+    for (final c in _telDiscountControllers) {
+      c.dispose();
+    }
+    for (final n in _telDiscountFocusNodes) {
+      n.dispose();
+    }
+    for (final c in _telDiscountOwnValueControllers) {
+      c.dispose();
+    }
+    _telDiscountGeneralValueController.dispose();
+    for (final c in _discountBarcodeControllers) {
+      c.dispose();
+    }
+    for (final c in _discountPercentControllers) {
+      c.dispose();
+    }
+    for (final n in _discountBarcodeFocusNodes) {
+      n.dispose();
+    }
+    _discountDefaultPercentController.dispose();
+    _taglineController.dispose();
     _posterBarcodeController.dispose();
     _posterBarcodeFocus.dispose();
     _posterTitleController.dispose();
@@ -178,6 +339,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // internetsiz), miss ise ağ fallback (fetchByBarcode → fetchAll, tam barkod
   // eşleşmesi tercih). Ağ hatası/offline → cache miss'te null döner. Bulunan
   // ürün cache'e yazılır (sonraki okutmalar da hızlı/offline olur).
+  //
+  // Ürün başarıyla çözüldüğünde ayrıca (fire-and-forget) `label_scan_activity`
+  // tablosuna işaretlenir — "Stok" sayfasındaki aktif-ürün sayacının kaynağı
+  // (bkz. `ProductRepository.markLabelScanned`, 0034 migration). Bu fonksiyon
+  // TÜM etiket sekmelerinin (Raf/Tel/Geniş/Poster/Ürün/İndirim) paylaştığı TEK
+  // barkod-çözme noktası olduğundan tek bir yerden enstrümante edilmesi yeter.
   Future<Product?> _resolveBarcode(String query) async {
     final cache = ref.read(barcodeCacheProvider);
     Product? product = cache.lookup(query);
@@ -199,6 +366,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       } catch (_) {
         // Offline / ağ hatası — cache miss ise çözülemez (null).
       }
+    }
+    if (product != null) {
+      unawaited(ref
+          .read(productRepositoryProvider)
+          .markLabelScanned(product.id, product.barcode ?? query));
     }
     return product;
   }
@@ -475,12 +647,6 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // (_resolveBarcode); yalnız hedef state (labelWideSheetProvider) farklı.
   // ═════════════════════════════════════════════════════════════════════════
 
-  // Marka figürünü yazdırma için bir kez okur (base64 print + PDF ayrı okur).
-  Future<Uint8List> _loadFigurBytes() async {
-    return _figurBytes ??=
-        (await rootBundle.load('genis_logo_figur.png')).buffer.asUint8List();
-  }
-
   int _nextWideEmptyIndex() {
     final slots = ref.read(labelWideSheetProvider).slots;
     for (var i = 0; i < kWideCount; i++) {
@@ -607,10 +773,12 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
       return;
     }
-    final bytes = await _loadFigurBytes();
-    if (!mounted) return;
-    final figurDataUrl = 'data:image/png;base64,${base64Encode(bytes)}';
-    printWideLabelsA4(slots: state.slots, figurDataUrl: figurDataUrl);
+    // Mağaza logosu dar-logo sekmesinin kalıcı store logosundan paylaşılır
+    // (Faz D — sabit marka figürü kaldırıldı).
+    printWideLabelsA4(
+      slots: state.slots,
+      logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+    );
   }
 
   Future<void> _saveWidePdf() async {
@@ -630,7 +798,714 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final bytes = await buildWideLabelsPdf(slots: state.slots);
+      final bytes = await buildWideLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+      );
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Tel Etiketi sekmesi — Raf Etiketi'nin (dar-logo) 4×8=32 haneli kopyası.
+  // Hücre tasarımı/yükseklik Raf ile BİREBİR aynı (_LabelCell paylaşılır);
+  // mağaza logosu da Raf'ın kalıcı `labelSheetProvider` logosunu paylaşır
+  // (ayrı bir logo yükleme akışı YOK — Poster sekmesinin zaten yaptığı gibi).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  int _nextTelEmptyIndex() {
+    final slots = ref.read(labelTelSheetProvider).slots;
+    for (var i = 0; i < kTelCount; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  Future<void> _onTelSubmitted(int index, String raw) async {
+    final query = raw.trim();
+    final notifier = ref.read(labelTelSheetProvider.notifier);
+    if (query.isEmpty) {
+      notifier.clearSlot(index);
+      setState(() => _telErrors.remove(index));
+      return;
+    }
+
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      notifier.clearSlot(index);
+      setState(() => _telErrors.add(index));
+      playScanBeep(success: false); // danger uyarı sesi (KARAR v1.14.1)
+      return;
+    }
+
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    notifier.setSlot(
+      index,
+      LabelSlot(
+        barcode: code,
+        productName: product.name,
+        price: product.price1,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _telControllers[index].text = code;
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true); // başarı bipi (KARAR v1.14.1)
+    setState(() => _telErrors.remove(index));
+
+    if (index + 1 < kTelCount) {
+      _telFocusNodes[index + 1].requestFocus();
+      _telControllers[index + 1].selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _telControllers[index + 1].text.length,
+      );
+    }
+  }
+
+  Future<LabelScanFeedback> _handleTelCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelTelSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextTelEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    ref.read(labelTelSheetProvider.notifier).setSlot(
+          index,
+          LabelSlot(
+            barcode: code,
+            productName: product.name,
+            price: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+    _telControllers[index].text = code;
+    setState(() => _telErrors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  Future<void> _startTelCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleTelCameraScan,
+      totalCount: kTelCount,
+      initialFilled: ref.read(labelTelSheetProvider).filledCount,
+    );
+  }
+
+  void _clearTelSlot(int index) {
+    _telControllers[index].clear();
+    ref.read(labelTelSheetProvider.notifier).clearSlot(index);
+    setState(() => _telErrors.remove(index));
+    _telFocusNodes[index].requestFocus();
+  }
+
+  void _clearTelAll() {
+    for (final c in _telControllers) {
+      c.clear();
+    }
+    ref.read(labelTelSheetProvider.notifier).clearAll();
+    setState(() => _telErrors.clear());
+  }
+
+  void _printTel() {
+    final state = ref.read(labelTelSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+    printTelLabelsA4(slots: state.slots, logoDataUrl: logoDataUrl);
+  }
+
+  Future<void> _saveTelPdf() async {
+    final state = ref.read(labelTelSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'tel-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+      final bytes = await buildTelLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: logoDataUrl,
+      );
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Tel İndirim Etiketi sekmesi — Tel Etiketi ile AYNI sabit 32 hane, yalnız
+  // her hane eski (çizili) fiyat + kırmızı/büyük yeni fiyat basar. Barkod
+  // çözümü Tel ile birebir aynı (_resolveBarcode, product.price1). İndirim
+  // türü/değeri hem sayfa geneli (Genel %/₺) hem hane-özel olabilir (bkz.
+  // labels_provider.dart LabelTelDiscountSheetState).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  int _nextTelDiscountEmptyIndex() {
+    final slots = ref.read(labelTelDiscountSheetProvider).slots;
+    for (var i = 0; i < kTelCount; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  Future<void> _onTelDiscountSubmitted(int index, String raw) async {
+    final query = raw.trim();
+    final notifier = ref.read(labelTelDiscountSheetProvider.notifier);
+    if (query.isEmpty) {
+      notifier.clearSlot(index);
+      _telDiscountOwnValueControllers[index].clear();
+      setState(() => _telDiscountErrors.remove(index));
+      return;
+    }
+
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      notifier.clearSlot(index);
+      setState(() => _telDiscountErrors.add(index));
+      playScanBeep(success: false); // danger uyarı sesi
+      return;
+    }
+
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    notifier.setSlot(
+      index,
+      TelDiscountLabelSlot(
+        barcode: code,
+        productName: product.name,
+        oldPrice: product.price1,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _telDiscountControllers[index].text = code;
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true);
+    setState(() => _telDiscountErrors.remove(index));
+
+    if (index + 1 < kTelCount) {
+      _telDiscountFocusNodes[index + 1].requestFocus();
+      _telDiscountControllers[index + 1].selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _telDiscountControllers[index + 1].text.length,
+      );
+    }
+  }
+
+  Future<LabelScanFeedback> _handleTelDiscountCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelTelDiscountSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextTelDiscountEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    ref.read(labelTelDiscountSheetProvider.notifier).setSlot(
+          index,
+          TelDiscountLabelSlot(
+            barcode: code,
+            productName: product.name,
+            oldPrice: product.price1,
+            createdAt: DateTime.now(),
+          ),
+        );
+    _telDiscountControllers[index].text = code;
+    setState(() => _telDiscountErrors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  Future<void> _startTelDiscountCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleTelDiscountCameraScan,
+      totalCount: kTelCount,
+      initialFilled: ref.read(labelTelDiscountSheetProvider).filledCount,
+    );
+  }
+
+  void _clearTelDiscountSlot(int index) {
+    _telDiscountControllers[index].clear();
+    _telDiscountOwnValueControllers[index].clear();
+    ref.read(labelTelDiscountSheetProvider.notifier).clearSlot(index);
+    setState(() => _telDiscountErrors.remove(index));
+    _telDiscountFocusNodes[index].requestFocus();
+  }
+
+  void _clearTelDiscountAll() {
+    for (final c in _telDiscountControllers) {
+      c.clear();
+    }
+    for (final c in _telDiscountOwnValueControllers) {
+      c.clear();
+    }
+    ref.read(labelTelDiscountSheetProvider.notifier).clearAll();
+    setState(() => _telDiscountErrors.clear());
+  }
+
+  // [index] hanesinin "genel indirimi kullan" tikini değiştirir.
+  void _toggleTelDiscountUseGeneral(int index, bool value) {
+    ref
+        .read(labelTelDiscountSheetProvider.notifier)
+        .setSlotUseGeneral(index, value);
+  }
+
+  void _onTelDiscountOwnKindChanged(int index, TelDiscountKind kind) {
+    ref
+        .read(labelTelDiscountSheetProvider.notifier)
+        .setSlotOwnKind(index, kind);
+  }
+
+  // Hane kendi %/₺ değerini girer/temizler. Boş bırakılırsa `null`'a döner.
+  void _onTelDiscountOwnValueChanged(int index, String raw) {
+    if (raw.trim().isEmpty) {
+      ref
+          .read(labelTelDiscountSheetProvider.notifier)
+          .setSlotOwnValue(index, null);
+      return;
+    }
+    final v = num.tryParse(raw.replaceAll(',', '.'));
+    if (v == null) return;
+    ref.read(labelTelDiscountSheetProvider.notifier).setSlotOwnValue(index, v);
+  }
+
+  void _onTelDiscountGeneralKindChanged(TelDiscountKind kind) {
+    ref.read(labelTelDiscountSheetProvider.notifier).setGeneralKind(kind);
+  }
+
+  void _onTelDiscountGeneralValueChanged(String raw) {
+    final v = num.tryParse(raw.replaceAll(',', '.')) ?? 0;
+    ref.read(labelTelDiscountSheetProvider.notifier).setGeneralValue(v);
+  }
+
+  void _printTelDiscount() {
+    final state = ref.read(labelTelDiscountSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+    printTelDiscountLabelsA4(
+      slots: state.slots,
+      logoDataUrl: logoDataUrl,
+      generalKind: state.generalKind,
+      generalValue: state.generalValue,
+    );
+  }
+
+  Future<void> _saveTelDiscountPdf() async {
+    final state = ref.read(labelTelDiscountSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'tel-indirim-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final logoDataUrl = ref.read(labelSheetProvider).logoDataUrl;
+      final bytes = await buildTelDiscountLabelsPdf(
+        slots: state.slots,
+        logoDataUrl: logoDataUrl,
+        generalKind: state.generalKind,
+        generalValue: state.generalValue,
+      );
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // İndirim Etiketi sekmesi — sınırsız büyüyen giriş listesi (2×2 ızgara,
+  // 4/sayfa — bkz. labels_provider.dart LabelDiscountSheetState). Liste her
+  // zaman TEK bir trailing boş (`slot == null`) hane ile biter; o hane
+  // doldurulunca yeni bir boş hane EKLENİR (büyüme). Barkod → ürün çözümü
+  // Tel/Raf ile aynı (_resolveBarcode paylaşılır); ek olarak her hanede
+  // kullanıcının elle girdiği bir indirim yüzdesi + logo tiki vardır.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  // Aktif-satır vurgusu için — kapanan closure'da index SAKLAMAZ, her focus
+  // event'inde `indexOf` ile ANLIK konumu okur (satır silinip index kayınca
+  // bile doğru kalır — sabit-dizi diğer sekmelerin aksine burada index
+  // KAYABİLİR).
+  FocusNode _makeDiscountFocusNode() {
+    final node = FocusNode();
+    node.addListener(() {
+      if (node.hasFocus && mounted) {
+        final idx = _discountBarcodeFocusNodes.indexOf(node);
+        if (idx >= 0) setState(() => _discountActiveIndex = idx);
+      }
+    });
+    return node;
+  }
+
+  // Provider'ın `slots` listesi büyüdüğünde (manuel giriş VEYA kamera tarama)
+  // ekranın controller/focus-node listelerini aynı uzunluğa getirir — aksi
+  // halde `_discountBarcodeControllers[index]` yeni büyüyen indexlerde
+  // RangeError fırlatır.
+  void _syncDiscountControllers() {
+    final targetLen = ref.read(labelDiscountSheetProvider).slots.length;
+    while (_discountBarcodeControllers.length < targetLen) {
+      _discountBarcodeControllers.add(TextEditingController());
+      _discountPercentControllers.add(TextEditingController());
+      _discountBarcodeFocusNodes.add(_makeDiscountFocusNode());
+    }
+  }
+
+  int _nextDiscountEmptyIndex() {
+    final slots = ref.read(labelDiscountSheetProvider).slots;
+    for (var i = 0; i < slots.length; i++) {
+      if (slots[i] == null) return i;
+    }
+    return -1;
+  }
+
+  Future<void> _onDiscountBarcodeSubmitted(int index, String raw) async {
+    final query = raw.trim();
+    final notifier = ref.read(labelDiscountSheetProvider.notifier);
+    final slotsBefore = ref.read(labelDiscountSheetProvider).slots;
+    if (index < 0 || index >= slotsBefore.length) return;
+
+    if (query.isEmpty) {
+      _removeDiscountRow(index);
+      return;
+    }
+
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      if (slotsBefore[index] == null) {
+        // Trailing (henüz taranmamış) hane — normal hata gösterimi.
+        setState(() => _discountErrors.add(index));
+      } else {
+        // Dolu bir hane yeniden tarandı ama bulunamadı — mevcut kaydı KORU,
+        // yalnız input metnini eskisine döndür + uyar (satır silinmez/kaymaz).
+        _discountBarcodeControllers[index].text = slotsBefore[index]!.barcode;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ürün bulunamadı.')),
+        );
+      }
+      playScanBeep(success: false);
+      return;
+    }
+
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    // Hanenin kendi yüzdesi/logo tiki (varsa) korunur (barkod tekrar
+    // okutulursa fiyat/ad tazelenir, kullanıcının zaten girdiği %/tik
+    // sıfırlanmaz); yoksa `null`/`false` kalır.
+    final existing = slotsBefore[index];
+    final wasTrailing = index == slotsBefore.length - 1;
+    notifier.setSlot(
+      index,
+      DiscountLabelSlot(
+        barcode: code,
+        productName: product.name,
+        oldPrice: product.price1,
+        discountPercent: existing?.discountPercent,
+        showLogo: existing?.showLogo ?? false,
+        createdAt: DateTime.now(),
+      ),
+    );
+    _syncDiscountControllers();
+    _discountBarcodeControllers[index].text = code;
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true);
+    setState(() => _discountErrors.remove(index));
+
+    if (wasTrailing) {
+      _discountBarcodeFocusNodes.last.requestFocus();
+    } else if (index + 1 < _discountBarcodeFocusNodes.length) {
+      _discountBarcodeFocusNodes[index + 1].requestFocus();
+    }
+  }
+
+  // Hane-başı "logo göster" tiki — varsayılan tiksiz (bkz.
+  // `DiscountLabelSlot.showLogo`).
+  void _toggleDiscountLogo(int index, bool value) {
+    ref.read(labelDiscountSheetProvider.notifier).setShowLogo(index, value);
+  }
+
+  // Hane kendi yüzdesini girer/temizler. Boş bırakılırsa `null`'a döner —
+  // sayfa geneli varsayılan yüzde (bkz. `_onDiscountDefaultPercentChanged`)
+  // bu hanede geçerli olur.
+  void _onDiscountPercentChanged(int index, String raw) {
+    if (raw.trim().isEmpty) {
+      ref.read(labelDiscountSheetProvider.notifier).setDiscountPercent(index, null);
+      return;
+    }
+    final v = num.tryParse(raw.replaceAll(',', '.'));
+    if (v == null) return;
+    ref.read(labelDiscountSheetProvider.notifier).setDiscountPercent(index, v);
+  }
+
+  // Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneleri
+  // etkiler (bkz. `DiscountLabelSlot.effectivePercent`).
+  void _onDiscountDefaultPercentChanged(String raw) {
+    final v = num.tryParse(raw.replaceAll(',', '.')) ?? 0;
+    ref.read(labelDiscountSheetProvider.notifier).setDefaultPercent(v);
+  }
+
+  Future<LabelScanFeedback> _handleDiscountCameraScan(String raw) async {
+    final query = raw.trim();
+    int filled() => ref.read(labelDiscountSheetProvider).filledCount;
+    if (query.isEmpty) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final index = _nextDiscountEmptyIndex();
+    if (index < 0) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.full, filledCount: filled());
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted || product == null) {
+      return LabelScanFeedback(
+          status: LabelScanStatus.notFound, filledCount: filled());
+    }
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : query;
+    // Kamera taramasında yüzde `null`/logo tiki `false` bırakılır — sayfa
+    // geneli varsayılan yüzde geçerli olur (elle girişle aynı desen).
+    ref.read(labelDiscountSheetProvider.notifier).setSlot(
+          index,
+          DiscountLabelSlot(
+            barcode: code,
+            productName: product.name,
+            oldPrice: product.price1,
+            discountPercent: null,
+            createdAt: DateTime.now(),
+          ),
+        );
+    // Provider'ın büyüttüğü listeyi (yeni trailing boş hane) ekranın
+    // controller/focus-node listeleriyle hizala — aksi halde bir sonraki
+    // manuel giriş satırı (veya bir sonraki kamera taraması) eksik
+    // controller'a erişip RangeError fırlatır.
+    _syncDiscountControllers();
+    _discountBarcodeControllers[index].text = code;
+    setState(() => _discountErrors.remove(index));
+    return LabelScanFeedback(
+      status: LabelScanStatus.placed,
+      productName: product.name,
+      price: product.price1,
+      filledCount: filled(),
+    );
+  }
+
+  Future<void> _startDiscountCameraScan() async {
+    if (kIsWeb) return;
+    await ref.read(barcodeCacheProvider).ensureLoaded();
+    if (!mounted) return;
+    await openLabelScanSheet(
+      context,
+      onScan: _handleDiscountCameraScan,
+      totalCount: kDiscountCount,
+      initialFilled: ref.read(labelDiscountSheetProvider).filledCount,
+    );
+  }
+
+  // [index] zaten boşsa (trailing hane) provider'da çıkarılacak bir şey yok —
+  // yalnız UI'ı temizler. DOLU bir haneyse listeden tamamen ÇIKARIR (sonraki
+  // haneler bir yukarı kayar); ekranın controller/focus-node listeleri VE
+  // index-bazlı `_discountErrors` seti aynı kaymayla senkron tutulur.
+  void _removeDiscountRow(int index) {
+    final slots = ref.read(labelDiscountSheetProvider).slots;
+    if (index < 0 || index >= slots.length) return;
+
+    if (slots[index] == null) {
+      _discountBarcodeControllers[index].clear();
+      _discountPercentControllers[index].clear();
+      setState(() => _discountErrors.remove(index));
+      _discountBarcodeFocusNodes[index].requestFocus();
+      return;
+    }
+
+    ref.read(labelDiscountSheetProvider.notifier).removeSlot(index);
+    _discountBarcodeControllers.removeAt(index).dispose();
+    _discountPercentControllers.removeAt(index).dispose();
+    _discountBarcodeFocusNodes.removeAt(index).dispose();
+
+    final shifted = <int>{
+      for (final e in _discountErrors)
+        if (e != index) (e > index ? e - 1 : e),
+    };
+    setState(() {
+      _discountErrors
+        ..clear()
+        ..addAll(shifted);
+    });
+  }
+
+  void _clearDiscountAll() {
+    for (final c in _discountBarcodeControllers) {
+      c.dispose();
+    }
+    for (final c in _discountPercentControllers) {
+      c.dispose();
+    }
+    for (final n in _discountBarcodeFocusNodes) {
+      n.dispose();
+    }
+    _discountBarcodeControllers
+      ..clear()
+      ..add(TextEditingController());
+    _discountPercentControllers
+      ..clear()
+      ..add(TextEditingController());
+    _discountBarcodeFocusNodes
+      ..clear()
+      ..add(_makeDiscountFocusNode());
+    ref.read(labelDiscountSheetProvider.notifier).clearAll();
+    setState(() => _discountErrors.clear());
+  }
+
+  Future<void> _printDiscount() async {
+    final state = ref.read(labelDiscountSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final logoState = ref.read(labelSheetProvider);
+    printDiscountLabelsA4(
+      slots: state.slots,
+      logoDataUrl: logoState.logoDataUrl,
+      defaultPercent: state.defaultPercent,
+      tagline: logoState.taglineText ?? '',
+    );
+  }
+
+  Future<void> _saveDiscountPdf() async {
+    final state = ref.read(labelDiscountSheetProvider);
+    if (state.filledCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir barkod okutun.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'indirim-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final logoState = ref.read(labelSheetProvider);
+      final bytes = await buildDiscountLabelsPdf(
+        slots: state.slots,
+        defaultPercent: state.defaultPercent,
+        logoDataUrl: logoState.logoDataUrl,
+        tagline: logoState.taglineText ?? '',
+      );
       final saved =
           await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
       ref.invalidate(savedLabelFilesProvider);
@@ -947,6 +1822,137 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Havuz (Etiket Havuzu, bkz. 0032_label_pool.sql) — kullanıcılar/cihazlar
+  // arası PAYLAŞILAN bekleyen etiket kuyruğu. `_savePdf`/`_saveProductPdf`
+  // ile BİREBİR aynı iskelet (boşsa uyar → dosya adı sor → yükleniyor
+  // göstergesi → PDF üret → Storage'a yükle → başarı/hata snackbar'ı), fark:
+  // kaynak Havuz'un o an bekleyen (kontrol=0) satırları, başarıdan sonra
+  // TAM O SATIRLAR `markPrinted` ile kontrol=1 işaretlenir (yeni eklenen bir
+  // satır YANLIŞLIKLA işaretlenmez) ve `labelPoolPendingProvider` invalidate
+  // edilip sayaç sıfırlanır.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Future<void> _saveHavuz({
+    required String labelType,
+    required String namePrefix,
+    required Future<Uint8List> Function(List<LabelPoolItem> pending) buildBytes,
+  }) async {
+    final repo = ref.read(labelPoolRepositoryProvider);
+    final pending = await repo.fetchPending(labelType);
+    if (pending.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Havuzda bu türde etiket yok.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: namePrefix);
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final bytes = await buildBytes(pending);
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      await repo.markPrinted(pending.map((it) => it.id).toList());
+      ref.invalidate(labelPoolPendingProvider(labelType));
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
+  Future<void> _saveHavuzRaf() => _saveHavuz(
+        labelType: kLabelPoolTypeRaf,
+        namePrefix: 'raf-etiket-havuz',
+        buildBytes: (pending) => buildLabelsPdfMultiPage(
+          pages: paginateLabelPoolItems(pending, kLabelCount),
+          logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+        ),
+      );
+
+  Future<void> _saveHavuzTel() => _saveHavuz(
+        labelType: kLabelPoolTypeTel,
+        namePrefix: 'tel-etiket-havuz',
+        buildBytes: (pending) => buildTelLabelsPdfMultiPage(
+          pages: paginateLabelPoolItems(pending, kTelCount),
+          logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+        ),
+      );
+
+  Future<void> _saveHavuzGenis() => _saveHavuz(
+        labelType: kLabelPoolTypeGenis,
+        namePrefix: 'genis-etiket-havuz',
+        buildBytes: (pending) => buildWideLabelsPdfMultiPage(
+          pages: paginateLabelPoolItems(pending, kWideCount),
+          logoDataUrl: ref.read(labelSheetProvider).logoDataUrl,
+        ),
+      );
+
+  Future<void> _saveHavuzUrun() => _saveHavuz(
+        labelType: kLabelPoolTypeUrun,
+        namePrefix: 'urun-etiket-havuz',
+        buildBytes: (pending) => buildProductLabelsPdf(
+          items: pending
+              .map((it) => ProductLabelItem(
+                    barcode: it.barcode,
+                    productName: it.productName,
+                    quantity: it.quantity,
+                  ))
+              .toList(),
+        ),
+      );
+
+  Widget _buildHavuz(Widget selector) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _HavuzPoolRow(
+            label: 'Raf',
+            labelType: kLabelPoolTypeRaf,
+            onSavePdf: _saveHavuzRaf,
+          ),
+          const SizedBox(height: AppSizes.space12),
+          _HavuzPoolRow(
+            label: 'Tel',
+            labelType: kLabelPoolTypeTel,
+            onSavePdf: _saveHavuzTel,
+          ),
+          const SizedBox(height: AppSizes.space12),
+          _HavuzPoolRow(
+            label: 'Geniş',
+            labelType: kLabelPoolTypeGenis,
+            onSavePdf: _saveHavuzGenis,
+          ),
+          const SizedBox(height: AppSizes.space12),
+          _HavuzPoolRow(
+            label: 'Ürün',
+            labelType: kLabelPoolTypeUrun,
+            onSavePdf: _saveHavuzUrun,
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mobile = context.isMobile;
@@ -955,6 +1961,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       mobile: mobile,
       onChanged: (t) => setState(() => _tab = t),
     );
+
+    // ── Sekme: Havuz (Etiket Havuzu, bkz. 0032_label_pool.sql) ─────────────
+    if (_tab == _LabelTab.havuz) {
+      return _buildHavuz(selector);
+    }
 
     // ── Sekme 2: Kayıtlı Dosyalar ──────────────────────────────────────────
     if (_tab == _LabelTab.kayitli) {
@@ -981,6 +1992,18 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       );
     }
 
+    // ── Sekme: Tel Etiketi (Raf Etiketi ile birebir aynı, yalnız 4×8) ──────
+    if (_tab == _LabelTab.tel) {
+      return mobile ? _buildTelMobile(selector) : _buildTelDesktop(selector);
+    }
+
+    // ── Sekme: Tel İndirim (Tel Etiketi ile aynı 4×8 ızgara, indirimli) ─────
+    if (_tab == _LabelTab.telIndirim) {
+      return mobile
+          ? _buildTelDiscountMobile(selector)
+          : _buildTelDiscountDesktop(selector);
+    }
+
     // ── Sekme 2: Geniş Logo (KARAR v1.14) ──────────────────────────────────
     if (_tab == _LabelTab.genis) {
       return mobile ? _buildWideMobile(selector) : _buildWideDesktop(selector);
@@ -1000,7 +2023,14 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           : _buildProductDesktop(selector);
     }
 
-    // ── Sekme 1: Yeni Etiket (mevcut akış) ─────────────────────────────────
+    // ── Sekme 5: İndirim Etiketi (4 hane, 2×2) ─────────────────────────────
+    if (_tab == _LabelTab.indirim) {
+      return mobile
+          ? _buildDiscountMobile(selector)
+          : _buildDiscountDesktop(selector);
+    }
+
+    // ── Sekme 1: Raf Etiketi (eski "Yeni Etiket", mevcut akış) ─────────────
     return mobile ? _buildMobile(selector) : _buildDesktop(selector);
   }
 
@@ -1111,13 +2141,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         _Header(
           filledCount: ref.watch(labelWideSheetProvider).filledCount,
           totalCount: kWideCount,
-          showLogoActions: false,
+          hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+          onPickLogo: _pickLogo,
+          onRemoveLogo: _removeLogo,
           onClearAll: _clearWideAll,
           onPrint: _printWide,
           onSavePdf: _saveWidePdf,
           onCameraScan: kIsWeb ? null : _startWideCameraScan,
           subtitle:
-              'Barkod okutun; her hane marka tentesi + fiyat + ürün adıyla '
+              'Barkod okutun; her hane kendi logonuz + fiyat + ürün adıyla '
               'A4 Geniş Logo etiketine dönüşür.',
         ),
         const SizedBox(height: AppSizes.space16),
@@ -1133,7 +2165,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                   errors: _wideErrors,
                   activeIndex: _wideActiveIndex,
                   itemCount: kWideCount,
-                  wide: true,
+                  source: _LabelSlotSource.wide,
                   onSubmitted: _onWideSubmitted,
                   onClear: _clearWideSlot,
                 ),
@@ -1162,13 +2194,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           _Header(
             filledCount: state.filledCount,
             totalCount: kWideCount,
-            showLogoActions: false,
+            hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+            onPickLogo: _pickLogo,
+            onRemoveLogo: _removeLogo,
             onClearAll: _clearWideAll,
             onPrint: _printWide,
             onSavePdf: _saveWidePdf,
             onCameraScan: kIsWeb ? null : _startWideCameraScan,
             subtitle:
-                'Barkod okutun; her hane marka tentesi + fiyat + ürün adıyla '
+                'Barkod okutun; her hane kendi logonuz + fiyat + ürün adıyla '
                 'A4 Geniş Logo etiketine dönüşür.',
             compact: true,
           ),
@@ -1180,7 +2214,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               focusNode: _wideFocusNodes[i],
               isActive: _wideActiveIndex == i,
               isError: _wideErrors.contains(i),
-              wide: true,
+              source: _LabelSlotSource.wide,
               onSubmitted: (v) => _onWideSubmitted(i, v),
               onClear: () => _clearWideSlot(i),
             );
@@ -1195,6 +2229,368 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               child: _WidePreviewPane(),
             ),
           ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tel Etiketi — masaüstü (sol 32-hane giriş · sağ A4 önizleme) ─────────
+  // Raf Etiketi ile birebir aynı akış (mağaza logosu paylaşılır), yalnız
+  // 4×8 ızgara ve kTelCount hane sayısı.
+  Widget _buildTelDesktop(Widget selector) {
+    final logoState = ref.watch(labelSheetProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: ref.watch(labelTelSheetProvider).filledCount,
+          totalCount: kTelCount,
+          hasLogo: logoState.logoDataUrl != null,
+          onPickLogo: _pickLogo,
+          onRemoveLogo: _removeLogo,
+          onClearAll: _clearTelAll,
+          onPrint: _printTel,
+          onSavePdf: _saveTelPdf,
+          onCameraScan: kIsWeb ? null : _startTelCameraScan,
+          subtitle:
+              'Barkod okutun; her hane ürün adı + fiyatıyla A4 Tel Etiketine '
+              'dönüşür (Raf Etiketi ile aynı hücre, yan yana 4 adet).',
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // SOL: 32 haneli barkod giriş sütunu
+              Expanded(
+                flex: 5,
+                child: _InputColumn(
+                  controllers: _telControllers,
+                  focusNodes: _telFocusNodes,
+                  errors: _telErrors,
+                  activeIndex: _telActiveIndex,
+                  itemCount: kTelCount,
+                  source: _LabelSlotSource.tel,
+                  onSubmitted: _onTelSubmitted,
+                  onClear: _clearTelSlot,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              // SAĞ: canlı A4 önizleme
+              Expanded(
+                flex: 6,
+                child: _TelPreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Tel Etiketi — mobil (tek kolon) ───────────────────────────────────────
+  Widget _buildTelMobile(Widget selector) {
+    final state = ref.watch(labelTelSheetProvider);
+    final logoState = ref.watch(labelSheetProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.filledCount,
+            totalCount: kTelCount,
+            hasLogo: logoState.logoDataUrl != null,
+            onPickLogo: _pickLogo,
+            onRemoveLogo: _removeLogo,
+            onClearAll: _clearTelAll,
+            onPrint: _printTel,
+            onSavePdf: _saveTelPdf,
+            onCameraScan: kIsWeb ? null : _startTelCameraScan,
+            subtitle:
+                'Barkod okutun; her hane ürün adı + fiyatıyla A4 Tel Etiketine '
+                'dönüşür (Raf Etiketi ile aynı hücre, yan yana 4 adet).',
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          // Giriş haneleri (iç scroll yok — sayfa scroll'una gömülü)
+          ...List.generate(kTelCount, (i) {
+            return _SlotInputRow(
+              index: i,
+              controller: _telControllers[i],
+              focusNode: _telFocusNodes[i],
+              isActive: _telActiveIndex == i,
+              isError: _telErrors.contains(i),
+              source: _LabelSlotSource.tel,
+              onSubmitted: (v) => _onTelSubmitted(i, v),
+              onClear: () => _clearTelSlot(i),
+            );
+          }),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          LayoutBuilder(
+            builder: (ctx, c) => SizedBox(
+              width: c.maxWidth,
+              height: c.maxWidth * (_kA4Height / _kA4Width),
+              child: _TelPreviewPane(),
+            ),
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
+  // ─── Tel İndirim Etiketi — masaüstü (sol 32 hane girişi · sağ tek-sayfalı
+  //     A4 önizleme) ────────────────────────────────────────────────────────
+  Widget _buildTelDiscountDesktop(Widget selector) {
+    final logoState = ref.watch(labelSheetProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: ref.watch(labelTelDiscountSheetProvider).filledCount,
+          totalCount: kTelCount,
+          showLogoActions: false,
+          hasLogo: logoState.logoDataUrl != null,
+          onClearAll: _clearTelDiscountAll,
+          onPrint: _printTelDiscount,
+          onSavePdf: _saveTelDiscountPdf,
+          onCameraScan: kIsWeb ? null : _startTelDiscountCameraScan,
+          subtitle:
+              'Barkod okutun; genel %/₺\'yi girin — hane "Genel" tikliyse bu '
+              'değerden etkilenir, tiki kaldırıp kendi %/₺\'sini de '
+              'girebilirsiniz. Tel Etiketi ile aynı hücre/boyut.',
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // SOL: 32 haneli barkod + %/₺ giriş sütunu
+              Expanded(
+                flex: 5,
+                child: _TelDiscountInputColumn(
+                  barcodeControllers: _telDiscountControllers,
+                  ownValueControllers: _telDiscountOwnValueControllers,
+                  focusNodes: _telDiscountFocusNodes,
+                  errors: _telDiscountErrors,
+                  activeIndex: _telDiscountActiveIndex,
+                  generalValueController: _telDiscountGeneralValueController,
+                  onSubmitted: _onTelDiscountSubmitted,
+                  onToggleUseGeneral: _toggleTelDiscountUseGeneral,
+                  onOwnKindChanged: _onTelDiscountOwnKindChanged,
+                  onOwnValueChanged: _onTelDiscountOwnValueChanged,
+                  onGeneralKindChanged: _onTelDiscountGeneralKindChanged,
+                  onGeneralValueChanged: _onTelDiscountGeneralValueChanged,
+                  onClear: _clearTelDiscountSlot,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              // SAĞ: canlı A4 önizleme
+              Expanded(
+                flex: 6,
+                child: _TelDiscountPreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Tel İndirim Etiketi — mobil (tek kolon) ───────────────────────────────
+  Widget _buildTelDiscountMobile(Widget selector) {
+    final state = ref.watch(labelTelDiscountSheetProvider);
+    final logoState = ref.watch(labelSheetProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.filledCount,
+            totalCount: kTelCount,
+            showLogoActions: false,
+            hasLogo: logoState.logoDataUrl != null,
+            onClearAll: _clearTelDiscountAll,
+            onPrint: _printTelDiscount,
+            onSavePdf: _saveTelDiscountPdf,
+            onCameraScan: kIsWeb ? null : _startTelDiscountCameraScan,
+            subtitle:
+                'Barkod okutun; genel %/₺\'yi girin — hane "Genel" tikliyse bu '
+                'değerden etkilenir, tiki kaldırıp kendi %/₺\'sini de '
+                'girebilirsiniz.',
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          _TelDiscountGeneralField(
+            kind: state.generalKind,
+            valueController: _telDiscountGeneralValueController,
+            onKindChanged: _onTelDiscountGeneralKindChanged,
+            onValueChanged: _onTelDiscountGeneralValueChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          // Giriş haneleri (iç scroll yok — sayfa scroll'una gömülü)
+          ...List.generate(kTelCount, (i) {
+            return _TelDiscountSlotInputRow(
+              index: i,
+              barcodeController: _telDiscountControllers[i],
+              ownValueController: _telDiscountOwnValueControllers[i],
+              focusNode: _telDiscountFocusNodes[i],
+              isActive: _telDiscountActiveIndex == i,
+              isError: _telDiscountErrors.contains(i),
+              onSubmitted: (v) => _onTelDiscountSubmitted(i, v),
+              onToggleUseGeneral: (v) => _toggleTelDiscountUseGeneral(i, v),
+              onOwnKindChanged: (k) => _onTelDiscountOwnKindChanged(i, k),
+              onOwnValueChanged: (v) => _onTelDiscountOwnValueChanged(i, v),
+              onClear: () => _clearTelDiscountSlot(i),
+            );
+          }),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          LayoutBuilder(
+            builder: (ctx, c) => SizedBox(
+              width: c.maxWidth,
+              height: c.maxWidth * (_kA4Height / _kA4Width),
+              child: _TelDiscountPreviewPane(),
+            ),
+          ),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
+  // ─── İndirim Etiketi — masaüstü (sol sınırsız hane girişi · sağ çok-sayfalı
+  //     A4 önizleme) ────────────────────────────────────────────────────────
+  // Geniş Logo ile aynı akış (logo SABİT marka figürü, yükleme YOK), yalnız
+  // 2×2 ızgara (4/sayfa, taşınca çok-sayfalı) + hane başına yüzde input'u +
+  // logo tiki.
+  Widget _buildDiscountDesktop(Widget selector) {
+    final state = ref.watch(labelDiscountSheetProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: state.filledCount,
+          totalCount: kDiscountCount,
+          hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+          onPickLogo: _pickLogo,
+          onRemoveLogo: _removeLogo,
+          badgeOverride: '${state.filledCount} hane · ${state.pageCount} sayfa',
+          onClearAll: _clearDiscountAll,
+          onPrint: _printDiscount,
+          onSavePdf: _saveDiscountPdf,
+          onCameraScan: kIsWeb ? null : _startDiscountCameraScan,
+          subtitle:
+              'Barkod okutun (veya kamerayla tarayın); ana indirim %\'sini '
+              'girin — hane boş bırakılırsa bu değer geçerli olur, hane '
+              'kendi %\'sini girerse yalnız o hane için geçerli olur.',
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // SOL: sınırsız barkod + yüzde + logo tiki giriş sütunu
+              Expanded(
+                flex: 5,
+                child: _DiscountInputColumn(
+                  barcodeControllers: _discountBarcodeControllers,
+                  percentControllers: _discountPercentControllers,
+                  focusNodes: _discountBarcodeFocusNodes,
+                  errors: _discountErrors,
+                  activeIndex: _discountActiveIndex,
+                  defaultPercentController: _discountDefaultPercentController,
+                  onDefaultPercentChanged: _onDiscountDefaultPercentChanged,
+                  taglineController: _taglineController,
+                  onTaglineChanged: _onTaglineChanged,
+                  onBarcodeSubmitted: _onDiscountBarcodeSubmitted,
+                  onPercentChanged: _onDiscountPercentChanged,
+                  onToggleLogo: _toggleDiscountLogo,
+                  onClear: _removeDiscountRow,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              // SAĞ: canlı çok-sayfalı A4 önizleme
+              Expanded(
+                flex: 6,
+                child: _DiscountPreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── İndirim Etiketi — mobil (tek kolon) ──────────────────────────────────
+  Widget _buildDiscountMobile(Widget selector) {
+    final state = ref.watch(labelDiscountSheetProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.filledCount,
+            totalCount: kDiscountCount,
+            hasLogo: ref.watch(labelSheetProvider).logoDataUrl != null,
+            onPickLogo: _pickLogo,
+            onRemoveLogo: _removeLogo,
+            badgeOverride: '${state.filledCount} hane · ${state.pageCount} sayfa',
+            onClearAll: _clearDiscountAll,
+            onPrint: _printDiscount,
+            onSavePdf: _saveDiscountPdf,
+            onCameraScan: kIsWeb ? null : _startDiscountCameraScan,
+            subtitle:
+                'Barkod okutun, indirim yüzdesini girin; her hane eski/yeni '
+                'fiyat + indirim rozetiyle A4 İndirim Etiketine dönüşür.',
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          _DiscountDefaultPercentField(
+            controller: _discountDefaultPercentController,
+            onChanged: _onDiscountDefaultPercentChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          _DiscountTaglineField(
+            controller: _taglineController,
+            onChanged: _onTaglineChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          ...List.generate(_discountBarcodeControllers.length, (i) {
+            return _DiscountSlotInputRow(
+              index: i,
+              barcodeController: _discountBarcodeControllers[i],
+              percentController: _discountPercentControllers[i],
+              barcodeFocusNode: _discountBarcodeFocusNodes[i],
+              isActive: _discountActiveIndex == i,
+              isError: _discountErrors.contains(i),
+              onBarcodeSubmitted: (v) => _onDiscountBarcodeSubmitted(i, v),
+              onPercentChanged: (v) => _onDiscountPercentChanged(i, v),
+              onToggleLogo: (v) => _toggleDiscountLogo(i, v),
+              onClear: () => _removeDiscountRow(i),
+            );
+          }),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          // Çok-sayfalı önizleme dış sayfa scroll'una gömülü (kendi scroll'u yok).
+          _DiscountPreviewPane(scrollable: false),
           const SizedBox(height: AppSizes.space20),
         ],
       ),
@@ -1589,7 +2985,7 @@ class _InputColumn extends StatelessWidget {
   final Set<int> errors;
   final int activeIndex;
   final int itemCount;
-  final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
+  final _LabelSlotSource source; // hangi hane provider'ı izlenecek
   final Future<void> Function(int, String) onSubmitted;
   final void Function(int) onClear;
 
@@ -1601,7 +2997,7 @@ class _InputColumn extends StatelessWidget {
     required this.onSubmitted,
     required this.onClear,
     this.itemCount = kLabelCount,
-    this.wide = false,
+    this.source = _LabelSlotSource.raf,
   });
 
   @override
@@ -1627,7 +3023,7 @@ class _InputColumn extends StatelessWidget {
                   focusNode: focusNodes[i],
                   isActive: activeIndex == i,
                   isError: errors.contains(i),
-                  wide: wide,
+                  source: source,
                   onSubmitted: (v) => onSubmitted(i, v),
                   onClear: () => onClear(i),
                 );
@@ -1666,7 +3062,7 @@ class _SlotInputRow extends ConsumerWidget {
   final FocusNode focusNode;
   final bool isActive;
   final bool isError;
-  final bool wide; // true → Geniş Logo state'i (labelWideSheetProvider)
+  final _LabelSlotSource source; // hangi hane provider'ı izlenecek
   final Future<void> Function(String) onSubmitted;
   final VoidCallback onClear;
 
@@ -1678,14 +3074,19 @@ class _SlotInputRow extends ConsumerWidget {
     required this.isError,
     required this.onSubmitted,
     required this.onClear,
-    this.wide = false,
+    this.source = _LabelSlotSource.raf,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final slot = wide
-        ? ref.watch(labelWideSheetProvider.select((s) => s.slots[index]))
-        : ref.watch(labelSheetProvider.select((s) => s.slots[index]));
+    final slot = switch (source) {
+      _LabelSlotSource.raf =>
+        ref.watch(labelSheetProvider.select((s) => s.slots[index])),
+      _LabelSlotSource.wide =>
+        ref.watch(labelWideSheetProvider.select((s) => s.slots[index])),
+      _LabelSlotSource.tel =>
+        ref.watch(labelTelSheetProvider.select((s) => s.slots[index])),
+    };
 
     // Aktif hane = aktif durum altını (izinli: ince sol altın şerit + ink
     // kenarlık, §5). Hata → danger kenarlık.
@@ -1799,6 +3200,809 @@ class _SlotInputRow extends ConsumerWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Tel İndirim Etiketi giriş sütunu — Tel ile AYNI sabit 32 hane, satır başına
+// barkod + "Genel indirimi kullan" tiki + (tik kapalıyken) kendi %/₺ değeri.
+// Sayfa geneli tek bir %/₺ anahtarı en üstte (`_TelDiscountGeneralField`).
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _TelDiscountInputColumn extends ConsumerWidget {
+  final List<TextEditingController> barcodeControllers;
+  final List<TextEditingController> ownValueControllers;
+  final List<FocusNode> focusNodes;
+  final Set<int> errors;
+  final int activeIndex;
+  final TextEditingController generalValueController;
+  final Future<void> Function(int, String) onSubmitted;
+  final void Function(int, bool) onToggleUseGeneral;
+  final void Function(int, TelDiscountKind) onOwnKindChanged;
+  final void Function(int, String) onOwnValueChanged;
+  final ValueChanged<TelDiscountKind> onGeneralKindChanged;
+  final ValueChanged<String> onGeneralValueChanged;
+  final void Function(int) onClear;
+
+  const _TelDiscountInputColumn({
+    required this.barcodeControllers,
+    required this.ownValueControllers,
+    required this.focusNodes,
+    required this.errors,
+    required this.activeIndex,
+    required this.generalValueController,
+    required this.onSubmitted,
+    required this.onToggleUseGeneral,
+    required this.onOwnKindChanged,
+    required this.onOwnValueChanged,
+    required this.onGeneralKindChanged,
+    required this.onGeneralValueChanged,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final generalKind = ref
+        .watch(labelTelDiscountSheetProvider.select((s) => s.generalKind));
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(
+                left: AppSizes.space4, bottom: AppSizes.space8),
+            child: _SectionLabel('Barkod + %/₺ İndirim'),
+          ),
+          _TelDiscountGeneralField(
+            kind: generalKind,
+            valueController: generalValueController,
+            onKindChanged: onGeneralKindChanged,
+            onValueChanged: onGeneralValueChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          Expanded(
+            child: ListView.builder(
+              itemCount: barcodeControllers.length,
+              itemBuilder: (context, i) {
+                return _TelDiscountSlotInputRow(
+                  index: i,
+                  barcodeController: barcodeControllers[i],
+                  ownValueController: ownValueControllers[i],
+                  focusNode: focusNodes[i],
+                  isActive: activeIndex == i,
+                  isError: errors.contains(i),
+                  onSubmitted: (v) => onSubmitted(i, v),
+                  onToggleUseGeneral: (v) => onToggleUseGeneral(i, v),
+                  onOwnKindChanged: (k) => onOwnKindChanged(i, k),
+                  onOwnValueChanged: (v) => onOwnValueChanged(i, v),
+                  onClear: () => onClear(i),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Sayfa geneli "genel indirim" — kendi %/₺'sini girmemiş (tikli) TÜM haneler
+// bu tür+değeri kullanır (bkz. `TelDiscountLabelSlot.effectiveKind/Value`).
+class _TelDiscountGeneralField extends StatelessWidget {
+  final TelDiscountKind kind;
+  final TextEditingController valueController;
+  final ValueChanged<TelDiscountKind> onKindChanged;
+  final ValueChanged<String> onValueChanged;
+
+  const _TelDiscountGeneralField({
+    required this.kind,
+    required this.valueController,
+    required this.onKindChanged,
+    required this.onValueChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.goldBorder),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.sell_outlined,
+              size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              'Genel İndirim (Genel tikli haneler)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          _KindToggle(value: kind, onChanged: onKindChanged),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 60,
+            child: TextField(
+              controller: valueController,
+              keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true),
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: kind == TelDiscountKind.percent ? '%' : '₺',
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              ),
+              onChanged: onValueChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Kompakt % / ₺ seçici — sayfa geneli VE hane-özel alanlarda paylaşılır.
+class _KindToggle extends StatelessWidget {
+  final TelDiscountKind value;
+  final ValueChanged<TelDiscountKind> onChanged;
+
+  const _KindToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 28,
+      child: SegmentedButton<TelDiscountKind>(
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 8)),
+        ),
+        segments: const [
+          ButtonSegment(
+            value: TelDiscountKind.percent,
+            label: Text('%', style: TextStyle(fontSize: 12)),
+          ),
+          ButtonSegment(
+            value: TelDiscountKind.amount,
+            label: Text('₺', style: TextStyle(fontSize: 12)),
+          ),
+        ],
+        selected: {value},
+        onSelectionChanged: (s) => onChanged(s.first),
+      ),
+    );
+  }
+}
+
+// Tek Tel İndirim hanesi satırı: [# no] [barkod input] [✕] + altında
+// [Genel tiki] + (tik kapalıyken) [%/₺ seçici] [değer input]. Çözülen ürün
+// adı + eski fiyat alanın altında minik gösterilir.
+class _TelDiscountSlotInputRow extends ConsumerWidget {
+  final int index;
+  final TextEditingController barcodeController;
+  final TextEditingController ownValueController;
+  final FocusNode focusNode;
+  final bool isActive;
+  final bool isError;
+  final Future<void> Function(String) onSubmitted;
+  final void Function(bool) onToggleUseGeneral;
+  final void Function(TelDiscountKind) onOwnKindChanged;
+  final void Function(String) onOwnValueChanged;
+  final VoidCallback onClear;
+
+  const _TelDiscountSlotInputRow({
+    required this.index,
+    required this.barcodeController,
+    required this.ownValueController,
+    required this.focusNode,
+    required this.isActive,
+    required this.isError,
+    required this.onSubmitted,
+    required this.onToggleUseGeneral,
+    required this.onOwnKindChanged,
+    required this.onOwnValueChanged,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final slot = ref
+        .watch(labelTelDiscountSheetProvider.select((s) => s.slots[index]));
+
+    final Color borderColor = isError
+        ? AppColors.danger
+        : isActive
+            ? AppColors.primary
+            : AppColors.divider;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSizes.space6),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: borderColor, width: isActive ? 1.4 : 1),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 3,
+                  height: 46,
+                  color: isActive ? AppColors.gold : Colors.transparent,
+                ),
+                Container(
+                  width: 28,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    '${index + 1}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color:
+                          isActive ? AppColors.primary : AppColors.textMuted,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: barcodeController,
+                          focusNode: focusNode,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Barkod okut / gir',
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 8),
+                          ),
+                          onSubmitted: onSubmitted,
+                        ),
+                        if (slot != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              '${slot.productName}  ·  '
+                              '${formatNumber(slot.oldPrice)} TL',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.success,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          )
+                        else if (isError)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              'Ürün bulunamadı.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.danger,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close, size: 16),
+                  color: AppColors.textMuted,
+                  tooltip: 'Haneyi temizle',
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 44),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            if (slot != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(31, 0, 8, 8),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      height: 28,
+                      width: 28,
+                      child: Checkbox(
+                        value: slot.useGeneral,
+                        onChanged: (v) => onToggleUseGeneral(v ?? true),
+                        visualDensity: VisualDensity.compact,
+                        activeColor: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    const Text(
+                      'Genel',
+                      style:
+                          TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+                    ),
+                    const SizedBox(width: 8),
+                    // Kendi %/₺ kontrolü HER ZAMAN görünür (yaşanmış hata:
+                    // önceden yalnız "Genel" tiki kaldırılınca görünüyordu,
+                    // kullanıcı bunu fark edemiyordu) — "Genel" tikliyken
+                    // soluk/pasif gösterilir, tik kaldırılınca aktifleşir.
+                    Opacity(
+                      opacity: slot.useGeneral ? 0.4 : 1,
+                      child: IgnorePointer(
+                        ignoring: slot.useGeneral,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _KindToggle(
+                              value: slot.ownKind ?? TelDiscountKind.percent,
+                              onChanged: onOwnKindChanged,
+                            ),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 64,
+                              child: TextField(
+                                controller: ownValueController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                textAlign: TextAlign.end,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  fontFeatures: [FontFeature.tabularFigures()],
+                                ),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: (slot.ownKind ??
+                                              TelDiscountKind.percent) ==
+                                          TelDiscountKind.percent
+                                      ? '%'
+                                      : '₺',
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 4),
+                                ),
+                                onChanged: onOwnValueChanged,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// İndirim Etiketi giriş sütunu — sınırsız hane, satır başına barkod + yüzde
+// iki ayrı input + logo tiki (mevcut _SlotInputRow tek-input varsayımıyla
+// uyuşmadığından ayrı). Liste her zaman tek bir trailing boş haneyle biter.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _DiscountInputColumn extends StatelessWidget {
+  final List<TextEditingController> barcodeControllers;
+  final List<TextEditingController> percentControllers;
+  final List<FocusNode> focusNodes;
+  final Set<int> errors;
+  final int activeIndex;
+  final TextEditingController defaultPercentController;
+  final ValueChanged<String> onDefaultPercentChanged;
+  final TextEditingController taglineController;
+  final ValueChanged<String> onTaglineChanged;
+  final Future<void> Function(int, String) onBarcodeSubmitted;
+  final void Function(int, String) onPercentChanged;
+  final void Function(int, bool) onToggleLogo;
+  final void Function(int) onClear;
+
+  const _DiscountInputColumn({
+    required this.barcodeControllers,
+    required this.percentControllers,
+    required this.focusNodes,
+    required this.errors,
+    required this.activeIndex,
+    required this.defaultPercentController,
+    required this.onDefaultPercentChanged,
+    required this.taglineController,
+    required this.onTaglineChanged,
+    required this.onBarcodeSubmitted,
+    required this.onPercentChanged,
+    required this.onToggleLogo,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: AppSizes.cardDecoration(),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(
+                left: AppSizes.space4, bottom: AppSizes.space8),
+            child: _SectionLabel('Barkod + İndirim %'),
+          ),
+          _DiscountDefaultPercentField(
+            controller: defaultPercentController,
+            onChanged: onDefaultPercentChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          _DiscountTaglineField(
+            controller: taglineController,
+            onChanged: onTaglineChanged,
+          ),
+          const SizedBox(height: AppSizes.space8),
+          Expanded(
+            child: ListView.builder(
+              itemCount: barcodeControllers.length,
+              itemBuilder: (context, i) {
+                return _DiscountSlotInputRow(
+                  index: i,
+                  barcodeController: barcodeControllers[i],
+                  percentController: percentControllers[i],
+                  barcodeFocusNode: focusNodes[i],
+                  isActive: activeIndex == i,
+                  isError: errors.contains(i),
+                  onBarcodeSubmitted: (v) => onBarcodeSubmitted(i, v),
+                  onPercentChanged: (v) => onPercentChanged(i, v),
+                  onToggleLogo: (v) => onToggleLogo(i, v),
+                  onClear: () => onClear(i),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Sayfa geneli "ana indirim %" — kendi yüzdesi girilmemiş TÜM haneler bu
+// değeri kullanır (bkz. `DiscountLabelSlot.effectivePercent`). Etiket
+// haneleri listesinin EN ÜSTÜNDE, ayırt edici altın vurgusuyla gösterilir.
+class _DiscountDefaultPercentField extends ConsumerWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _DiscountDefaultPercentField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Toplu logo tiki — o an DOLU olan haneler varsa ve HEPSİ tikliyse
+    // kendisi de tikli görünür (klasik "tümünü seç" checkbox'ı deseni);
+    // değiştirildiğinde TÜM dolu haneleri aynı değere çeker.
+    final filled = ref.watch(labelDiscountSheetProvider
+        .select((s) => s.slots.whereType<DiscountLabelSlot>().toList()));
+    final allChecked = filled.isNotEmpty && filled.every((s) => s.showLogo);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.goldBorder),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.percent, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              'Ana İndirim % (hane boşsa geçerli)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.end,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
+              ],
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: '%',
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 4),
+              ),
+              onChanged: onChanged,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Tüm haneler için logoyu göster/gizle',
+            child: Checkbox(
+              value: allChecked,
+              onChanged: filled.isEmpty
+                  ? null
+                  : (v) => ref
+                      .read(labelDiscountSheetProvider.notifier)
+                      .setAllShowLogo(v ?? false),
+              visualDensity: VisualDensity.compact,
+              activeColor: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Logo altı tagline metni (Faz D — kiracı-bazlı marka, Geniş Logo ile
+// PAYLAŞILAN `labelSheetProvider.taglineText`'i düzenler). Boş bırakılırsa
+// etikette tagline satırı hiç basılmaz.
+class _DiscountTaglineField extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _DiscountTaglineField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      style: const TextStyle(fontSize: 13),
+      decoration: const InputDecoration(
+        isDense: true,
+        labelText: 'Logo altı yazı (opsiyonel)',
+        hintText: 'ör. EV GEREÇLERİ & HIRDAVAT',
+        border: OutlineInputBorder(),
+        contentPadding:
+            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      ),
+    );
+  }
+}
+
+// Tek indirim hanesi satırı: [# no] [barkod input] [% input] [logo tiki] [✕].
+// Çözülen ürün adı + eski→yeni fiyat özeti alanın altında minik gösterilir.
+class _DiscountSlotInputRow extends ConsumerWidget {
+  final int index;
+  final TextEditingController barcodeController;
+  final TextEditingController percentController;
+  final FocusNode barcodeFocusNode;
+  final bool isActive;
+  final bool isError;
+  final Future<void> Function(String) onBarcodeSubmitted;
+  final void Function(String) onPercentChanged;
+  final void Function(bool) onToggleLogo;
+  final VoidCallback onClear;
+
+  const _DiscountSlotInputRow({
+    required this.index,
+    required this.barcodeController,
+    required this.percentController,
+    required this.barcodeFocusNode,
+    required this.isActive,
+    required this.isError,
+    required this.onBarcodeSubmitted,
+    required this.onPercentChanged,
+    required this.onToggleLogo,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Bounds-safe: bir satır silinince liste küçülür ve bu widget'ın eski
+    // `index`'i geçici olarak aralık dışı kalabilir — Riverpod `select`
+    // durum değişikliğini widget ağacı bu satırı unmount etmeden ÖNCE
+    // hesaplar, bu yüzden `s.slots[index]` doğrudan indexleme RangeError
+    // fırlatabilirdi (yaşanmış hata).
+    final (slot, defaultPercent) = ref.watch(labelDiscountSheetProvider
+        .select((s) => (
+              index < s.slots.length ? s.slots[index] : null,
+              s.defaultPercent
+            )));
+
+    final Color borderColor = isError
+        ? AppColors.danger
+        : isActive
+            ? AppColors.primary
+            : AppColors.divider;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSizes.space6),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: borderColor, width: isActive ? 1.4 : 1),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 3,
+              height: 62,
+              color: isActive ? AppColors.gold : Colors.transparent,
+            ),
+            Container(
+              width: 28,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                '${index + 1}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isActive ? AppColors.primary : AppColors.textMuted,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: barcodeController,
+                            focusNode: barcodeFocusNode,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              hintText: 'Barkod okut / gir',
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            onSubmitted: onBarcodeSubmitted,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 70,
+                          child: TextField(
+                            controller: percentController,
+                            enabled: slot != null,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9]')),
+                            ],
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              hintText: '%',
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            onChanged: onPercentChanged,
+                          ),
+                        ),
+                        // Logo tiki — varsayılan tiksiz (bkz.
+                        // `DiscountLabelSlot.showLogo`); henüz taranmamış
+                        // hanede (slot == null) devre dışı.
+                        SizedBox(
+                          width: 40,
+                          child: Tooltip(
+                            message: 'Logoyu göster',
+                            child: Checkbox(
+                              value: slot?.showLogo ?? false,
+                              onChanged: slot == null
+                                  ? null
+                                  : (v) => onToggleLogo(v ?? false),
+                              visualDensity: VisualDensity.compact,
+                              activeColor: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (slot != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          '${slot.productName}  ·  ${formatNumber(slot.oldPrice)} TL '
+                          '→ %${slot.effectivePercent(defaultPercent).round()}'
+                          '${slot.discountPercent == null ? ' (genel)' : ''} → '
+                          '${formatNumber(slot.newPrice(defaultPercent))} TL',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.success,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      )
+                    else if (isError)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          'Ürün bulunamadı.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.danger,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: onClear,
+              icon: const Icon(Icons.close, size: 16),
+              color: AppColors.textMuted,
+              tooltip: 'Haneyi temizle',
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 44),
+              padding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Sağ bölge: canlı A4 önizleme (sabit tuval → FittedBox ile ölçeklenir)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1828,11 +4032,144 @@ class _PreviewPane extends ConsumerWidget {
   }
 }
 
+// Tel Etiketi önizlemesi — Raf'ın _PreviewPane'inin küçük bir kopyası; yalnız
+// labelTelSheetProvider'ı izler ve _A4Canvas'a 4×8 ızgara boyutunu geçer
+// (mağaza logosu Raf'ın kalıcı labelSheetProvider'ından paylaşılır).
+class _TelPreviewPane extends ConsumerWidget {
+  const _TelPreviewPane();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(labelTelSheetProvider);
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: _A4Canvas(
+            slots: state.slots,
+            logoDataUrl: logoDataUrl,
+            columns: kTelColumns,
+            rows: kTelRows,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Tel İndirim Etiketi önizlemesi — `_TelPreviewPane`'in TelDiscountLabelSlot'lu
+// kopyası (tek sayfa, sabit 32 ızgara — çok-sayfalı YOK).
+class _TelDiscountPreviewPane extends ConsumerWidget {
+  const _TelDiscountPreviewPane();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(labelTelDiscountSheetProvider);
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: _TelDiscountA4Canvas(
+            slots: state.slots,
+            logoDataUrl: logoDataUrl,
+            generalKind: state.generalKind,
+            generalValue: state.generalValue,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// İndirim Etiketi önizlemesi — Poster'ın `_PosterPreviewPane` çok-sayfalı
+// deseniyle aynı (masaüstü: kendi dikey scroll'u; mobil: `scrollable:false` →
+// dış sayfa scroll'una gömülü). `paginateDiscountSlots` ile 4'lük sayfalara
+// bölünür, her sayfa kendi `_DiscountA4Canvas`'ı olarak alt alta dizilir.
+// Logo/tagline Raf'ın kalıcı `labelSheetProvider`'ından PAYLAŞILIR (Faz D) —
+// hane-başı `showLogo` tiki o etikette basılıp basılmayacağını belirler.
+class _DiscountPreviewPane extends ConsumerWidget {
+  final bool scrollable;
+
+  const _DiscountPreviewPane({this.scrollable = true});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(labelDiscountSheetProvider);
+    final logoState = ref.watch(labelSheetProvider);
+    final pages = paginateDiscountSlots(state.slots);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final pageW = c.maxWidth;
+          final pageH = pageW * (_kA4Height / _kA4Width);
+          final content = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < pages.length; i++) ...[
+                if (pages.length > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSizes.space6),
+                    child: _SectionLabel('Sayfa ${i + 1} / ${pages.length}'),
+                  ),
+                SizedBox(
+                  width: pageW,
+                  height: pageH,
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: _DiscountA4Canvas(
+                      slots: pages[i],
+                      defaultPercent: state.defaultPercent,
+                      logoDataUrl: logoState.logoDataUrl,
+                      tagline: logoState.taglineText ?? '',
+                    ),
+                  ),
+                ),
+                if (i < pages.length - 1)
+                  const SizedBox(height: AppSizes.space16),
+              ],
+            ],
+          );
+          return scrollable ? SingleChildScrollView(child: content) : content;
+        },
+      ),
+    );
+  }
+}
+
 class _A4Canvas extends StatelessWidget {
   final List<LabelSlot?> slots;
   final String? logoDataUrl;
+  // Izgara boyutu — varsayılan Raf Etiketi (3×8); Tel Etiketi aynı hücre
+  // tasarımını (_LabelCell) paylaşıp yalnız columns=4 geçer.
+  final int columns;
+  final int rows;
 
-  const _A4Canvas({required this.slots, required this.logoDataUrl});
+  const _A4Canvas({
+    required this.slots,
+    required this.logoDataUrl,
+    this.columns = kLabelColumns,
+    this.rows = kLabelRows,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1856,11 +4193,11 @@ class _A4Canvas extends StatelessWidget {
       color: Colors.white,
       padding: const EdgeInsets.all(margin),
       child: Column(
-        children: List.generate(kLabelRows, (r) {
+        children: List.generate(rows, (r) {
           return Expanded(
             child: Row(
-              children: List.generate(kLabelColumns, (c) {
-                final idx = r * kLabelColumns + c;
+              children: List.generate(columns, (c) {
+                final idx = r * columns + c;
                 return Expanded(
                   child: _LabelCell(
                     slot: slots[idx],
@@ -1981,6 +4318,7 @@ class _LabelCell extends StatelessWidget {
                     Expanded(
                       child: Text(
                         s.barcode,
+                        textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -1995,6 +4333,546 @@ class _LabelCell extends StatelessWidget {
                       formatShortDate(s.createdAt),
                       style: const TextStyle(
                         fontSize: 6.5,
+                        color: Color(0xFF555555),
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// Tel İndirim Etiketi A4 tuvali — Tel Etiketi ile AYNI 4×8 ızgara.
+// `_A4Canvas`'ın TelDiscountLabelSlot'lu kopyası.
+class _TelDiscountA4Canvas extends StatelessWidget {
+  final List<TelDiscountLabelSlot?> slots;
+  final String? logoDataUrl;
+  final TelDiscountKind generalKind;
+  final num generalValue;
+
+  const _TelDiscountA4Canvas({
+    required this.slots,
+    required this.logoDataUrl,
+    required this.generalKind,
+    required this.generalValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const margin = 19.0; // ~5mm @96dpi
+    Uint8List? logoBytes;
+    if (logoDataUrl != null) {
+      final i = logoDataUrl!.indexOf(',');
+      if (i >= 0) {
+        try {
+          logoBytes = base64Decode(logoDataUrl!.substring(i + 1));
+        } catch (_) {
+          logoBytes = null;
+        }
+      }
+    }
+
+    return Container(
+      width: _kA4Width,
+      height: _kA4Height,
+      color: Colors.white,
+      padding: const EdgeInsets.all(margin),
+      child: Column(
+        children: List.generate(kTelRows, (r) {
+          return Expanded(
+            child: Row(
+              children: List.generate(kTelColumns, (c) {
+                final idx = r * kTelColumns + c;
+                return Expanded(
+                  child: _TelDiscountLabelCell(
+                    slot: slots[idx],
+                    logoBytes: logoBytes,
+                    generalKind: generalKind,
+                    generalValue: generalValue,
+                  ),
+                );
+              }),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Tek Tel İndirim etiketi hücresi — Tel Etiketi'nin `_LabelCell`'iyle aynı
+// çerçeve/dolgu, yalnız fiyat bandı yerine ÇİZİLİ eski fiyat + KIRMIZI/1.5×
+// büyük yeni fiyat basar (kullanıcı isteği — "%X İNDİRİM" rozeti YOK, ürün
+// adı yer kısıtından TEK satıra indirildi, alt satır Tel'le AYNI format).
+class _TelDiscountLabelCell extends StatelessWidget {
+  final TelDiscountLabelSlot? slot;
+  final Uint8List? logoBytes;
+  final TelDiscountKind generalKind;
+  final num generalValue;
+
+  const _TelDiscountLabelCell({
+    required this.slot,
+    required this.logoBytes,
+    required this.generalKind,
+    required this.generalValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = slot;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: s == null
+              ? const Color(0xFFE0E0E0)
+              : const Color(0xFFB8B8B8),
+          width: 0.6,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      child: s == null
+          ? const SizedBox.expand()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                // Üst satır (logo + ÇİZİLİ eski fiyat), yeni fiyat, ürün adı,
+                // barkod — DÖRDÜ birlikte flex ORANLI paylaşır (KARAR:
+                // kullanıcı canlı gözden geçirmede logo/eski fiyatı 2×,
+                // barkod yüksekliğini 4×, ürün adını 2× büyütüp yeni fiyatı
+                // yarıya indirmeyi istedi — bu dört isteğin TOPLAMI dar Tel
+                // hücresine (~130px) mutlak pikselde sığmıyor, 40+30+28+80>130
+                // — bu yüzden SABİT piksel yerine bu ORANLARI koruyan flex
+                // ağırlığı kullanılır: hücreye göre ölçeklenir, ASLA taşmaz,
+                // göreli büyüklük isteği korunur. Oran şu an 40:73:19:40 —
+                // kullanıcı barkodu yarıya indirip (80→40) açılan payı yeni
+                // fiyata (33→73) eklemeyi istedi, toplam 172 SABİT kaldı.
+                // Alt satır (barkod no + tarih) DIŞARIDA — sabit/değişmedi.
+                Expanded(
+                  flex: 40,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 60,
+                        child: logoBytes != null
+                            ? Image.memory(logoBytes!, fit: BoxFit.contain)
+                            : const Center(
+                                child: Icon(Icons.storefront,
+                                    color: AppColors.primary, size: 20),
+                              ),
+                      ),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '${formatNumber(s.oldPrice)} TL',
+                            textAlign: TextAlign.right,
+                            maxLines: 1,
+                            overflow: TextOverflow.visible,
+                            style: const TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                              color: Colors.black,
+                              decoration: TextDecoration.lineThrough,
+                              decorationColor: AppColors.danger,
+                              decorationThickness: 2.2,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Yeni fiyat hero'su — kırmızı (kullanıcı isteğiyle barkod
+                // yarıya inince (80→40) açılan pay buraya eklendi: 33 → 73).
+                Expanded(
+                  flex: 73,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: Text(
+                        '${formatNumber(s.newPrice(generalKind, generalValue))} TL',
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.visible,
+                        style: const TextStyle(
+                          fontSize: 73,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                          height: 1,
+                          color: AppColors.danger,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Ürün adı — TEK satır (kullanıcı isteğiyle 2× — 9.5 → 19).
+                Expanded(
+                  flex: 19,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        s.productName.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.visible,
+                        style: const TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w600,
+                          height: 1.1,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Barkod çizgileri (Code128) — kullanıcı isteğiyle yarıya
+                // indirildi (80 → 40), açılan pay yeni fiyata eklendi.
+                Expanded(
+                  flex: 40,
+                  child: Center(
+                    child: FractionallySizedBox(
+                      widthFactor: 0.8,
+                      child: BarcodeWidget(
+                        barcode: bc.Barcode.code128(),
+                        data: s.barcode,
+                        drawText: false,
+                        color: Colors.black,
+                        errorBuilder: (context, error) =>
+                            const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ),
+                // En alt: barkod no (sol) + oluşturma tarihi (sağ) — Tel'le
+                // AYNI format, SABİT/doğal yükseklik (değişmedi).
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        s.barcode,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          letterSpacing: 0.3,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    Text(
+                      formatShortDate(s.createdAt),
+                      style: const TextStyle(
+                        fontSize: 6,
+                        color: Color(0xFF555555),
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// İndirim Etiketi A4 tuvali — sabit 2×2 ızgara (kullanıcı isteği, çok sayfalı
+// YOK). `_A4Canvas`'ın DiscountLabelSlot'lu, sabit-ızgaralı kopyası.
+class _DiscountA4Canvas extends StatelessWidget {
+  final List<DiscountLabelSlot?> slots;
+  final num defaultPercent;
+  final String? logoDataUrl;
+  final String tagline;
+
+  const _DiscountA4Canvas({
+    required this.slots,
+    required this.defaultPercent,
+    this.logoDataUrl,
+    this.tagline = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const margin = 19.0; // ~5mm @96dpi
+    return Container(
+      width: _kA4Width,
+      height: _kA4Height,
+      color: Colors.white,
+      padding: const EdgeInsets.all(margin),
+      child: Column(
+        children: List.generate(kDiscountRows, (r) {
+          return Expanded(
+            child: Row(
+              children: List.generate(kDiscountCols, (c) {
+                final idx = r * kDiscountCols + c;
+                return Expanded(
+                  child: _DiscountLabelCell(
+                    slot: slots[idx],
+                    defaultPercent: defaultPercent,
+                    logoDataUrl: logoDataUrl,
+                    tagline: tagline,
+                  ),
+                );
+              }),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Etiket başına tarih — YYAAGG (kullanıcı isteği, örn. 260819). Bilerek
+// `formatShortDate`'ten (dd MMM yyyy) ayrı — yalnız bu sekmede kullanılır.
+String _discountDateLabelUi(DateTime d) =>
+    '${(d.year % 100).toString().padLeft(2, '0')}'
+    '${d.month.toString().padLeft(2, '0')}'
+    '${d.day.toString().padLeft(2, '0')}';
+
+// Tek indirim etiketi hücresi (kullanıcı referans mockup'ına göre KARAR):
+// logo (kiracı-bazlı, Faz D) + tagline (siyah, opsiyonel) + ince ayraç + ürün
+// adı (BÜYÜK HARF) + tek satır kırmızı "%X İNDİRİM" bandı + "ESKİ FİYAT: "
+// (siyah, üzeri KIRMIZI çizili) + kutulu "YENİ FİYAT" (kırmızı hero) +
+// Code128 + alt satır (barkod no + tarih YYAAGG).
+class _DiscountLabelCell extends StatelessWidget {
+  final DiscountLabelSlot? slot;
+  final num defaultPercent;
+  final String? logoDataUrl;
+  final String tagline;
+
+  const _DiscountLabelCell({
+    required this.slot,
+    required this.defaultPercent,
+    this.logoDataUrl,
+    this.tagline = '',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = slot;
+    Uint8List? logoBytes;
+    final url = logoDataUrl;
+    if (url != null) {
+      final i = url.indexOf(',');
+      if (i != -1) {
+        try {
+          logoBytes = base64Decode(url.substring(i + 1));
+        } catch (_) {
+          logoBytes = null;
+        }
+      }
+    }
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: s == null
+              ? const Color(0xFFE0E0E0)
+              : const Color(0xFFB8B8B8),
+          width: 0.6,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: s == null
+          ? const SizedBox.expand()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                // Logo — hane başı `showLogo` tikliyse VE kiracı bir logo
+                // yüklediyse gösterilir; tiksiz/logosuz → alan BOŞ (yükseklik
+                // korunur, yalnız görsel basılmaz).
+                SizedBox(
+                  height: 84,
+                  child: (s.showLogo && logoBytes != null)
+                      ? Image.memory(logoBytes, fit: BoxFit.contain)
+                      : null,
+                ),
+                if (tagline.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    tagline,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                      color: Colors.black,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 7),
+                Container(height: 1, color: const Color(0xFFCCCCCC)),
+                const SizedBox(height: 7),
+                // Ürün adı (2 satır, taşarsa kısalt) — hücre genişliğine ortalı
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    s.productName.toUpperCase(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // %X İndirim — tek satır, kırmızı bant (2x eski rozet boyutu)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '%${s.effectivePercent(defaultPercent).round()} İNDİRİM',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // Eski fiyat — siyah metin, üzeri KIRMIZI çizili (2x eski boyut)
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      const Text(
+                        'ESKİ FİYAT: ',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black,
+                        ),
+                      ),
+                      Text(
+                        '${formatNumber(s.oldPrice)} TL',
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black,
+                          decoration: TextDecoration.lineThrough,
+                          decorationColor: AppColors.danger,
+                          decorationThickness: 2.4,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                // Yeni fiyat — kutulu, kırmızı hero (2x eski boyut)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.danger, width: 1.4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'YENİ FİYAT',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.danger,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${formatNumber(s.newPrice(defaultPercent))} TL',
+                          style: const TextStyle(
+                            fontSize: 76,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.danger,
+                            height: 1,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Barkod çizgileri (Code128) — bölge (Expanded) mevcut merkezde
+                // KALIR (kullanıcı isteği); asıl barkod grafiği bu bölgenin
+                // yalnız ORTA 1/3'ünü kaplar (üst/alt eşit boş 1/3 ile
+                // çevrili) → toplam yükseklik mevcudun 1/3'ü, konum sabit.
+                Expanded(
+                  child: Column(
+                    children: [
+                      const Expanded(child: SizedBox.shrink()),
+                      Expanded(
+                        child: Center(
+                          child: FractionallySizedBox(
+                            widthFactor: 0.8,
+                            child: BarcodeWidget(
+                              barcode: bc.Barcode.code128(),
+                              data: s.barcode,
+                              drawText: false,
+                              color: Colors.black,
+                              errorBuilder: (context, error) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Expanded(child: SizedBox.shrink()),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // En alt: barkod no (sol) + tarih YYAAGG (sağ)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        s.barcode,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          letterSpacing: 0.5,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _discountDateLabelUi(s.createdAt),
+                      style: const TextStyle(
+                        fontSize: 8,
                         color: Color(0xFF555555),
                         fontFeatures: [FontFeature.tabularFigures()],
                       ),
@@ -2288,38 +5166,19 @@ class _PosterA4Canvas extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket, KARAR v1.14 /
-// v1.14.2 / v1.14.4). Hücre 88×55mm; üst/alt kenar 11mm, sol/sağ kenar 17mm.
-// Marka figürü (RENKLİ) hücreyi doldurur; fiyat/ad/barkod figür üzerine oranlı
-// bindirilir (önizleme = HTML = PDF BİREBİR).
+// Geniş Logo — canlı A4 önizleme (2 sütun × 5 satır = 10 etiket). Hücre
+// 88×55mm; üst/alt kenar 11mm, sol/sağ kenar 17mm. Faz D: sabit marka
+// illüstrasyonu KALDIRILDI — kiracının kendi logosu (opsiyonel) düz zeminde
+// ortalı, dikey `Expanded(flex:)` akışı (logo→fiyat→ad→barkod→alt satır);
+// önizleme = HTML = PDF BİREBİR aynı oranları paylaşır.
 // ═══════════════════════════════════════════════════════════════════════════
 
-// A4 önizleme kenar boşluğu (KARAR v1.14.4 — hücre 94→88mm): üst/alt 11mm,
-// sol/sağ 17mm @96dpi → (210−2×88)/2 = 17mm, hücre genişliği tam 88mm.
+// A4 önizleme kenar boşluğu: üst/alt 11mm, sol/sağ 17mm @96dpi →
+// (210−2×88)/2 = 17mm, hücre genişliği tam 88mm.
 const double _kWideMargin = 11 * 3.7795; // dikey ≈ 41.6px
 const double _kWideMarginH = 17 * 3.7795; // yatay ≈ 64.25px
 
-// Etiket-içi hizalama oranları (hücre = figür; figür crop'undan ölçüldü). Bu
-// oranlar HTML/PDF ile birebir paylaşılır. Fiyat = tentenin açık iç dikdörtgeni;
-// gövde = yan çizgilerin içi (alt çizginin üstünde).
-const double _kWFigPriceLeft = 0.13;
-const double _kWFigPriceTop = 0.065;
-const double _kWFigPriceW = 0.74;
-const double _kWFigPriceH = 0.25;
-const double _kWFigBodyLeft = 0.10;
-const double _kWFigBodyTop = 0.585;
-const double _kWFigBodyW = 0.80;
-const double _kWFigBodyH = 0.395;
-const double _kWFigBarcodeH = 0.13; // barkod çizgi yüksekliği (yarıya indi)
-const double _kWFigBottomH = 0.095; // alt satır (barkod no + tarih)
-
-// Ürün adı (KARAR v1.14.4): ad, gövdenin üst esnek alanında ÜSTE hizalı
-// (topCenter). v1.14.3'teki 1.5 harf aşağı-itme, 2 satırlı adlar barkod
-// çizgilerine giriyordu → ~5mm yukarı alındı (shift 0). Barkod + alt satır
-// YERİNDE KALIR.
 const double _kWNameSize = 12;
-const double _kWNameShift =
-    2.5 * 3.7795; // v1.14.6: ad 2.5mm aşağı (≈9.45px @96dpi), üste hizalı sabit offset
 
 class _WidePreviewPane extends ConsumerWidget {
   const _WidePreviewPane();
@@ -2327,6 +5186,7 @@ class _WidePreviewPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(labelWideSheetProvider);
+    final logoDataUrl = ref.watch(labelSheetProvider).logoDataUrl;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.pageBg,
@@ -2337,7 +5197,7 @@ class _WidePreviewPane extends ConsumerWidget {
       child: Center(
         child: FittedBox(
           fit: BoxFit.contain,
-          child: _WideA4Canvas(slots: state.slots),
+          child: _WideA4Canvas(slots: state.slots, logoDataUrl: logoDataUrl),
         ),
       ),
     );
@@ -2346,8 +5206,9 @@ class _WidePreviewPane extends ConsumerWidget {
 
 class _WideA4Canvas extends StatelessWidget {
   final List<LabelSlot?> slots;
+  final String? logoDataUrl;
 
-  const _WideA4Canvas({required this.slots});
+  const _WideA4Canvas({required this.slots, this.logoDataUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -2365,7 +5226,12 @@ class _WideA4Canvas extends StatelessWidget {
             child: Row(
               children: List.generate(kWideCols, (c) {
                 final idx = r * kWideCols + c;
-                return Expanded(child: _WideLabelCell(slot: slots[idx]));
+                return Expanded(
+                  child: _WideLabelCell(
+                    slot: slots[idx],
+                    logoDataUrl: logoDataUrl,
+                  ),
+                );
               }),
             ),
           );
@@ -2376,23 +5242,36 @@ class _WideA4Canvas extends StatelessWidget {
 }
 
 // Geniş Logo A4 önizleme tuvalini (2×5) golden/görsel doğrulama için üretir.
-// Yalnız test amaçlı (tasarım-lideri hiza denetimi); üretim akışında kullanılmaz.
+// Yalnız test amaçlı; üretim akışında kullanılmaz.
 @visibleForTesting
-Widget buildWideCanvasForGolden(List<LabelSlot?> slots) =>
-    _WideA4Canvas(slots: slots);
+Widget buildWideCanvasForGolden(List<LabelSlot?> slots, {String? logoDataUrl}) =>
+    _WideA4Canvas(slots: slots, logoDataUrl: logoDataUrl);
 
-// Tek Geniş Logo etiket hücresi (figür arka planı + fiyat/ad/barkod overlay,
-// KARAR v1.14.2). Figür hücreyi doldurur (RENKLİ); fiyat tentenin açık iç
-// dikdörtgeninin merkezine, ürün adı + barkod + alt satır gövdede (yan
-// çizgilerin içinde) oranlı bindirilir. Öğeler siyah/beyaz.
+// Tek Geniş Logo etiket hücresi (Faz D — düz zeminde ortalı kiracı logosu +
+// fiyat/ad/barkod, `Expanded(flex:)` oranlı dikey akış). Boş hane → yalnız
+// ince kesim kılavuzu.
 class _WideLabelCell extends StatelessWidget {
   final LabelSlot? slot;
+  final String? logoDataUrl;
 
-  const _WideLabelCell({required this.slot});
+  const _WideLabelCell({required this.slot, this.logoDataUrl});
 
   @override
   Widget build(BuildContext context) {
     final s = slot;
+    Uint8List? logoBytes;
+    final url = logoDataUrl;
+    if (url != null) {
+      final i = url.indexOf(',');
+      if (i != -1) {
+        try {
+          logoBytes = base64Decode(url.substring(i + 1));
+        } catch (_) {
+          logoBytes = null;
+        }
+      }
+    }
+
     return Container(
       decoration: BoxDecoration(
         border: Border.all(
@@ -2401,131 +5280,104 @@ class _WideLabelCell extends StatelessWidget {
           width: 0.6,
         ),
       ),
+      padding: const EdgeInsets.all(6),
       child: s == null
           ? const SizedBox.expand()
-          : LayoutBuilder(
-              builder: (ctx, cons) {
-                final w = cons.maxWidth;
-                final h = cons.maxHeight;
-                return Stack(
-                  children: [
-                    // Figür arka planı — hücreyi doldurur (BoxFit.fill).
-                    Positioned.fill(
-                      child: Image.asset(
-                        'genis_logo_figur.png',
-                        fit: BoxFit.fill,
-                      ),
-                    ),
-                    // FİYAT — tentenin açık iç dikdörtgeni merkezine ortalı.
-                    Positioned(
-                      left: w * _kWFigPriceLeft,
-                      top: h * _kWFigPriceTop,
-                      width: w * _kWFigPriceW,
-                      height: h * _kWFigPriceH,
-                      child: Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            '${formatNumber(s.price)} TL',
-                            maxLines: 1,
-                            style: const TextStyle(
-                              fontSize: 46,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.5,
-                              height: 1,
-                              color: Colors.black,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  flex: 32,
+                  child: Center(
+                    child: logoBytes != null
+                        ? Image.memory(logoBytes, fit: BoxFit.contain)
+                        : const SizedBox(),
+                  ),
+                ),
+                Expanded(
+                  flex: 22,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${formatNumber(s.price)} TL',
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 46,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                          height: 1,
+                          color: Colors.black,
+                          fontFeatures: [FontFeature.tabularFigures()],
                         ),
                       ),
                     ),
-                    // Gövde: ürün adı + barkod + alt satır (yan çizgilerin içi).
-                    Positioned(
-                      left: w * _kWFigBodyLeft,
-                      top: h * _kWFigBodyTop,
-                      width: w * _kWFigBodyW,
-                      height: h * _kWFigBodyH,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // Ürün adı (ortalı, en çok 2 satır) — üstteki esnek
-                          // alan. v1.14.4: ÜSTE hizalı (_kWNameShift=0); 2 satır
-                          // artık barkoda girmez. ClipRect taşarsa kırpar.
-                          Expanded(
-                            child: ClipRect(
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.only(top: _kWNameShift),
-                                child: Align(
-                                  alignment: Alignment.topCenter,
-                                  child: Text(
-                                    s.productName.toUpperCase(),
-                                    textAlign: TextAlign.center,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: _kWNameSize,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.1,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Code128 barkod — yarı yükseklik, gövde iç genişliğinde.
-                          SizedBox(
-                            width: double.infinity,
-                            height: h * _kWFigBarcodeH,
-                            child: BarcodeWidget(
-                              barcode: bc.Barcode.code128(),
-                              data: s.barcode,
-                              drawText: false,
-                              color: Colors.black,
-                              errorBuilder: (context, error) =>
-                                  const SizedBox.shrink(),
-                            ),
-                          ),
-                          // Alt satır: barkod no SOLDA · tarih SAĞDA.
-                          SizedBox(
-                            height: h * _kWFigBottomH,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    s.barcode,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      letterSpacing: 0.3,
-                                      color: Colors.black,
-                                      fontFeatures: [
-                                        FontFeature.tabularFigures()
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  formatShortDate(s.createdAt),
-                                  style: const TextStyle(
-                                    fontSize: 7,
-                                    color: Color(0xFF555555),
-                                    fontFeatures: [FontFeature.tabularFigures()],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                  ),
+                ),
+                Expanded(
+                  flex: 20,
+                  child: ClipRect(
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Text(
+                        s.productName.toUpperCase(),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: _kWNameSize,
+                          fontWeight: FontWeight.w700,
+                          height: 1.1,
+                          color: Colors.black,
+                        ),
                       ),
                     ),
-                  ],
-                );
-              },
+                  ),
+                ),
+                Expanded(
+                  flex: 13,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: BarcodeWidget(
+                      barcode: bc.Barcode.code128(),
+                      data: s.barcode,
+                      drawText: false,
+                      color: Colors.black,
+                      errorBuilder: (context, error) =>
+                          const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 9,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.barcode,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            letterSpacing: 0.3,
+                            color: Colors.black,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      Text(
+                        formatShortDate(s.createdAt),
+                        style: const TextStyle(
+                          fontSize: 7,
+                          color: Color(0xFF555555),
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
     );
   }
@@ -3074,6 +5926,16 @@ class _ProductInputColumn extends StatelessWidget {
     this.shrinkWrap = false,
   });
 
+  /// Kamerayı açar; okunan barkodu alana yazar ve normal Enter akışıyla aynı
+  /// şekilde çözer (yalnız mobil/native — `openBarcodeScanner` web'de no-op).
+  Future<void> _scanBarcode(BuildContext context) async {
+    await openBarcodeScanner(context, (value) {
+      final trimmed = value.trim();
+      barcodeController.text = trimmed;
+      onBarcodeSubmitted(trimmed);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // Aktif hane = ince sol altın şerit + ink kenarlık (§5). Hata → danger.
@@ -3118,6 +5980,15 @@ class _ProductInputColumn extends StatelessWidget {
                 ),
               ),
             ),
+            // Kamera ile barkod tarama — yalnız mobil/native.
+            if (!kIsWeb && context.isMobile)
+              IconButton(
+                onPressed: () => _scanBarcode(context),
+                icon: const Icon(Icons.camera_alt_outlined, size: 20),
+                color: AppColors.primary,
+                tooltip: 'Barkod tara',
+                visualDensity: VisualDensity.compact,
+              ),
           ],
         ),
       ),
@@ -3551,11 +6422,12 @@ class _ProductLabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Üst sekme seçici (KARAR v1.14 / v1.21 / v1.23): Yeni Etiket · Geniş Logo ·
-// Poster · Ürün Etiketi · Kayıtlı Dosyalar. Kasa sekme dili (SegmentedButton,
-// aktif sekme token dili). Responsive: mobilde kısa etiketler
-// ("Yeni"·"Geniş"·"Poster"·"Ürün"·"Dosyalar") + ikonsuz, yatay-kaydırılabilir
-// (SingleChildScrollView) → 5 segment dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
+// Üst sekme seçici (KARAR v1.14 / v1.21 / v1.23 / Etiket Havuzu): Havuz ·
+// Raf Etiketi · Tel Etiketi · Geniş Logo · Poster · Ürün Etiketi · Kayıtlı
+// Dosyalar. Kasa sekme dili (SegmentedButton, aktif sekme token dili).
+// Responsive: mobilde kısa etiketler ("Havuz"·"Raf"·"Tel"·"Geniş"·"Poster"·
+// "Ürün"·"Dosyalar") + ikonsuz, yatay-kaydırılabilir (SingleChildScrollView)
+// → 7 segment dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _TabSelector extends StatelessWidget {
@@ -3577,13 +6449,43 @@ class _TabSelector extends StatelessWidget {
         showSelectedIcon: false,
         segments: [
           ButtonSegment(
-            value: _LabelTab.yeni,
+            value: _LabelTab.havuz,
+            label: const Text(
+              'Havuz',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile
+                ? null
+                : const Icon(Icons.inventory_2_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.raf,
             label: Text(
-              mobile ? 'Yeni' : 'Yeni Etiket',
+              mobile ? 'Raf' : 'Raf Etiketi',
               maxLines: 1,
               softWrap: false,
             ),
             icon: mobile ? null : const Icon(Icons.add_box_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.tel,
+            label: Text(
+              mobile ? 'Tel' : 'Tel Etiketi',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon:
+                mobile ? null : const Icon(Icons.view_column_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.telIndirim,
+            label: Text(
+              mobile ? 'Tel İnd.' : 'Tel İndirim',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile ? null : const Icon(Icons.sell_outlined, size: 18),
           ),
           ButtonSegment(
             value: _LabelTab.genis,
@@ -3619,6 +6521,15 @@ class _TabSelector extends StatelessWidget {
                 : const Icon(Icons.qr_code_2_outlined, size: 18),
           ),
           ButtonSegment(
+            value: _LabelTab.indirim,
+            label: Text(
+              mobile ? 'İndirim' : 'İndirim Etiketi',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile ? null : const Icon(Icons.percent_outlined, size: 18),
+          ),
+          ButtonSegment(
             value: _LabelTab.kayitli,
             label: Text(
               mobile ? 'Dosyalar' : 'Kayıtlı Dosyalar',
@@ -3636,17 +6547,136 @@ class _TabSelector extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Havuz sekmesi satırı — tür adı + o türde bekleyen (kontrol=0) toplam adet
+// (`Raf(36)` gibi) + "PDF Kaydet". `labelPoolPendingProvider` autoDispose
+// olduğundan bu widget her Havuz sekmesine girişte TAZE veri çeker (başka
+// kullanıcının eklediği görünsün diye, bkz. labels_provider.dart notu).
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _HavuzPoolRow extends ConsumerWidget {
+  final String label;
+  final String labelType;
+  final VoidCallback onSavePdf;
+
+  const _HavuzPoolRow({
+    required this.label,
+    required this.labelType,
+    required this.onSavePdf,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pendingAsync = ref.watch(labelPoolPendingProvider(labelType));
+    final count = pendingAsync.value?.fold<int>(0, (sum, it) => sum + it.quantity);
+    final countLabel = pendingAsync.isLoading ? '…' : '${count ?? 0}';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSizes.space16,
+          vertical: AppSizes.space12,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$label ($countLabel)',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: onSavePdf,
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+              label: const Text('PDF Kaydet'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Sekme 2: Kayıtlı Dosyalar (KARAR v1.11) — Storage'daki PDF'ler. EKRAN HERO'SU
 // YOK (stok listesi/rapor dili). cardDecoration + goldBg başlık. Masaüstü tablo /
 // mobil kart. Satır aksiyonları: Aç/İndir · Yazdır · Sil (danger + onay).
+// Çoklu seçim + toplu silme: her satırın/kartın solunda sepet ekranındaki
+// _RowSelectToggle ile AYNI görsel dilde bir seçim ikonu (masaüstünde başlıkta
+// "tümünü seç" de vardır); seçim varken üstte "Seçilenleri Sil (N)" çubuğu
+// belirir (`_BulkDeleteBar`, sepetin toplu %iskonto çubuğuyla aynı desende).
+// Seçim, dosya listesi her yenilendiğinde (silme sonrası / manuel yenile /
+// otomatik prob) o an listede olmayan yolları eler.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _SavedFilesTab extends ConsumerWidget {
+class _SavedFilesTab extends ConsumerStatefulWidget {
   final bool compact;
   const _SavedFilesTab({required this.compact});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SavedFilesTab> createState() => _SavedFilesTabState();
+}
+
+class _SavedFilesTabState extends ConsumerState<_SavedFilesTab> {
+  final Set<String> _selected = {};
+
+  void _toggle(String path) {
+    setState(() {
+      if (!_selected.remove(path)) _selected.add(path);
+    });
+  }
+
+  void _toggleAll(List<SavedLabelFile> files) {
+    setState(() {
+      if (files.isNotEmpty && _selected.length == files.length) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(files.map((f) => f.path));
+      }
+    });
+  }
+
+  void _clearSelection() => setState(_selected.clear);
+
+  Future<void> _bulkDelete() async {
+    final count = _selected.length;
+    if (count == 0) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dosyaları Sil'),
+        content: Text('$count dosya kalıcı olarak silinsin mi?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: AppColors.textOnDark,
+            ),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final paths = _selected.toList();
+    try {
+      await ref.read(labelsStorageRepositoryProvider).removeMany(paths);
+      ref.invalidate(savedLabelFilesProvider);
+      setState(_selected.clear);
+      if (mounted) _snack(context, '$count dosya silindi');
+    } catch (e) {
+      if (mounted) _snack(context, 'Silinemedi: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final filesAsync = ref.watch(savedLabelFilesProvider);
 
     Widget body = filesAsync.when(
@@ -3673,10 +6703,19 @@ class _SavedFilesTab extends ConsumerWidget {
             ),
           );
         }
-        if (compact) {
+        // Listede artık olmayan (silinmiş/yenilenmiş) yolları seçimden düş.
+        final validPaths = files.map((f) => f.path).toSet();
+        _selected.removeWhere((p) => !validPaths.contains(p));
+
+        if (widget.compact) {
           return Column(
             children: [
-              for (final f in files) _SavedFileCard(file: f),
+              for (final f in files)
+                _SavedFileCard(
+                  file: f,
+                  selected: _selected.contains(f.path),
+                  onToggleSelect: () => _toggle(f.path),
+                ),
             ],
           );
         }
@@ -3684,12 +6723,20 @@ class _SavedFilesTab extends ConsumerWidget {
         return Expanded(
           child: Column(
             children: [
-              const _FilesHeaderRow(),
+              _FilesHeaderRow(
+                allSelected: files.isNotEmpty && _selected.length == files.length,
+                onToggleAll: () => _toggleAll(files),
+              ),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      for (final f in files) _SavedFileRow(file: f),
+                      for (final f in files)
+                        _SavedFileRow(
+                          file: f,
+                          selected: _selected.contains(f.path),
+                          onToggleSelect: () => _toggle(f.path),
+                        ),
                     ],
                   ),
                 ),
@@ -3705,7 +6752,7 @@ class _SavedFilesTab extends ConsumerWidget {
       padding: const EdgeInsets.all(AppSizes.space12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: widget.compact ? MainAxisSize.min : MainAxisSize.max,
         children: [
           Row(
             children: [
@@ -3721,6 +6768,14 @@ class _SavedFilesTab extends ConsumerWidget {
               ),
             ],
           ),
+          if (_selected.isNotEmpty) ...[
+            const SizedBox(height: AppSizes.space8),
+            _BulkDeleteBar(
+              count: _selected.length,
+              onDelete: _bulkDelete,
+              onClear: _clearSelection,
+            ),
+          ],
           const SizedBox(height: AppSizes.space8),
           body,
         ],
@@ -3729,9 +6784,103 @@ class _SavedFilesTab extends ConsumerWidget {
   }
 }
 
-// Masaüstü tablo başlığı (goldBg zemin).
+// Toplu silme çubuğu — sepet ekranındaki toplu %iskonto çubuğuyla (cart_table.dart
+// _buildDesktopBulkBar) aynı görsel dil: goldBg zemin, sayaç + aksiyon + "Seçimi
+// Temizle". Kompakt (mobil) ve masaüstü sekmesinde ORTAK — sekmeler arası genişlik
+// farkı yalnız Row'un doğal sarmasıyla çözülür.
+class _BulkDeleteBar extends StatelessWidget {
+  final int count;
+  final VoidCallback onDelete;
+  final VoidCallback onClear;
+
+  const _BulkDeleteBar({
+    required this.count,
+    required this.onDelete,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.goldBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSizes.space12,
+        vertical: AppSizes.space8,
+      ),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: AppSizes.space12,
+        runSpacing: AppSizes.space4,
+        children: [
+          Text(
+            '$count dosya seçili',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_sweep_outlined, size: 15),
+            label: Text('Seçilenleri Sil ($count)'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: AppColors.textOnDark,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space12,
+                vertical: AppSizes.space8,
+              ),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onClear,
+            child: const Text('Seçimi Temizle'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Satır/kart seçim ikonu — sepet ekranındaki _RowSelectToggle ile AYNI ikon
+// çifti (check_circle / radio_button_unchecked) ve renk mantığı.
+class _FileSelectToggle extends StatelessWidget {
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FileSelectToggle({required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSizes.space4),
+        child: Icon(
+          selected ? Icons.check_circle : Icons.radio_button_unchecked,
+          size: 20,
+          color: selected ? AppColors.primary : AppColors.textMuted,
+        ),
+      ),
+    );
+  }
+}
+
+// Masaüstü tablo başlığı (goldBg zemin) — solda "tümünü seç" toggle'ı.
 class _FilesHeaderRow extends StatelessWidget {
-  const _FilesHeaderRow();
+  final bool allSelected;
+  final VoidCallback onToggleAll;
+
+  const _FilesHeaderRow({required this.allSelected, required this.onToggleAll});
 
   @override
   Widget build(BuildContext context) {
@@ -3743,11 +6892,15 @@ class _FilesHeaderRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
           horizontal: AppSizes.space12, vertical: AppSizes.space8),
       child: Row(
-        children: const [
-          Expanded(flex: 5, child: _HeaderCell('Ad')),
-          Expanded(flex: 3, child: _HeaderCell('Tarih')),
-          Expanded(flex: 2, child: _HeaderCell('Boyut')),
-          SizedBox(width: 132, child: _HeaderCell('İşlem')),
+        children: [
+          SizedBox(
+            width: 32,
+            child: _FileSelectToggle(selected: allSelected, onTap: onToggleAll),
+          ),
+          const Expanded(flex: 5, child: _HeaderCell('Ad')),
+          const Expanded(flex: 3, child: _HeaderCell('Tarih')),
+          const Expanded(flex: 2, child: _HeaderCell('Boyut')),
+          const SizedBox(width: 132, child: _HeaderCell('İşlem')),
         ],
       ),
     );
@@ -3775,18 +6928,29 @@ class _HeaderCell extends StatelessWidget {
 // Masaüstü tablo satırı.
 class _SavedFileRow extends ConsumerWidget {
   final SavedLabelFile file;
-  const _SavedFileRow({required this.file});
+  final bool selected;
+  final VoidCallback onToggleSelect;
+  const _SavedFileRow({
+    required this.file,
+    required this.selected,
+    required this.onToggleSelect,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      decoration: BoxDecoration(
+        color: selected ? AppColors.goldBg : null,
+        border: const Border(bottom: BorderSide(color: AppColors.divider)),
       ),
       padding: const EdgeInsets.symmetric(
           horizontal: AppSizes.space12, vertical: AppSizes.space8),
       child: Row(
         children: [
+          SizedBox(
+            width: 32,
+            child: _FileSelectToggle(selected: selected, onTap: onToggleSelect),
+          ),
           Expanded(
             flex: 5,
             child: Text(
@@ -3858,7 +7022,13 @@ class _SavedFileRow extends ConsumerWidget {
 // Mobil kart.
 class _SavedFileCard extends ConsumerWidget {
   final SavedLabelFile file;
-  const _SavedFileCard({required this.file});
+  final bool selected;
+  final VoidCallback onToggleSelect;
+  const _SavedFileCard({
+    required this.file,
+    required this.selected,
+    required this.onToggleSelect,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -3866,23 +7036,34 @@ class _SavedFileCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: AppSizes.space8),
       padding: const EdgeInsets.all(AppSizes.space12),
       decoration: BoxDecoration(
-        color: AppColors.cardBg,
+        color: selected ? AppColors.goldBg : AppColors.cardBg,
         borderRadius: BorderRadius.circular(AppSizes.radiusMd),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(
+          color: selected ? AppColors.primary : AppColors.divider,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            file.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FileSelectToggle(selected: selected, onTap: onToggleSelect),
+              const SizedBox(width: AppSizes.space4),
+              Expanded(
+                child: Text(
+                  file.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSizes.space4),
           Row(

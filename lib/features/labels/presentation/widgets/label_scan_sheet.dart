@@ -62,10 +62,12 @@ class LabelScanSheet extends StatefulWidget {
   State<LabelScanSheet> createState() => _LabelScanSheetState();
 }
 
-class _LabelScanSheetState extends State<LabelScanSheet> {
+class _LabelScanSheetState extends State<LabelScanSheet>
+    with WidgetsBindingObserver {
   final MobileScannerController _controller = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
     facing: CameraFacing.back,
+    autoStart: false,
   );
 
   bool _processing = false; // aynı anda tek okutma işlenir
@@ -76,8 +78,42 @@ class _LabelScanSheetState extends State<LabelScanSheet> {
   String? _lastName;
   num? _lastPrice;
 
+  // autoStart:false + elle start(): start() bitmeden stop()/dispose()
+  // çağrılırsa native kamera oturumu yarım açılışta takılıp kapanışı
+  // tutuklaştırıyordu — kapanış her zaman bu future'ı bekleyip öyle durur.
+  Future<void>? _startFuture;
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startFuture = _controller.start();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startFuture = _controller.start();
+    } else if (state == AppLifecycleState.inactive) {
+      _controller.stop();
+    }
+  }
+
+  Future<void> _close() async {
+    if (_closing) return;
+    _closing = true;
+    try {
+      await _startFuture;
+    } catch (_) {}
+    await _controller.stop();
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }
@@ -121,88 +157,96 @@ class _LabelScanSheetState extends State<LabelScanSheet> {
   @override
   Widget build(BuildContext context) {
     final complete = _filled >= widget.totalCount;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _close();
+      },
+      child: Scaffold(
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: const Text('Etiket Tara', style: TextStyle(fontSize: 16)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.flash_on),
-            tooltip: 'Fener',
-            onPressed: () => _controller.toggleTorch(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.flip_camera_ios_outlined),
-            tooltip: 'Kamerayı çevir',
-            onPressed: () => _controller.switchCamera(),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Bitir',
-                  style: TextStyle(color: Colors.white, fontSize: 15)),
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: const Text('Etiket Tara', style: TextStyle(fontSize: 16)),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.flash_on),
+              tooltip: 'Fener',
+              onPressed: () => _controller.toggleTorch(),
             ),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-          ),
-          // Üst: ilerleme rozeti (N / 24 hane)
-          Positioned(
-            top: 16,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                decoration: BoxDecoration(
-                  color: complete
-                      ? AppColors.gold.withValues(alpha: 0.95)
-                      : Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppColors.goldLight, width: 1.5),
-                ),
-                child: Text(
-                  complete
-                      ? '24 / 24 hane doldu — Bitir'
-                      : '$_filled / ${widget.totalCount} hane',
-                  style: TextStyle(
-                    color: complete ? Colors.black : Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+            IconButton(
+              icon: const Icon(Icons.flip_camera_ios_outlined),
+              tooltip: 'Kamerayı çevir',
+              onPressed: () => _controller.switchCamera(),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: TextButton(
+                onPressed: _close,
+                child: const Text('Bitir',
+                    style: TextStyle(color: Colors.white, fontSize: 15)),
+              ),
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            MobileScanner(
+              controller: _controller,
+              onDetect: _onDetect,
+            ),
+            // Üst: ilerleme rozeti (N / 24 hane)
+            Positioned(
+              top: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: complete
+                        ? AppColors.gold.withValues(alpha: 0.95)
+                        : Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(24),
+                    border:
+                        Border.all(color: AppColors.goldLight, width: 1.5),
+                  ),
+                  child: Text(
+                    complete
+                        ? '24 / 24 hane doldu — Bitir'
+                        : '$_filled / ${widget.totalCount} hane',
+                    style: TextStyle(
+                      color: complete ? Colors.black : Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          // Orta: kılavuz çerçeve
-          Center(
-            child: Container(
-              width: 260,
-              height: 160,
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.goldLight, width: 2.5),
-                borderRadius: BorderRadius.circular(12),
+            // Orta: kılavuz çerçeve
+            Center(
+              child: Container(
+                width: 260,
+                height: 160,
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.goldLight, width: 2.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-          ),
-          // Alt: son okutma sonucu + ipucu
-          Positioned(
-            bottom: 36,
-            left: 16,
-            right: 16,
-            child: Center(child: _feedbackCard(complete)),
-          ),
-        ],
+            // Alt: son okutma sonucu + ipucu
+            Positioned(
+              bottom: 36,
+              left: 16,
+              right: 16,
+              child: Center(child: _feedbackCard(complete)),
+            ),
+          ],
+        ),
       ),
     );
   }

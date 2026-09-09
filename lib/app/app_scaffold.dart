@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/link.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -12,9 +13,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/connectivity/connectivity_status_service.dart';
 import '../core/constants/app_colors.dart';
 import '../core/constants/app_sizes.dart';
+import '../core/help_mode/help_mode_toggle_button.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/responsive.dart';
 import '../features/auth/application/auth_provider.dart';
+import '../features/auth/presentation/widgets/edit_tenant_name_dialog.dart';
+import '../features/auth/presentation/widgets/staff_invite_dialog.dart';
+import '../features/gorevler/application/gorevler_provider.dart' show gorevlerTarihAnahtari;
 import '../features/products/application/product_sync_service.dart';
 import '../features/products/application/sync_status.dart';
 import '../features/products/presentation/widgets/sync_status_badge.dart';
@@ -25,23 +30,37 @@ class _NavItem {
   final IconData icon;
   final IconData selectedIcon;
   final String route;
+  // Rol-bazlı kısıtlama (kullanıcı kararı): yalnız owner/admin görür. Staff
+  // için menüden gizlenir (ekran kendisi de ayrıca guard'lı — bkz. KasaScreen).
+  final bool ownerOrAdminOnly;
 
-  const _NavItem(this.label, this.icon, this.selectedIcon, this.route);
+  const _NavItem(this.label, this.icon, this.selectedIcon, this.route,
+      {this.ownerOrAdminOnly = false});
 }
 
 const _navItems = [
   _NavItem('Anasayfa', Icons.dashboard_outlined, Icons.dashboard, '/home'),
+  _NavItem('Görevler', Icons.checklist_outlined, Icons.checklist, '/gorevler'),
+  _NavItem('Analiz', Icons.query_stats_outlined, Icons.query_stats, '/analiz'),
   _NavItem('Satış Yap', Icons.point_of_sale_outlined, Icons.point_of_sale, '/sales'),
   _NavItem('Raporlar', Icons.bar_chart_outlined, Icons.insert_chart, '/reports'),
-  _NavItem('Kasa', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, '/kasa'),
+  _NavItem('Kasa', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet, '/kasa',
+      ownerOrAdminOnly: true),
   _NavItem('Etiket', Icons.label_outline, Icons.label, '/etiket'),
   _NavItem('Online Satış', Icons.shopping_bag_outlined, Icons.shopping_bag, '/online-satis'),
   _NavItem('Müşteriler', Icons.people_outline, Icons.people, '/customers'),
   _NavItem('Ürünler', Icons.inventory_2_outlined, Icons.inventory_2, '/products'),
+  _NavItem('Stok', Icons.playlist_add_check_outlined, Icons.playlist_add_check, '/stok'),
+  _NavItem('Denetim Kaydı', Icons.history_outlined, Icons.history, '/denetim',
+      ownerOrAdminOnly: true),
 ];
 
-int _selectedNavIndex(String currentPath) {
-  final index = _navItems.indexWhere((item) =>
+// Rol-bazlı görünür menü — staff için `ownerOrAdminOnly` öğeler filtrelenir.
+List<_NavItem> _visibleNavItems(bool isOwnerOrAdmin) =>
+    isOwnerOrAdmin ? _navItems : _navItems.where((i) => !i.ownerOrAdminOnly).toList();
+
+int _selectedNavIndex(List<_NavItem> items, String currentPath) {
+  final index = items.indexWhere((item) =>
       currentPath == item.route ||
       (item.route != '/home' && currentPath.startsWith(item.route)));
   return index < 0 ? 0 : index;
@@ -81,11 +100,86 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
         ref.read(connectivityStatusServiceProvider.notifier).probeAndNotify();
       });
     }
+    // Görevler (dünkü satışların raf-kontrol listesi) uygulama o gün ilk
+    // açıldığında otomatik gösterilir — `AppScaffold` bir oturumda yalnız bir
+    // kez kurulduğundan bu da oturum başına yalnız bir kez tetiklenir; tarih
+    // anahtarı SharedPreferences'ta saklandığından aynı gün içinde tekrar
+    // açılış/route değişimi yeniden yönlendirmez. Tüm platformlarda (web dahil)
+    // geçerli — "uygulama" burada cihaz/platform ayrımı gözetmez.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRedirectToGorevler());
+  }
+
+  Future<void> _maybeRedirectToGorevler() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bugun = gorevlerTarihAnahtari();
+    final sonAcilis = prefs.getString('gorevler_son_acilis_tarihi');
+    if (sonAcilis == bugun) return;
+    await prefs.setString('gorevler_son_acilis_tarihi', bugun);
+    if (mounted) context.go('/gorevler');
   }
 
   @override
   Widget build(BuildContext context) {
     final email = ref.watch(currentUserEmailProvider);
+
+    // Kiracı provizyonu garantisi (gecikmeli e-posta onayı senaryosu — bkz.
+    // auth_provider.dart `ensureTenantProvisionedProvider`). ⚠️ Bilinçli
+    // olarak router'ın `redirect`'inde DEĞİL, burada widget seviyesinde
+    // beklenir: `redirect` içinde `await` edilen bir asenkron kontrol,
+    // go_router'ın `refreshListenable`'ı (auth state değişimleri) ile
+    // çakışıp TÜM uygulamanın canlıda kalıcı beyaz ekranda kilitlenmesine
+    // yol açmıştı (ölçülmüş hata) — router her zaman senkron kalmalı, yükleme
+    // durumu bir widget'ın normal build akışında (burada) gösterilmeli.
+    final provisioning = ref.watch(ensureTenantProvisionedProvider);
+    if (provisioning.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Faz G altyapısı — `tenants.is_active=false` (yalnız Supabase Table
+    // Editor'dan elle set edilir, bkz. auth_provider.dart) uygulamayı
+    // kilitler. Provizyon kontrolüyle AYNI desen: widget seviyesinde, router
+    // `redirect`'inde DEĞİL. Henüz çözülmediyse (`valueOrNull == null`)
+    // ENGELLENMEZ — owner/admin çoğunluk senaryosunda gecikme yaşamasın.
+    final tenant = ref.watch(currentTenantProvider).valueOrNull;
+    if (tenant != null && !tenant.isActive) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSizes.space24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, size: 48, color: AppColors.textMuted),
+                const SizedBox(height: AppSizes.space16),
+                const Text(
+                  'Hesabınız pasifleştirildi',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: AppSizes.space8),
+                const Text(
+                  'Bu işletme hesabı şu an aktif değil. Devam etmek için '
+                  'destek ile iletişime geçin.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: AppSizes.space20),
+                OutlinedButton.icon(
+                  onPressed: () => Supabase.instance.client.auth.signOut(),
+                  icon: const Icon(Icons.logout, size: 16),
+                  label: const Text('Çıkış Yap'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     // Mobil çevrimdışı ürün senkronu — arka planda (kullanıcı hiç dokunmadan,
     // ör. periyodik prob veya connectivity geri gelince) sessizce tamamlanan
@@ -165,6 +259,10 @@ class _MobileScaffold extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Faz C: uygulama içi marka metni artık kiracının kendi adı — yalnız
+    // pre-login ekranlarda (giriş/kayıt) "NicePOS" platform adı kalır.
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
+
     return Scaffold(
       key: scaffoldKey,
       backgroundColor: AppColors.pageBg,
@@ -175,13 +273,14 @@ class _MobileScaffold extends ConsumerWidget {
           icon: const Icon(Icons.menu, color: AppColors.textSecondary),
           onPressed: () => scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.point_of_sale, color: AppColors.primary, size: 20),
-            SizedBox(width: 8),
+            const Icon(Icons.point_of_sale, color: AppColors.primary, size: 20),
+            const SizedBox(width: 8),
             Text(
-              'NicePOS',
-              style: TextStyle(
+              tenantName,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
                 color: AppColors.primary,
                 fontWeight: FontWeight.bold,
                 fontSize: 17,
@@ -195,6 +294,7 @@ class _MobileScaffold extends ConsumerWidget {
           // `!kIsWeb` guard, `context.isMobile` DEĞİL, çünkü bir Android
           // tablet yatayda "masaüstü" `_TopBar`'ı render edebilir).
           if (!kIsWeb) const SyncStatusBadge(),
+          const HelpModeToggleButton(),
           IconButton(
             icon: const Icon(Icons.logout, color: AppColors.textSecondary, size: 20),
             onPressed: () => Supabase.instance.client.auth.signOut(),
@@ -217,18 +317,67 @@ class _MobileScaffold extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Mobil alt navigasyon — Material 3 NavigationBar (lacivert zemin, altın
-// seçili "pill" göstergesi + haptic). Yatay-scroll anti-pattern'inden çıkış.
+// Mobil alt navigasyon — yatay kaydırılabilir şerit. 9 madde sabit-genişlikli
+// `NavigationBar` içinde sığmıyordu (etiketler sıkışıp okunaksızlaşıyordu);
+// bunun yerine her öğe sabit genişlikte, taşan kısım yana kaydırılarak
+// erişilir. Seçili öğe rota değişince görünür alana otomatik kaydırılır.
 // ---------------------------------------------------------------------------
 
-class _MobileBottomNav extends StatelessWidget {
+class _MobileBottomNav extends ConsumerStatefulWidget {
   final String currentPath;
 
   const _MobileBottomNav({required this.currentPath});
 
   @override
+  ConsumerState<_MobileBottomNav> createState() => _MobileBottomNavState();
+}
+
+class _MobileBottomNavState extends ConsumerState<_MobileBottomNav> {
+  static const _itemWidth = 76.0;
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected(animate: false));
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileBottomNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentPath != widget.currentPath) {
+      _scrollToSelected(animate: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToSelected({required bool animate}) {
+    if (!_scrollController.hasClients) return;
+    final isOwnerOrAdmin =
+        ref.read(currentMembershipProvider).valueOrNull?.isOwnerOrAdmin == true;
+    final index =
+        _selectedNavIndex(_visibleNavItems(isOwnerOrAdmin), widget.currentPath);
+    final viewport = _scrollController.position.viewportDimension;
+    final target = (index * _itemWidth) - (viewport / 2) + (_itemWidth / 2);
+    final clamped = target.clamp(0.0, _scrollController.position.maxScrollExtent);
+    if (animate) {
+      _scrollController.animateTo(clamped, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    } else {
+      _scrollController.jumpTo(clamped);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final selectedIndex = _selectedNavIndex(currentPath);
+    final isOwnerOrAdmin =
+        ref.watch(currentMembershipProvider).valueOrNull?.isOwnerOrAdmin == true;
+    final items = _visibleNavItems(isOwnerOrAdmin);
+    final selectedIndex = _selectedNavIndex(items, widget.currentPath);
 
     return Container(
       decoration: const BoxDecoration(
@@ -243,47 +392,28 @@ class _MobileBottomNav extends StatelessWidget {
           ),
         ],
       ),
-      child: NavigationBarTheme(
-        data: NavigationBarThemeData(
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          indicatorColor: AppColors.goldLight.withValues(alpha: 0.18),
-          indicatorShape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-          ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
           height: 64,
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return TextStyle(
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
-            );
-          }),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
-            return IconThemeData(
-              size: 24,
-              color: selected ? AppColors.sidebarTextActive : AppColors.sidebarText,
-            );
-          }),
-        ),
-        child: SafeArea(
-          top: false,
-          child: NavigationBar(
-            selectedIndex: selectedIndex,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            onDestinationSelected: (index) {
-              HapticFeedback.selectionClick();
-              context.go(_navItems[index].route);
-            },
-            destinations: _navItems.map((item) {
-              return NavigationDestination(
-                icon: Icon(item.icon),
-                selectedIcon: Icon(item.selectedIcon),
-                label: item.label,
+          child: ListView.builder(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final selected = index == selectedIndex;
+              return _BottomNavItem(
+                item: item,
+                selected: selected,
+                width: _itemWidth,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  context.go(item.route);
+                },
               );
-            }).toList(),
+            },
           ),
         ),
       ),
@@ -291,14 +421,66 @@ class _MobileBottomNav extends StatelessWidget {
   }
 }
 
-class _MobileDrawer extends StatelessWidget {
+class _BottomNavItem extends StatelessWidget {
+  final _NavItem item;
+  final bool selected;
+  final double width;
+  final VoidCallback onTap;
+
+  const _BottomNavItem({
+    required this.item,
+    required this.selected,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.sidebarTextActive : AppColors.sidebarText;
+
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.goldLight.withValues(alpha: 0.18) : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+              ),
+              child: Icon(selected ? item.selectedIcon : item.icon, color: color, size: 22),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileDrawer extends ConsumerWidget {
   final String currentPath;
   final String? email;
 
   const _MobileDrawer({required this.currentPath, required this.email});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final membership = ref.watch(currentMembershipProvider).valueOrNull;
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
     return Drawer(
       backgroundColor: AppColors.sidebarBg,
       child: SafeArea(
@@ -311,12 +493,15 @@ class _MobileDrawer extends StatelessWidget {
                 children: [
                   const Icon(Icons.point_of_sale, color: AppColors.primary, size: 24),
                   const SizedBox(width: 10),
-                  const Text(
-                    'NicePOS',
-                    style: TextStyle(
-                      color: AppColors.sidebarTextActive,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+                  Expanded(
+                    child: Text(
+                      tenantName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.sidebarTextActive,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
                 ],
@@ -326,7 +511,8 @@ class _MobileDrawer extends StatelessWidget {
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                children: _navItems.map((item) {
+                children: _visibleNavItems(membership?.isOwnerOrAdmin == true)
+                    .map((item) {
                   final selected = currentPath == item.route ||
                       (item.route != '/home' && currentPath.startsWith(item.route));
                   return ListTile(
@@ -355,6 +541,29 @@ class _MobileDrawer extends StatelessWidget {
                 }).toList(),
               ),
             ),
+            if (membership?.isOwnerOrAdmin == true) ...[
+              const Divider(height: 1, color: AppColors.primaryMid),
+              ListTile(
+                leading: const Icon(Icons.person_add_alt_outlined,
+                    color: AppColors.sidebarText, size: 20),
+                title: const Text('Personel Davet Et',
+                    style: TextStyle(fontSize: 14, color: AppColors.sidebarText)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  showStaffInviteDialog(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined,
+                    color: AppColors.sidebarText, size: 20),
+                title: const Text('İşletme Adını Düzenle',
+                    style: TextStyle(fontSize: 14, color: AppColors.sidebarText)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  showEditTenantNameDialog(context, currentName: tenantName);
+                },
+              ),
+            ],
             if (email != null) ...[
               const Divider(height: 1, color: AppColors.primaryMid),
               Padding(
@@ -385,7 +594,7 @@ class _MobileDrawer extends StatelessWidget {
 // Desktop sidebar (unchanged)
 // ---------------------------------------------------------------------------
 
-class _Sidebar extends StatelessWidget {
+class _Sidebar extends ConsumerWidget {
   final String currentPath;
   final bool expanded;
   final VoidCallback onToggle;
@@ -397,8 +606,10 @@ class _Sidebar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final width = expanded ? AppSizes.sidebarWidth : AppSizes.sidebarCollapsedWidth;
+    final isOwnerOrAdmin =
+        ref.watch(currentMembershipProvider).valueOrNull?.isOwnerOrAdmin == true;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -412,7 +623,7 @@ class _Sidebar extends StatelessWidget {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              children: _navItems.map((item) {
+              children: _visibleNavItems(isOwnerOrAdmin).map((item) {
                 final selected = currentPath == item.route ||
                     (item.route != '/home' && currentPath.startsWith(item.route));
                 return _SidebarTile(
@@ -429,14 +640,15 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
-class _SidebarHeader extends StatelessWidget {
+class _SidebarHeader extends ConsumerWidget {
   final bool expanded;
   final VoidCallback onToggle;
 
   const _SidebarHeader({required this.expanded, required this.onToggle});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
     return SizedBox(
       height: AppSizes.topBarHeight,
       child: Row(
@@ -445,10 +657,10 @@ class _SidebarHeader extends StatelessWidget {
           const Icon(Icons.point_of_sale, color: AppColors.primary, size: 22),
           if (expanded) ...[
             const SizedBox(width: 10),
-            const Expanded(
+            Expanded(
               child: Text(
-                'NicePOS',
-                style: TextStyle(
+                tenantName,
+                style: const TextStyle(
                   color: AppColors.sidebarTextActive,
                   fontWeight: FontWeight.bold,
                   fontSize: 17,
@@ -737,6 +949,9 @@ class _TopBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final membership = ref.watch(currentMembershipProvider).valueOrNull;
+    final tenantName = ref.watch(currentTenantProvider).valueOrNull?.name ?? 'NicePOS';
+
     return Container(
       height: AppSizes.topBarHeight,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -746,6 +961,24 @@ class _TopBar extends ConsumerWidget {
           // Arama kutusu yerine: günün tarihi + canlı saat
           const _LiveClock(),
           const Spacer(),
+          // Personel davet + işletme adı düzenleme — yalnız owner/admin
+          // (Faz B/C, bkz. staff_invite_dialog.dart / edit_tenant_name_dialog.dart).
+          if (membership?.isOwnerOrAdmin == true) ...[
+            TextButton.icon(
+              onPressed: () =>
+                  showEditTenantNameDialog(context, currentName: tenantName),
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('İşletme Adı', style: TextStyle(fontSize: 13)),
+              style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
+            ),
+            TextButton.icon(
+              onPressed: () => showStaffInviteDialog(context),
+              icon: const Icon(Icons.person_add_alt_outlined, size: 16),
+              label: const Text('Personel Davet Et', style: TextStyle(fontSize: 13)),
+              style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
+            ),
+            const SizedBox(width: 8),
+          ],
           if (email != null) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -772,6 +1005,8 @@ class _TopBar extends ConsumerWidget {
             const SyncStatusBadge(),
             const SizedBox(width: 4),
           ],
+          const HelpModeToggleButton(),
+          const SizedBox(width: 4),
           TextButton.icon(
             onPressed: () => Supabase.instance.client.auth.signOut(),
             icon: const Icon(Icons.logout, size: 16),

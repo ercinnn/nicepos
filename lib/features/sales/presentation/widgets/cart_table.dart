@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
+import '../../../../core/help_mode/help_hotspot.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/widgets/empty_state.dart';
@@ -141,12 +142,16 @@ class _CartTableState extends ConsumerState<CartTable> {
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
               child: Row(
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: () => _showAddMiscDialog(context),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text(
-                      'Muhtelif',
-                      style: TextStyle(fontSize: 12),
+                  HelpHotspot(
+                    title: 'Muhtelif Ürün Ekle',
+                    text: 'Sistemde barkodu/kaydı olmayan bir ürünü sepete eklemenizi sağlar — yalnız bir isim (opsiyonel) ve fiyat girerek anında kalem oluşturur.',
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showAddMiscDialog(context),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text(
+                        'Muhtelif',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                   ),
                   const Spacer(),
@@ -169,51 +174,55 @@ class _CartTableState extends ConsumerState<CartTable> {
                       // kırılımı (tabular), yoksa "İskonto ekle" affordance'ı; dokununca
                       // web ile aynı _DiscountDialog açılır.
                       if (tab.items.isNotEmpty)
-                        InkWell(
-                          borderRadius: BorderRadius.circular(
-                            AppSizes.radiusSm,
-                          ),
-                          onTap: () => _openDiscountDialog(
-                            context,
-                            value: tab.discountValue,
-                            type: tab.discountType,
-                            onApply: (v, t) => notifier.setDiscount(v, t),
-                          ),
-                          child: Container(
-                            constraints: const BoxConstraints(minHeight: 48),
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSizes.space4,
+                        HelpHotspot(
+                          title: 'Genel İskonto',
+                          text: 'Sepetteki TÜM kalemlere birden uygulanan genel iskonto. Yüzde veya ₺ tutar olarak girilebilir; satırların kendi iskontosuyla birlikte hesaba katılır.',
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(
+                              AppSizes.radiusSm,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  tab.discountAmount > 0
-                                      ? Icons.edit
-                                      : Icons.percent,
-                                  size: 15,
-                                  color: tab.discountAmount > 0
-                                      ? AppColors.danger
-                                      : AppColors.textMuted,
-                                ),
-                                const SizedBox(width: AppSizes.space4),
-                                Text(
-                                  tab.discountAmount > 0
-                                      ? 'İskonto: -${formatCurrency(tab.discountAmount)}'
-                                      : 'İskonto ekle',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                            onTap: () => _openDiscountDialog(
+                              context,
+                              value: tab.discountValue,
+                              type: tab.discountType,
+                              onApply: (v, t) => notifier.setDiscount(v, t),
+                            ),
+                            child: Container(
+                              constraints: const BoxConstraints(minHeight: 48),
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSizes.space4,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    tab.discountAmount > 0
+                                        ? Icons.edit
+                                        : Icons.percent,
+                                    size: 15,
                                     color: tab.discountAmount > 0
                                         ? AppColors.danger
                                         : AppColors.textMuted,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: AppSizes.space4),
+                                  Text(
+                                    tab.discountAmount > 0
+                                        ? 'İskonto: -${formatCurrency(tab.discountAmount)}'
+                                        : 'İskonto ekle',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: tab.discountAmount > 0
+                                          ? AppColors.danger
+                                          : AppColors.textMuted,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -265,17 +274,21 @@ class _CartTableState extends ConsumerState<CartTable> {
               color: AppColors.textSecondary,
             ),
           ),
-          TextButton.icon(
-            onPressed: () => _showBulkPercentDialog(context, notifier),
-            icon: const Icon(Icons.percent, size: 15),
-            label: const Text('% İndirim', style: TextStyle(fontSize: 12)),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSizes.space8,
-                vertical: AppSizes.space4,
+          HelpHotspot(
+            title: 'Seçilenlere % İndirim Uygula',
+            text: 'İşaretlediğiniz TÜM satırlara TEK SEFERDE aynı yüzde iskontoyu uygular — her satırı ayrı ayrı düzenlemek zorunda kalmazsınız. Yalnız yüzde indirimi destekler, ₺ tutar değil.',
+            child: TextButton.icon(
+              onPressed: () => _showBulkPercentDialog(context, notifier),
+              icon: const Icon(Icons.percent, size: 15),
+              label: const Text('% İndirim', style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.space8,
+                  vertical: AppSizes.space4,
+                ),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
           TextButton(
@@ -396,18 +409,22 @@ class _CartTableState extends ConsumerState<CartTable> {
             ),
           ),
           const SizedBox(width: AppSizes.space12),
-          ElevatedButton.icon(
-            onPressed: () => _showBulkPercentDialog(context, notifier),
-            icon: const Icon(Icons.percent, size: 15),
-            label: const Text('Seçilenlere % İndirim Uygula'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSizes.space12,
-                vertical: AppSizes.space8,
-              ),
-              textStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+          HelpHotspot(
+            title: 'Seçilenlere % İndirim Uygula',
+            text: 'İşaretlediğiniz TÜM satırlara TEK SEFERDE aynı yüzde iskontoyu uygular — her satırı ayrı ayrı düzenlemek zorunda kalmazsınız. Yalnız yüzde indirimi destekler, ₺ tutar değil.',
+            child: ElevatedButton.icon(
+              onPressed: () => _showBulkPercentDialog(context, notifier),
+              icon: const Icon(Icons.percent, size: 15),
+              label: const Text('Seçilenlere % İndirim Uygula'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSizes.space12,
+                  vertical: AppSizes.space8,
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -776,15 +793,19 @@ class _RowSelectToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSizes.space4),
-        child: Icon(
-          selected ? Icons.check_circle : Icons.radio_button_unchecked,
-          size: size,
-          color: selected ? AppColors.primary : AppColors.textMuted,
+    return HelpHotspot(
+      title: 'Çoklu Seçim',
+      text: 'Bu ikonla birden fazla satırı işaretleyebilirsiniz — en az bir satır seçiliyken üstte beliren çubuktan seçilenlerin tümüne AYNI ANDA tek bir % iskonto uygulayabilirsiniz.',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.space4),
+          child: Icon(
+            selected ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: size,
+            color: selected ? AppColors.primary : AppColors.textMuted,
+          ),
         ),
       ),
     );
@@ -877,14 +898,18 @@ class _AddMiscRowState extends ConsumerState<_AddMiscRow> {
           width: widget.productWidth,
           child: Row(
             children: [
-              Tooltip(
-                message: 'Muhtelif ürün ekle',
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-                  onTap: _open,
-                  child: const Padding(
-                    padding: EdgeInsets.all(AppSizes.space4),
-                    child: Icon(Icons.add, size: 20, color: AppColors.primary),
+              HelpHotspot(
+                title: 'Muhtelif Ürün Ekle',
+                text: 'Sistemde barkodu/kaydı olmayan bir ürünü sepete eklemenizi sağlar — yalnız bir isim (opsiyonel) ve fiyat girerek anında kalem oluşturur.',
+                child: Tooltip(
+                  message: 'Muhtelif ürün ekle',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                    onTap: _open,
+                    child: const Padding(
+                      padding: EdgeInsets.all(AppSizes.space4),
+                      child: Icon(Icons.add, size: 20, color: AppColors.primary),
+                    ),
                   ),
                 ),
               ),
@@ -1052,26 +1077,30 @@ class _MobileCartItem extends StatelessWidget {
               size: 18,
             ),
             // ── %15: Adet (dokunulabilir) ──────────────────────────
-            GestureDetector(
-              onTap: () => _editQuantity(context),
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.25),
+            HelpHotspot(
+              title: 'Adet / Fiyat Düzenle',
+              text: 'Bu kutuya dokununca açılan pencereden hem miktarı hem birim fiyatı değiştirebilir, isterseniz fiyatı ürünün kalıcı satış fiyatı (Fiyat1) olarak da kaydedebilirsiniz.',
+              child: GestureDetector(
+                onTap: () => _editQuantity(context),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.25),
+                    ),
                   ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  _fmtQty(item.quantity),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                  alignment: Alignment.center,
+                  child: Text(
+                    _fmtQty(item.quantity),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ),
@@ -1205,41 +1234,45 @@ class _MobileDiscountButton extends StatelessWidget {
     final label = type == DiscountType.percent
         ? '%${_qtyText(value)}'
         : '${_qtyText(value)} ₺';
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-      onTap: () => _openDiscountDialog(
-        context,
-        value: value,
-        type: type,
-        onApply: onApply,
-      ),
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-        alignment: Alignment.center,
-        child: active
-            ? Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSizes.space6,
-                  vertical: AppSizes.space2,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.danger.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-                  border: Border.all(
-                    color: AppColors.danger.withValues(alpha: 0.40),
+    return HelpHotspot(
+      title: 'Satır İskontosu',
+      text: 'Bu ürüne özel iskonto — yüzde (%) veya sabit ₺ tutar olarak girilebilir. Dokununca açılan pencereden değeri değiştirebilirsiniz.',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+        onTap: () => _openDiscountDialog(
+          context,
+          value: value,
+          type: type,
+          onApply: onApply,
+        ),
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          alignment: Alignment.center,
+          child: active
+              ? Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSizes.space6,
+                    vertical: AppSizes.space2,
                   ),
-                ),
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.danger,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                    border: Border.all(
+                      color: AppColors.danger.withValues(alpha: 0.40),
+                    ),
                   ),
-                ),
-              )
-            : const Icon(Icons.percent, size: 20, color: AppColors.textMuted),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.danger,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                )
+              : const Icon(Icons.percent, size: 20, color: AppColors.textMuted),
+        ),
       ),
     );
   }
@@ -1291,42 +1324,48 @@ class _CompactDiscountCell extends StatelessWidget {
           ),
           const SizedBox(width: AppSizes.space8),
         ],
-        InkWell(
-          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-          onTap: () => _edit(context),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSizes.space8,
-              vertical: AppSizes.space4,
-            ),
-            decoration: BoxDecoration(
-              color: active ? AppColors.primary : AppColors.goldBg,
-              borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-              border: Border.all(
-                color: active ? AppColors.primary : AppColors.goldBorder,
+        HelpHotspot(
+          title: leadingLabel ?? 'Satır İskontosu',
+          text: leadingLabel != null
+              ? 'Sepetteki TÜM kalemlere birden uygulanan genel iskonto. Yüzde veya ₺ tutar olarak girilebilir; satırların kendi iskontosuyla birlikte hesaba katılır.'
+              : 'Bu ürüne özel iskonto — yüzde (%) veya sabit ₺ tutar olarak girilebilir. Dokununca açılan pencereden değeri değiştirebilirsiniz.',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+            onTap: () => _edit(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space8,
+                vertical: AppSizes.space4,
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  active ? Icons.edit : Icons.add,
-                  size: 13,
-                  color: active ? AppColors.goldLight : AppColors.textSecondary,
+              decoration: BoxDecoration(
+                color: active ? AppColors.primary : AppColors.goldBg,
+                borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+                border: Border.all(
+                  color: active ? AppColors.primary : AppColors.goldBorder,
                 ),
-                const SizedBox(width: AppSizes.space4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: active
-                        ? AppColors.goldLight
-                        : AppColors.textSecondary,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    active ? Icons.edit : Icons.add,
+                    size: 13,
+                    color: active ? AppColors.goldLight : AppColors.textSecondary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: AppSizes.space4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: active
+                          ? AppColors.goldLight
+                          : AppColors.textSecondary,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1707,25 +1746,29 @@ class _UnitPriceControlState extends State<_UnitPriceControl> {
         Row(
           children: [
             Expanded(
-              child: TextField(
-                controller: _ctrl,
-                textAlign: TextAlign.right,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  prefixText: '₺ ',
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 8,
+              child: HelpHotspot(
+                title: 'Birim Fiyat',
+                text: 'Bu satırın birim fiyatını elle değiştirebilirsiniz — her tuş vuruşunda satır tutarı anında güncellenir. Bu değişiklik yalnız bu satış için geçerlidir, ürünün kayıtlı fiyatını değiştirmez.',
+                child: TextField(
+                  controller: _ctrl,
+                  textAlign: TextAlign.right,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    prefixText: '₺ ',
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 8,
+                    ),
+                  ),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                  onChanged: _onChanged,
                 ),
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontFeatures: [FontFeature.tabularFigures()],
-                ),
-                onChanged: _onChanged,
               ),
             ),
             if (showRadio) _buildPrice1Radio(),
@@ -1742,17 +1785,21 @@ class _UnitPriceControlState extends State<_UnitPriceControl> {
   // Çıplak "Fiyat1 yap" radyosu — fiyat hanesinin hemen yanında, etiketsiz;
   // keşif için yalnız hover tooltip'i (KARAR v1.6.1). Rengi textSecondary.
   Widget _buildPrice1Radio() {
-    return Tooltip(
-      message: 'Fiyat1 yap',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSizes.radiusSm),
-        onTap: _setPrice1,
-        child: const Padding(
-          padding: EdgeInsets.all(AppSizes.space4),
-          child: Icon(
-            Icons.radio_button_unchecked,
-            size: 18,
-            color: AppColors.textSecondary,
+    return HelpHotspot(
+      title: 'Fiyat1 Yap',
+      text: 'Soldaki alanda yazan fiyatı ürünün KALICI satış fiyatı (Fiyat 1) olarak kaydeder — Ürünler listesindeki fiyat da güncellenir. Yalnız bu satırdaki tutarı değiştirmek isterseniz buna dokunmayın.',
+      child: Tooltip(
+        message: 'Fiyat1 yap',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+          onTap: _setPrice1,
+          child: const Padding(
+            padding: EdgeInsets.all(AppSizes.space4),
+            child: Icon(
+              Icons.radio_button_unchecked,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
           ),
         ),
       ),

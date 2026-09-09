@@ -1,13 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../auth/application/auth_provider.dart';
 import '../../../products/application/products_provider.dart';
 import '../../../products/data/models/product.dart';
+import '../widgets/domain/domain_purchase_wizard.dart';
+
+// Paylaşılan storefront dağıtımı (bkz. CLAUDE.md "Deploy — Cloudflare Pages"
+// → Online Satış). `?magaza=<slug>` query parametresi Faz F Adım 1'in kiracı
+// çözümleme mekanizması (bkz. storefront/lib/core/tenant_resolver.dart).
+// Faz F Adım 2 (kiracının kendi domain'ini satın alıp bağlaması) —
+// `_DomainConnectionCard` ile bu ekranda.
+const String _storefrontBaseUrl = 'https://nicepos-online-satis.pages.dev';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Online Satış kontrol paneli — hangi ürünlerin storefront'ta (Cloudflare
@@ -68,6 +79,12 @@ class _OnlineSatisScreenState extends ConsumerState<OnlineSatisScreen> {
           style: TextStyle(color: AppColors.textMuted, fontSize: 13),
         ),
         const SizedBox(height: 16),
+        const _StorefrontLinkCard(),
+        const SizedBox(height: 12),
+        const _ImageAspectSelector(),
+        const SizedBox(height: 12),
+        const _DomainConnectionCard(),
+        const SizedBox(height: 16),
         _OnlineProductSearchField(
           controller: _searchController,
           onProductSelected: _addToOnline,
@@ -114,6 +131,205 @@ class _OnlineSatisScreenState extends ConsumerState<OnlineSatisScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// Kiracının kendi mağaza linki — paylaşılan storefront dağıtımına
+// `?magaza=<slug>` ile gider (Faz F Adım 1). Kendi domain'ini bağlama Faz F
+// Adım 2'nin kapsamı, henüz yok — link burada bilinçli olarak sabit
+// `_storefrontBaseUrl` üzerinden kurulur.
+class _StorefrontLinkCard extends ConsumerWidget {
+  const _StorefrontLinkCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenantAsync = ref.watch(currentTenantProvider);
+    return tenantAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, _) => const SizedBox.shrink(),
+      data: (tenant) {
+        if (tenant == null) return const SizedBox.shrink();
+        final url = '$_storefrontBaseUrl/?magaza=${tenant.slug}';
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.storefront_outlined, color: AppColors.primary, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Mağazanız',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      url,
+                      style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Linki kopyala',
+                icon: const Icon(Icons.copy_outlined, size: 18),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: url));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Mağaza linki kopyalandı')),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Storefront ürün görselinin en-boy oranı — kiracı-bazlı tercih (bkz.
+// 0046_storefront_image_aspect.sql). RPC owner/admin dışını reddeder
+// (hata mesajı doğrudan snackbar'a düşer) — ekranda ayrıca gizlenmez,
+// bu düşük riskli bir görünüm ayarı (silme/finansal işlem değil).
+class _ImageAspectSelector extends ConsumerWidget {
+  const _ImageAspectSelector();
+
+  Future<void> _select(BuildContext context, WidgetRef ref, String aspect) async {
+    try {
+      await Supabase.instance.client.rpc(
+        'update_storefront_image_aspect',
+        params: {'p_aspect': aspect},
+      );
+      ref.invalidate(currentTenantProvider);
+    } on PostgrestException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Kaydedilemedi: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenantAsync = ref.watch(currentTenantProvider);
+    return tenantAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, _) => const SizedBox.shrink(),
+      data: (tenant) {
+        if (tenant == null) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.crop_outlined, color: AppColors.primary, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Ürün görseli formatı',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.textPrimary),
+                ),
+              ),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'square', label: Text('Kare'), icon: Icon(Icons.crop_square, size: 16)),
+                  ButtonSegment(
+                    value: 'portrait',
+                    label: Text('Dikey'),
+                    icon: Icon(Icons.crop_portrait, size: 16),
+                  ),
+                ],
+                selected: {tenant.storefrontImageAspect},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) => _select(context, ref, selection.first),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Kiracının kendi domain'ini satın alıp storefront'una bağlaması (Faz F
+// Adım 2). Cloudflare Registrar + iyzico akışı Supabase Edge Functions'ta
+// yaşıyor (bkz. supabase/functions/) — bu kart yalnız giriş noktası:
+// bağlı değilse sihirbazı açar, bağlıysa domain'i + durumunu gösterir.
+class _DomainConnectionCard extends ConsumerWidget {
+  const _DomainConnectionCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenantAsync = ref.watch(currentTenantProvider);
+    return tenantAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, _) => const SizedBox.shrink(),
+      data: (tenant) {
+        if (tenant == null) return const SizedBox.shrink();
+        final connected = tenant.customDomainStatus == 'connected' &&
+            tenant.customDomain != null;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.cardBg,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                connected ? Icons.language : Icons.add_link,
+                color: connected ? AppColors.success : AppColors.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Kendi Domain\'iniz',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      connected
+                          ? tenant.customDomain!
+                          : 'Mağazanız için kendi alan adınızı arayıp satın alın.',
+                      style: const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              if (!connected)
+                OutlinedButton(
+                  onPressed: () => showDomainPurchaseWizard(context),
+                  child: const Text('Domain Bağla'),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -6,6 +6,8 @@ import '../widgets/old_sales_import_dialog.dart';
 import 'best_sellers_tab.dart';
 import 'daily_report_screen.dart';
 import 'historical_report_tab.dart';
+import 'missing_list_tab.dart';
+import 'product_analysis_tab.dart';
 import 'product_report_tab.dart';
 
 class ReportsScreen extends StatelessWidget {
@@ -14,7 +16,7 @@ class ReportsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 6,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -60,6 +62,12 @@ class ReportsScreen extends StatelessWidget {
                 Tab(
                     icon: Icon(Icons.leaderboard_outlined, size: 18),
                     text: 'En Çok Satanlar'),
+                Tab(
+                    icon: Icon(Icons.analytics_outlined, size: 18),
+                    text: 'Ürün Analizi'),
+                Tab(
+                    icon: Icon(Icons.warning_amber_outlined, size: 18),
+                    text: 'Eksik Listesi'),
               ],
             ),
           ),
@@ -71,6 +79,8 @@ class ReportsScreen extends StatelessWidget {
                 HistoricalReportTab(),
                 ProductReportTab(),
                 BestSellersTab(),
+                ProductAnalysisTab(),
+                MissingListTab(),
               ],
             ),
           ),

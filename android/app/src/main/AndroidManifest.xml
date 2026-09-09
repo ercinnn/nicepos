@@ -2,6 +2,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Ürün adı mikrofon-ile-giriş (speech_to_text, mobil) için. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="NicePOS"
         android:name="${applicationName}"
@@ -43,6 +45,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Android 11+ paket görünürlüğü: speech_to_text bu olmadan cihazda
+             ses tanıma servisi bulamaz (RecognitionService sorgusu). -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
         </intent>
     </queries>
 </manifest>

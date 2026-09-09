@@ -1,6 +1,8 @@
 import 'dart:typed_data';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/supabase/tenant_context.dart';
 import '../models/product.dart';
 import '../models/product_filters.dart';
 import '../models/equivalent_aggregate.dart';
@@ -97,6 +99,7 @@ class ProductRepository {
     required ProductFilters filters,
     required String sortColumn,
     required bool sortAscending,
+    bool activeOnly = false,
   }) {
     return {
       'p_query': (query != null && query.trim().isNotEmpty) ? query.trim() : null,
@@ -104,6 +107,7 @@ class ProductRepository {
       'p_status': filters.status,
       'p_sort_column': sortableColumns.contains(sortColumn) ? sortColumn : 'name',
       'p_sort_ascending': sortAscending,
+      'p_active_only': activeOnly,
       'p_barcode': filters.barcode,
       'p_stock_code': filters.stockCode,
       'p_unit': filters.unit,
@@ -130,15 +134,22 @@ class ProductRepository {
     ProductFilters? filters,
     String sortColumn = 'name',
     bool sortAscending = true,
+    bool activeOnly = false,
   }) async {
     final sortCol = sortableColumns.contains(sortColumn) ? sortColumn : 'name';
-    if (filters != null && filters.status != null) {
+    if (activeOnly || (filters != null && filters.status != null)) {
       const batch = 1000;
       final all = <Product>[];
       var page = 0;
       while (true) {
         final rows = await _client.rpc('search_products', params: {
-          ..._searchProductsParams(query: query, groupId: groupId, filters: filters, sortColumn: sortCol, sortAscending: sortAscending),
+          ..._searchProductsParams(
+              query: query,
+              groupId: groupId,
+              filters: filters ?? ProductFilters(),
+              sortColumn: sortCol,
+              sortAscending: sortAscending,
+              activeOnly: activeOnly),
           'p_limit': batch,
           'p_offset': page * batch,
         });
@@ -183,15 +194,22 @@ class ProductRepository {
     bool sortAscending = true,
     int page = 0,
     int pageSize = 50,
+    bool activeOnly = false,
   }) async {
     final sortCol = sortableColumns.contains(sortColumn) ? sortColumn : 'name';
-    if (filters != null && filters.status != null) {
+    if (activeOnly || (filters != null && filters.status != null)) {
       // +1 üst sınır: ekran "sonraki sayfa var mı" kontrolünü
       // `_products.length > kProductPageSize` ile yapıyor (bkz.
       // products_list_screen.dart `_hasMore`) — eski `.range()` deseniyle
       // aynı "1 fazla çek" yaklaşımı.
       final rows = await _client.rpc('search_products', params: {
-        ..._searchProductsParams(query: query, groupId: groupId, filters: filters, sortColumn: sortCol, sortAscending: sortAscending),
+        ..._searchProductsParams(
+            query: query,
+            groupId: groupId,
+            filters: filters ?? ProductFilters(),
+            sortColumn: sortCol,
+            sortAscending: sortAscending,
+            activeOnly: activeOnly),
         'p_limit': pageSize + 1,
         'p_offset': page * pageSize,
       });
@@ -239,6 +257,17 @@ class ProductRepository {
       }
     }
     return product;
+  }
+
+  // Mobil "Yeni Ürün" ekranındaki "+ barkod üret" butonu — bugünün YYMMDD
+  // önekiyle başlayan tüm barkodları döner, sıradaki boş XXX'i bulmak için
+  // (bkz. product_form_screen.dart `nextBarcodeCandidate`).
+  Future<Set<String>> fetchBarcodesWithPrefix(String prefix) async {
+    final rows = await _client.from('products').select('barcode').ilike('barcode', '$prefix%');
+    return {
+      for (final row in (rows as List))
+        if ((row as Map)['barcode'] != null) row['barcode'] as String,
+    };
   }
 
   // Eşlenik Barkod: görüntülenen sayfadaki ürünler için grup toplamlarını
@@ -393,6 +422,20 @@ class ProductRepository {
         .update({'is_online_active': value}).eq('id', productId);
   }
 
+  // Yalnızca description'ı (Firma & GG/AA/YY & Durum biçimi) günceller — TEK
+  // round-trip (`updatePrice1`/`setOnlineActive` ile aynı hedefli-update
+  // deseni). Eksik Listesi Firma hücresi tıkla-düzenle akışı (bkz.
+  // missing_list_tab.dart) yeni description'ı `composeDescriptionWithFirma()`
+  // ile ÖNCEDEN elindeki (rapor satırından gelen) ham description'dan
+  // istemci tarafında kurup buraya hazır geçirir — önceki sürüm burada önce
+  // bir SELECT ile description'ı taze çekiyordu (2 round-trip), bu da Firma
+  // düzenlemesini gözle görülür yavaşlatıyordu (kullanıcı şikayeti).
+  Future<void> updateDescription(String productId, String description) async {
+    await _client
+        .from('products')
+        .update({'description': description}).eq('id', productId);
+  }
+
   // Online Satış kontrol panelinde gösterilen, halihazırda mağazada aktif
   // ürünler listesi.
   Future<List<Product>> fetchOnlineActive() async {
@@ -433,6 +476,38 @@ class ProductRepository {
     };
   }
 
+  /// Etiket sekmelerinden (Raf/Tel/Geniş/Poster/Ürün/İndirim — hepsi
+  /// `labels_screen.dart` `_resolveBarcode()`'unu paylaşır) bir ürün
+  /// çözüldüğünde çağrılır; ürün başına TEK satır işaretler (0034 migration,
+  /// `label_scan_activity` — log DEĞİL, "en az bir kez oldu mu" bayrağı).
+  /// Fire-and-forget — çağıran taraf beklemeden devam eder, hata yutulur
+  /// (ikincil sinyal, tarama akışını YAVAŞLATMAMALI/DURDURMAMALI; tekrar
+  /// taramada unique-violation BEKLENEN durum).
+  Future<void> markLabelScanned(String productId, String barcode) async {
+    try {
+      await _client.from('label_scan_activity').insert({
+        'product_id': productId,
+        'barcode': barcode,
+      });
+    } catch (_) {
+      // Sessizce yoksay.
+    }
+  }
+
+  /// "Stok" sayfası başlık rozeti — satış geçmişi VEYA etiket taraması VEYA
+  /// Havuz kaydı olan ürün sayısı (bkz. 0034 `count_active_products`).
+  Future<int> countActiveProducts() async {
+    final result = await _client.rpc('count_active_products');
+    return (result as num).toInt();
+  }
+
+  /// Katalogdaki toplam ürün sayısı (bkz. 0034 `count_all_products`) — "Stok"
+  /// sayfasında aktif/toplam oranını göstermek için.
+  Future<int> countAllProducts() async {
+    final result = await _client.rpc('count_all_products');
+    return (result as num).toInt();
+  }
+
   Future<void> delete(String id) async {
     final deleted = await _client.from('products').delete().eq('id', id).select('id');
     if (deleted.isEmpty) throw Exception('Ürün silinemedi.');
@@ -447,8 +522,39 @@ class ProductRepository {
   }
 
   Future<String> uploadImage(String productId, Uint8List bytes, String fileExt) async {
-    final path = 'products/$productId.$fileExt';
+    // Faz E (0043): path kiracı öneki taşır — storage RLS yazma izni
+    // (storage.foldername(name))[1] = current_tenant_id() kontrolüne bağlı.
+    final tenantId = await currentTenantIdOrThrow(_client);
+    final path = '$tenantId/products/$productId.$fileExt';
     await _client.storage.from('product-images').uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
     return _client.storage.from('product-images').getPublicUrl(path);
   }
+}
+
+/// "$firma & $ggaayy & $durum" biçimini koruyarak yalnız firma parçasını
+/// değiştirir (bkz. product_form_screen.dart `_applyDescription`/
+/// `_composeDescription` ile AYNI kural, ayrı bir kopyası — o widget'a bağlı
+/// state alanları (`_detailDate`/`_statusLetter`) taşımadığından top-level
+/// bir fonksiyon olarak burada tutulur). Eski açıklama geçerli 3 parçalı
+/// biçimdeyse (son parça 'Y' veya 'G') tarih/durum AYNEN korunur; aksi halde
+/// (boş/eski serbest metin) tarih=bugün, durum='Y' varsayılır — geriye dönük
+/// uyumluluk için `_applyDescription`'ın fallback'iyle birebir aynı. Public
+/// (top-level, `_` önekisiz) — `missing_list_tab.dart` Firma hücresi
+/// tıkla-düzenle akışı elindeki (rapor satırından gelen) ham description'ı
+/// bu fonksiyonla istemci tarafında yeniden kurup `ProductRepository.
+/// updateDescription()`'a hazır geçirir (ekstra bir SELECT round-trip'i
+/// GEREKMEZ).
+String composeDescriptionWithFirma(String? oldDescription, String newFirma) {
+  final raw = (oldDescription ?? '').trim();
+  final parts = raw.split(' & ');
+  String ggaayy;
+  String durum;
+  if (parts.length == 3 && (parts[2] == 'Y' || parts[2] == 'G')) {
+    ggaayy = parts[1];
+    durum = parts[2];
+  } else {
+    ggaayy = DateFormat('dd/MM/yy', 'tr_TR').format(DateTime.now());
+    durum = 'Y';
+  }
+  return '${newFirma.trim()} & $ggaayy & $durum';
 }

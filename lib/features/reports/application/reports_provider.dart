@@ -1,6 +1,9 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/models/best_seller_record.dart';
 import '../data/models/daily_report_summary.dart';
+import '../data/models/discount_recommendation.dart';
+import '../data/models/missing_list_record.dart';
+import '../data/models/product_analysis_record.dart';
 import '../data/models/product_sale_record.dart';
 import '../data/repositories/report_repository.dart';
 
@@ -26,6 +29,19 @@ Future<List<BestSellerRecord>> bestSellers(
   return ref
       .watch(reportRepositoryProvider)
       .fetchBestSellers(start: start, end: end, minPrice: minPrice);
+}
+
+// ─── Eksik Listesi (Raporlar 6. sekme) ───────────────────────────────────────
+// Tarih aralığı parametreli; adet azalan sıralı liste + Firma + güncel stok.
+@riverpod
+Future<List<MissingListRecord>> missingList(
+  MissingListRef ref, {
+  required DateTime start,
+  required DateTime end,
+}) {
+  return ref
+      .watch(reportRepositoryProvider)
+      .fetchMissingList(start: start, end: end);
 }
 
 // ─── Tarihsel rapor için parametre sınıfı ────────────────────────────────────
@@ -56,4 +72,22 @@ final productSalesHistoryProvider =
     FutureProvider.autoDispose.family<List<ProductSaleRecord>, String>(
   (ref, productId) =>
       ref.watch(reportRepositoryProvider).fetchProductSalesHistory(productId),
+);
+
+// ─── Ürün Analizi (Raporlar 5. sekme) ────────────────────────────────────────
+// Durağan gün eşiği sunucu parametresi DEĞİL — eşik değişince yeniden fetch
+// TETİKLENMEZ, yalnız istemci tarafında filtre/sıralama değişir.
+final productAnalysisProvider =
+    FutureProvider.autoDispose.family<List<ProductAnalysisRecord>, DateRangeParam>(
+  (ref, param) => ref
+      .watch(reportRepositoryProvider)
+      .fetchProductAnalysis(start: param.start, end: param.end),
+);
+
+// ─── İndirim Önerileri (Analiz sayfası 2. sekme) ─────────────────────────────
+// Parametresiz — sunucu tüm ürünleri tek sorguda tarar, autoDispose: sekmeye
+// her dönüşte taze veri (dashboard/gorevler ile aynı karar).
+final discountRecommendationsProvider =
+    FutureProvider.autoDispose<List<DiscountRecommendation>>(
+  (ref) => ref.watch(reportRepositoryProvider).fetchDiscountRecommendations(),
 );

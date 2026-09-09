@@ -2,6 +2,19 @@
 
 Bu dosya, Claude Code'a bu depoda çalışırken rehberlik eder.
 
+## ⏸️ Beklemede — Dış Onaya Takılı Büyük Girişimler
+
+Aşağıdaki dört iş şu an **ilerletilemez** — hepsi kullanıcının dışındaki bir hesap/onay adımını bekliyor. Aktif geliştirme sırasında bunlara dokunulmaz; ilgili bölüme "bitmemiş görünüyor" diye tekrar girmeden önce engelleyici adımın gerçekten kalkıp kalkmadığı kullanıcıya sorulur.
+
+| Girişim | Bekleyen adım | Detay bölüm |
+|---|---|---|
+| Kiracı Domain Satın Alma | Cloudflare Registrar hesabı/ödeme profili tam kurulup gerçek bir satın alma denenmeli | `notes/online-satis-ve-domain.md` → Kiracı Domain Satın Alma |
+| Mevcut Domain Bağlama | Cloudflare API token'ına `Pages: Edit` izni eklenmesi | `notes/online-satis-ve-domain.md` → Mevcut Domain Bağlama |
+| iyzico Ödeme Entegrasyonu | Kullanıcının iyzico üye işyeri başvurusu (KYC, süre belirsiz) | `notes/online-satis-ve-domain.md` → Ödeme Entegrasyonu |
+| Çok Kiracılı SaaS — Faz G (gerçek faturalama) | Yukarıdaki iyzico entegrasyonuyla aynı bağımlılık | `notes/multi-tenant-mimari.md` → Faz G altyapısı |
+
+Bunların dışındaki her şey (Satış/Ürünler/Etiket/Kasa/Raporlar/Analiz/Yardım Modu vb.) aktif, normal geliştirme kapsamındadır.
+
 ## Agent'lar
 
 `.claude/agents/` altında özel agent'lar tanımlı:
@@ -97,19 +110,22 @@ lib/
     constants/     # AppColors, AppSizes
     theme/         # app_theme.dart + app_theme.g.dart (Riverpod provider)
     utils/         # formatters.dart, responsive.dart (isMobile <650px / isDesktop)
-    supabase/      # SupabaseConfig, supabaseClientProvider
+    supabase/      # SupabaseConfig, supabaseClientProvider, tenant_context.dart (Storage path kiracı çözümü)
     local_db/      # app_database.dart — sqflite (mobil çevrimdışı ürün senkronu, bkz. ilgili bölüm)
     widgets/       # InstrumentHero — paylaşılan "enstrüman konsolu" hero'su (design-tokens §6.3, v2.0)
   app/             # Router, AppScaffold (web: sidebar + canlı saat; mobil: Drawer + BottomNav)
   features/
-    auth/          # Login, ConfigMissingScreen
+    auth/          # Login, Signup (yeni işletme/davet kodu), ConfigMissingScreen — bkz. notes/multi-tenant-mimari.md
     home/          # Anasayfa — kısayol kart grid + Dashboard (stat kartları + grafikler)
+    gorevler/      # Görevler — dünkü satışların raf-kontrol listesi, günde bir kez otomatik açılır
     products/      # Ürünler, Ürün Grupları, Liste Gir
     customers/     # Müşteri listesi, detay (geçmiş işlem yönetimi + toplu yazdırma), ödeme
     sales/         # Satış ekranı — 5 sekme, sepet, ödeme paneli, hızlı ürünler
     reports/       # Günlük / Tarihsel / Ürün raporları (3 sekme)
     labels/        # Etiket — raf etiketi A4 yazdırma
     kasa/          # Kasa — gelir-gider defteri + mutabakat + firma giderleri
+    online_satis/  # Online Satış kontrol paneli — bkz. notes/online-satis-ve-domain.md
+    audit/         # Denetim Kaydı — kalıcı işlemler için kim-ne-zaman-ne (bkz. notes/multi-tenant-mimari.md)
 ```
 
 ### Tasarım Sistemi
@@ -122,11 +138,22 @@ Tek kaynak: `lib/core/theme/app_theme.dart` (`appThemeProvider`, `@Riverpod(keep
 
 TÜM provider'lar `@riverpod` / `@Riverpod(keepAlive: true)` ile üretilir; her dosyada `part '...g.dart'` zorunlu. Dashboard provider'ları (`todaySummary`, `dailySales(days)`, `currentYearMonthly`, `historicalYearly` vb.) **autoDispose** — Android'de soğuk açılışta ilk sorgu boş dönerse `keepAlive` bunu kalıcı dondururdu (yaşanmış bug), bu yüzden hepsi autoDispose. `salesCartProvider`/`paymentInputProvider`/`productColumnsProvider`/`labelSheetProvider` gibi UI-durumu tutan provider'lar `keepAlive`.
 
+## Yardım Modu (`lib/core/help_mode/`)
+
+Uygulama genelinde tek açık/kapalı anahtarla çalışan, ekrana özel OLMAYAN bir keşif katmanı — kullanıcı isteğiyle Satış ekranından başlandı, sıradaki ekranlara aynı desenle genişletilecek.
+
+- **`helpModeProvider`** (`help_mode_provider.dart`, `@Riverpod(keepAlive: true)`) — tek `bool` anahtar, `toggle()`. `keepAlive`: ekranlar arası geçişte kapanmaz (Satış'ta açtıysa Ürünler'e geçince de açık kalır).
+- **`HelpHotspot`** (`help_hotspot.dart`) — herhangi bir widget'ı sarabilen genel bileşen. Mod KAPALIYKEN tamamen şeffaf (`child` doğrudan döner, ek gesture/overlay maliyeti YOK). AÇIKKEN dokunma `AbsorbPointer` ile alttaki widget'a **ulaşmaz** (satış tamamlama/silme gibi normal aksiyonlar kazara TETİKLENMEZ — kullanıcı kararı: "keşif güvenli" olmalı, onay dialog'u yerine erişimi baştan engelle) — bunun yerine dokunulan noktanın yakınında `Overlay.insert` ile kısa bir açıklama balonu açılır (başlık + 1-3 cümle + kapat ikonu; dışına dokununca da kapanır). Konumlandırma `LayerLink`/`CompositedTransformFollower` YERİNE ham tıklama koordinatı + `MediaQuery` clamp'i kullanır (balon kısa ömürlü/tek dokunuşluk — ekran kaydırılırken takip etmesi gerekmiyor).
+- **`HelpModeToggleButton`** — hem masaüstü `_TopBar`'a hem mobil `AppBar`'a eklendi (`app_scaffold.dart`), `?` ikonu, açıkken info-mavi dolgulu + "Yardım modu açık..." snackbar'ı.
+- **⚠️ Balonu kapatan iki yol (barrier'ın dışına dokunma + kartın X ikonu) AYNI `OverlayEntry`'yi kaldırabilir** — bazı giriş kaynaklarında (ör. otomasyon/çift pointer event) ikisi neredeyse eşzamanlı tetiklenip `remove()`'a aynı frame'de iki kez girebiliyor (`OverlayEntry.remove()`'ün "should be removed only once" assert'i patlar — yalnız debug/profile build'de görünür, release'te `assert` elendiği için üretimde hiç görünmez). Kapatma bu yüzden `closed` bayrağı + `try/catch` ile çift katmanlı korunur.
+- **Kapsam kararı:** her ekranda TÜM interaktif öğeler değil, yalnız "ana/karmaşık" olanlar sarılır (kullanıcı kararı) — basit/kendini-anlatan ikonlar (ör. satır silme çöp kutusu) atlanır.
+- **İlk uygulama — Satış ekranı (~23 hotspot):** barkod/canlı arama alanı, Ara butonu, İade Modu, Müşteri Sekmeleri + Müşteri Seç (`customer_tabs.dart`), Hızlı Ürünler paneli (`quick_products_panel.dart`), kamera barkod (mobil), sepet: çoklu seçim toggle'ı + toplu %iskonto çubuğu + satır/genel iskonto + birim fiyat + "Fiyat1 yap" + Muhtelif Ürün Ekle (hepsi `cart_table.dart` — çoğu widget'ın KENDİ `build()`'i içinde sarılı, böylece TEK bir edit hem masaüstü hem mobil çağrı noktasını kapsıyor), ödeme paneli: Nakit/POS/Açık Hesap/Parçalı/Nakit İade/POS İadesi butonları + Satışı Tamamla + İngilizce seslendir (`payment_panel.dart`).
+
 ## Satış Akışı
 
 `SalesCart` (Riverpod notifier, `sales_cart_notifier.dart`) 5 müşteri sekmesini yönetir (`SalesState.activeTab` + `List<CustomerTabState>`).
 
-- **Canlı ürün arama:** barkod okutup Enter → doğrudan sepete ekler. Yazı yazınca (250ms debounce) `OverlayPortal` ile canlı öneri listesi açılır (Türkçe-duyarlı substring arama).
+- **Canlı ürün arama:** barkod okutup Enter → doğrudan sepete ekler. Yazı yazınca (150ms debounce) `OverlayPortal` ile canlı öneri listesi açılır (Türkçe-duyarlı substring arama, ağ hatasında native'de `products_cache` fallback'i). Bileşen `LiveProductSearchField` (`lib/features/products/presentation/widgets/live_product_search_field.dart`) — Analiz sayfasıyla (`/analiz`) PAYLAŞILIR, `onProductSelected` çağrı noktasına göre davranır (Satış'ta sepete ekler, Analiz'de ürünü seçip satış grafiğini yükler).
 - **Sepet (`cart_table.dart`):** satır bazlı %/₺ iskonto (`_CompactDiscountCell`) + sepet geneli iskonto. **Çoklu seçim + toplu %iskonto:** her satırın solunda yuvarlak seçim ikonu (`_RowSelectToggle`); seçim varken üstte "Seçilenlere % İndirim Uygula" barı belirir, yalnız YÜZDE tipinde iskonto uygular ve yalnız seçili satırları etkiler (mevcut tekil %/₺ iskontodan ayrı bir akış). Seçim `Set<int>` index bazlı, sekme değişince veya satır sayısı değişince otomatik temizlenir.
 - **Birim fiyat:** elle düzenlenebilir + yanında "Fiyat1 yap" radyosu (`products.price1`'i kalıcı günceller).
 - **Mobil:** kamera barkod okuma, sepet kart listesi (sola kaydır → sil), ödeme `DraggableScrollableSheet`.
@@ -168,6 +195,16 @@ Rapor ekranlarından ve müşteri detayından açılır; kalem/iskonto/ödeme t�
   - `test/dashboard_render_test.dart` bu ikisini regresyon olarak test eder.
 - **Yıllık Ciro / Son 365 Gün kartları** sunucu tarafı tek `SUM()` RPC'si (`sales_revenue_between`) kullanır — istemci tarafı sayfalı toplama değil.
 
+## Görevler
+
+`/gorevler` — dün satılan ürünlerin raf-kontrol listesi ("dünkü satışları kontrol edip rafları tamamla"). Kalıcı bir menü öğesi, AYRICA **uygulama o gün ilk açıldığında otomatik gösterilir**: `AppScaffold` her build'de bir `SharedPreferences` anahtarını (`gorevler_son_acilis_tarihi`) bugünün tarihiyle (`gorevlerTarihAnahtari()`) karşılaştırır, farklıysa `/gorevler`'e yönlendirip anahtarı günceller — bir oturumda yalnız bir kez tetiklenir, aynı gün tekrar route değişse de yeniden yönlendirmez. Tüm platformlarda (web dahil) geçerli.
+
+- **Liste kaynağı:** `GorevlerRepository.fetchYesterdaySoldProducts()` — dünün (takvim günü) `sale_items`'ını sayfalı çekip (`ReportRepository.fetchBestSellers` ile birebir aynı desen) ürün bazında Dart tarafında toplar, adede göre azalan sıralar. Silinmiş ürün (join'de `products` null gelirse) atlanır.
+- **Tamamlanma sunucuda paylaşılır:** `gorev_tamamlamalar` tablosu (`0035_gorev_tamamlamalar.sql`, **Supabase SQL Editor'da elle uygulanmış olmalı**) — `(product_id, gorev_tarihi)` unique, `upsert`/`delete` ile işaretlenir/geri alınır. Aynı (paylaşılan) kullanıcı başka bir cihazdan girdiğinde aynı tamamlanma durumunu görür — önceki yerel/SharedPreferences tabanlı sürümün yerini alır.
+- **Provider (`gorevlerControllerProvider`) autoDispose** — Dashboard provider'larıyla aynı KARAR: sayfaya her dönüşte taze sorgu, kalıcı-yanlış-veri riski yok.
+- **UI:** Yapılacaklar/Tamamlananlar iki sekmesi AYNI provider'ı paylaşır, yalnız `GorevItem.tamamlandi` süzgeci ters çevrilir. Bir satırı tikleyince kısa bir sönme animasyonundan (`AnimatedOpacity`, 260ms) sonra gerçek sunucu güncellemesi (`tamamla`/`geriAl`) tetiklenir. Hero, Dashboard/Raporlar ile BİREBİR aynı `todaySummaryProvider` rakamını gösterir (nakit-esaslı günlük ciro).
+- **⚠️ Mobil alt nav yatay-kaydırmalı:** `Görevler` eklenince alt navigasyon 9 öğeye çıktı ve sabit-genişlikli Material 3 `NavigationBar`'a sığmadı (etiketler sıkışıp okunaksızlaşıyordu) — `_MobileBottomNav` bu yüzden yatay kaydırılabilir sabit-genişlikli (`76px`) bir şeride çevrildi (`ListView.builder` + seçili öğeyi görünür alana otomatik kaydıran `ScrollController`). Yeni bir menü öğesi eklenirse bu davranış korunur, `NavigationBar`'a dönülmez.
+
 ## Müşteri Detayı
 
 `customer_detail_screen.dart` — Alışverişler ve Ödeme/Borç Hareketleri listelerinde tekil + toplu silme. **Toplu yazdırma:** her satışın solunda seçim kutucuğu; seçiliyken (yalnız web) "Seçilenleri Yazdır" butonu, seçilen tüm satışları TEK bir A4 dokümanında (her satış kendi bölümü + genel toplam) yazdırır (`sale_print_web.dart` → `printMultipleSalesA4`).
@@ -199,15 +236,26 @@ Dükkânın bazı bölgelerinde internet çekmiyor (Wi-Fi/cell "bağlı" görün
 - **⚠️ Barkod çakışması:** `products.barcode` UNIQUE — iki offline kayıt (veya offline+sunucu) aynı barkodu paylaşırsa sync `23505` ile başarısız olur, "Bekleyenler"den elle çözülür (silinmez, kullanıcı müdahalesi bekler).
 - Yeni bağımlılıklar: `sqflite`, `connectivity_plus` (`AndroidManifest.xml`'e `ACCESS_NETWORK_STATE` eklendi), `shared_preferences` (son bağlantı durumu kalıcılığı) — üçü de web derlemesini bozmaz, yalnız runtime'da `!kIsWeb` ile atlanır.
 
+## Analiz
+
+`/analiz` — bir ürün seçilince (barkod okutma/yazma veya Satış ekranındaki ile PAYLAŞILAN `LiveProductSearchField` canlı arama açılır listesi) seçili tarih aralığındaki günlük/haftalık/aylık satış adedi grafiği (`fl_chart` `BarChart`, aralığa göre `_pickBucket` gün/hafta/ay seçer).
+
+- **Çubuğa tıklayınca döküm diyaloğu:** `BarTouchData.touchCallback` (`FlTapUpEvent`) bir çubuğa tıklanmasını yakalar, o dönemin (gün/hafta/ay) satışlarını `_BucketSalesDialog`'da listeler — Saat/Satış Kodu/Müşteri/Ürün/İskonto/Ödeme/Toplam/Not sütunlu `DataTable` (yatay taşarsa `SingleChildScrollView` ile kaydırılır). İskonto/Ödeme/Not `sale_items` değil `sales` (satış) seviyesi alanlar olduğundan `ProductSaleRecord` bu alanlarla genişletildi (`report_repository.dart` `fetchProductSalesHistory` — aynı provider Ürün Raporları sekmesiyle PAYLAŞILIR, dikkat: alanları değiştirirsen orayı da kontrol et).
+- **Satış Kodu → Satışı Düzenle, ÜSTTE (kullanıcı isteği):** Satış Kodu'na dokunmak `SaleEditScreen`'i AYRI bir `showDialog` ile açar — bu, `_BucketSalesDialog`'un ÜSTÜNE biner (Flutter route stack'i alttaki dialog'u pop/replace ETMEZ). Kullanıcı Satışı Düzenle'yi kapatınca alttaki döküm listesi ekranda KALIR. Değişiklik yapılırsa (`SaleEditResult.changed`) liste bayat kalmasın diye `productSalesHistoryProvider` invalidate edilip taze veriyle güncellenir — dialog KAPANMADAN.
+
 ## Raporlar
 
 `/reports` — Günlük / Tarihsel / Ürün raporları. İskonto sütunu `% 82.25` formatında (2 ondalık).
 
 **"TOPLAM CİRO" hero (Günlük + Tarihsel) = nakit-esaslı**, ana sayfa "günlük ciro" ile BİREBİR: `Nakit + POS + Alınan Ödemeler (borç tahsilatı)`; **açık hesap/borç HARİÇ** ("o gün kasaya giren para"). Kaynak: `DailyReportSummary.cashBasisTurnover` (`= cashTotal + posTotal + receivedPaymentsTotal`). `grandTotal` (borç DAHİL) modelde durur ama hero'yu beslemez — yalnız tablo/diğer kullanımlar için. Hero widget'ı `ReportHero` artık paylaşılan `InstrumentHero`'yu sarar (altın ray). Dashboard'ın nakit-esaslı ciro tanımı da aynıdır (`sales_revenue_between` RPC: `paid_amount` + `type='odeme'` tahsilatları).
 
-## Etiket — Raf Etiketi A4 Yazdırma
+## Etiket — A4 Etiket Yazdırma
 
-`/etiket` — üç sekme: **Yeni Etiket** (24 hane, 3×8 ızgara, logo+fiyat+Code128+barkod no+tarih), **Geniş Logo** (10 hane, 2×5 ızgara, sabit marka figürü — turuncu tente + NiCE, 88mm×55mm hücre), **Kayıtlı Dosyalar** (Supabase Storage `etiket_pdfleri` bucket'ı, imzalı URL). Barkod → ürün çözme satış ekranıyla aynı desen. Yazdır/PDF Üret yalnız web. Etiket çıktısı kendi hero'suna (FİYAT, altın ray YOK) sahiptir — app krom'undan ayrı bir görsel dil.
+`/etiket` — 9 sekme (`enum _LabelTab`): **Havuz** (mobil ürün formundaki "Etiket" butonundan beslenen, cihazlar/kullanıcılar arası paylaşılan DB'de kalıcı bekleyen kuyruk — Raf/Tel/Geniş/Ürün tipleri, `label_pool_items` tablosu), **Raf Etiketi** (eski "Yeni Etiket", 24 hane, 3×8 ızgara, logo+fiyat+Code128+barkod no+tarih), **Tel Etiketi** (Raf ile birebir aynı hücre, 32 hane, 4×8 ızgara, Raf'ın logosunu paylaşır), **Tel İndirim** (Tel Etiketi ile AYNI 32 hane/4×8 ızgara/boyut, yalnız her hücrede çizili eski fiyat + kırmızı büyük yeni fiyat — bkz. aşağıdaki ayrı not), **Geniş Logo** (10 hane, 2×5 ızgara, 88mm×55mm hücre — logo Faz D'den itibaren kiracı-bazlı, bkz. aşağıdaki not), **Poster** (barkod/ad ile serbest liste, A4 dikey profesyonel ürün listesi, çok sayfalı), **Ürün Etiketi** (adet-tabanlı, fiyatsız/logosuz, 72 hane, 6×12 ızgara), **İndirim** (4 hane, 2×2 ızgara, kullanıcının referans mockup'ına göre KARAR — çok sayfalı destek YOK: logo + logo-altı tagline artık kiracı-bazlı, bkz. aşağıdaki not — + ürün adı BÜYÜK HARF + tek satır kırmızı "%X İNDİRİM" bandı + "ESKİ FİYAT:" siyah/üzeri KIRMIZI çizili + kutulu kırmızı "YENİ FİYAT" hero + Code128 (bölge/konum sabit, asıl grafik bölgenin yalnız ORTA 1/3'ü — üst/alt eşit boşlukla merkezde) + tarih **YYAAGG** (örn. 260819, `formatShortDate` DEĞİL — bu sekmeye özel kompakt format) + barkod no. **Ana İndirim %**: haneler listesinin üstünde ayrı bir "genel" yüzde alanı (`LabelDiscountSheetState.defaultPercent`) — hane kendi yüzdesini GİRMEMİŞSE (`DiscountLabelSlot.discountPercent == null`) bu değer geçerli olur, genel değer sonradan değişse bile o haneyi güncel tutar; hane kendi yüzdesini girmişse genel değerden bağımsız SABİT kalır (`DiscountLabelSlot.effectivePercent`/`newPrice` bu ikisini çözer). Kamera ile barkod tarama diğer sekmelerle aynı (`onCameraScan`, yalnız native), **Kayıtlı Dosyalar** (Supabase Storage `etiket_pdfleri` bucket'ı, imzalı URL — sekmeden bağımsız TÜM kayıtlı PDF'leri listeler). Barkod → ürün çözme (`_resolveBarcode`) tüm sekmeler arasında paylaşılır, satış ekranıyla aynı desen. Yazdır yalnız web (`kIsWeb` guard); PDF Kaydet her platformda (gerçek `pdf`-widgets PDF, Supabase Storage'a yüklenir). Etiket çıktısı kendi hero'suna (FİYAT, altın ray YOK) sahiptir — app krom'undan ayrı bir görsel dil.
+
+**Geniş Logo / İndirim — kiracı-bazlı marka (Faz D, bkz. `notes/multi-tenant-mimari.md`).** Eskiden `genis_logo_figur.png`/`nice_logo_indirim.png` paket asset'lerine + hardcoded "EV GEREÇLERİ & HIRDAVAT" metnine gömülüydü, tüm kiracılar aynı NicePOS markasını görüyordu. Artık Raf/Poster/Ürün Etiketi'nin zaten kullandığı **paylaşılan** `LabelSheetState.logoDataUrl` mekanizmasını kullanırlar (`showLogoActions: true`) — bir kiracı herhangi bir sekmede logo yüklerse hepsinde görünür; yüklemezse alan BOŞ kalır (**yeni kiracılar için nötr varsayılan**, eski NicePOS markası hiçbir yeni kiracıya sızmaz). Tagline (İndirim'in logo-altı metni) `LabelsStorageRepository.uploadTagline/fetchTagline` ile ayrı bir Storage text-key'de (`__store_tagline.txt`, `logoKey` ile birebir desen) kiracı-bazlı; boşsa satır basılmaz. Geniş Logo hücresi bu yüzden **dikey `Expanded(flex:)` akışına** yeniden tasarlandı (logo → fiyat → ad → barkod → alt satır, düz zemin + `BoxFit.contain` — eski Positioned/tam-hücre-arka-plan yaklaşımı belirli bir illüstrasyona göre sabit oranlıydı, rastgele bir logoyla çalışmazdı); İndirim zaten Column-tabanlıydı, yalnız parametre değişti.
+
+**Tel İndirim** (`TelDiscountLabelSlot`/`TelDiscountKind`, `lib/features/labels/data/models/tel_discount_label_slot.dart` + `labels_provider.dart` `LabelTelDiscountSheetState`) — Tel Etiketi'nin 32 hane/4×8 ızgarasını AYNEN kullanır (yeni ızgara sabiti YOK), mevcut "İndirim" sekmesinden AYRI (isim çakışmasın diye). İndirim % veya ₺ olabilir, hem sayfa geneli ("Genel İndirim" alanı, üstte %/₺ seçici + değer) hem hane-özel: her barkodun yanında bir "Genel" tiki — **tik HER ZAMAN görünür** (⚠️ yaşanmış hata: önceden yalnız tik kaldırılınca hane-özel %/₺ kontrolü görünüyordu, kullanıcı fark edemiyordu — artık her zaman görünür, tikliyken `Opacity`+`IgnorePointer` ile soluk/pasif). Tikli → genel değerden etkilenir; tiksiz → o hanenin kendi %/₺'si (`TelDiscountLabelSlot.effectiveKind/effectiveValue/newPrice`) geçerli olur, genel değer değişse bile SABİT kalır. Hücre tasarımı: logo + çizili eski fiyat (üst) → kırmızı büyük yeni fiyat → ürün adı (TEK satır, Tel'in 2 satırından fark) → Code128 → barkod no + tarih (Tel'le AYNI `formatShortDate`, İndirim'in YYAAGG'si DEĞİL). Rozet ("%X İNDİRİM" bandı) bilinçli olarak YOK — hücre zaten çok küçük (32/sayfa). **⚠️ Hücre-içi flex ORAN dersi (yaşanmış hata):** Tel hücresi (~136×189px) her ikisi (eski+yeni fiyat) + ad + barkod + tarihi aynı anda büyütmeye yetecek kadar geniş DEĞİL — kullanıcının art arda gelen "logo/eski fiyatı 2× yap", "barkodu yarıya indir, açılanı yeni fiyata ekle" gibi taleplerinde SABİT piksel yerine `Expanded(flex:)` oranı kullanılır (şu an 40:73:19:40 — üst:yeniFiyat:ad:barkod), üçü de (Flutter hücresi/`label_pdf.dart` PDF hücresi/`etiket_print_web.dart` CSS) BİREBİR aynı oranı paylaşır — hücreye göre ölçeklenir, ASLA taşmaz. **⚠️ PDF barkod `height > 0` assertion'ı (yaşanmış hata):** `pdf` paketinde (`pw.*`) bir `SizedBox(height:)` + `Row` + `Expanded` zinciri barkod widget'ına GERÇEK (sıfır olmayan) yükseklik vermeyebiliyor — `pw.Row`/`pw.Expanded` çapraz-eksen yayılımı yalnız `crossAxisAlignment: stretch` ile garanti; Raf/Tel'in kanıtlanmış deseni barkodu doğrudan `pw.Expanded`'ın Column ANA eksenindeki (dikey) flex payına koymaktı — `_telDiscountCell` bu yüzden barkod satırını SABİT `SizedBox(height:)` yerine bu desene döndü. PDF çıktısı `flutter run`/tarayıcı önizlemesinden bağımsız AYRI kod yolu olduğundan bu tür hatalar yalnız gerçek "PDF Kaydet" denemesiyle ortaya çıkar — flutter analyze/test YAKALAMAZ.
 
 ## Kasa
 
@@ -215,7 +263,7 @@ Gelir-gider defteri: Gelir (Nakit/POS banka kırılımı + mutabakat) · Gider (
 
 ## Veritabanı (Supabase)
 
-Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, Supabase SQL Editor'da elle uygulanır.
+Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, Supabase SQL Editor'da elle uygulanır. **Hangi migration'ın canlıya uygulandığı `supabase/migrations/APPLIED.md`'de takip edilir** — yeni bir migration yazınca veya kullanıcı Supabase SQL Editor'da bir migration'ı çalıştırdığını doğrulayınca oraya bir satır eklenir. Bu dosya olmadan "0050 mi 0051 mi uygulandı" belirsizliği çıkıyor (yaşanmış karışıklık).
 - `sales`: iskonto birebir saklanır (`discount_percent` + `discount_amount` + `discount_type`).
 - `customer_balances` view'ı borcu `customer_payments`'tan hesaplar.
 - `sales_revenue_between(start_ts,end_ts)` RPC — dashboard ciro kartları için tek `SUM()`.
@@ -223,48 +271,26 @@ Migration'lar `supabase/migrations/` — DDL anon key ile çalıştırılamaz, S
 - `search_products(...)` RPC — Ürünler sayfası Durum filtresi aktifken arama+filtre+sıralama+sayfalamayı tek sorguda birleştirir.
 - **⚠️ RPC migration dersi:** Bir RPC'nin parametre listesini değiştiren migration'da ÖNCE `DO $$ ... DROP FUNCTION ... $$` ile eski overload'ları temizle — aksi halde `CREATE OR REPLACE` parametre tipi farklıysa yeni bir overload yaratır, "function name is not unique" hatası çıkar.
 - **⚠️ Sorgu planlayıcı dersi:** Bir view'ı büyük bir tabloya JOIN edip window/agregasyon fonksiyonu kullanıyorsan CTE'yi `MATERIALIZED` işaretle — aksi halde planlayıcı satır başına yeniden hesaplayıp statement timeout (57014) verebilir.
+- **⚠️ `CREATE OR REPLACE VIEW` dersi:** mevcut sütunların pozisyonunu/adını DEĞİŞTİREMEZ (42P16 hatası) — yeni bir sütun yalnız listenin EN SONUNA eklenebilir, araya sıkıştırmak sonraki sütunları "yeniden adlandırma" gibi yorumlanır.
+- **⚠️ Dinamik RLS policy dersi:** `DO $$ ... $$` bloklarında dinamik `DROP POLICY`/`CREATE POLICY` için politika adı `format()`'ta `%I` (identifier) ile geçirilmeli, `%L` (string literal) DEĞİL — `%L` `DROP POLICY IF EXISTS 'ad' ON tablo` gibi geçersiz bir sözdizimi üretir.
 - Eşlenik Barkod: `products.equivalent_group_id` + `product_equivalent_aggregate` view (detay: Ürünler Sayfası notu).
-- **Online Satış** (`0028_online_satis.sql`, `0029_online_categories_public_read.sql`): `online_products` view (public-safe sütunlar, `is_online_active=true` filtresi, `anon` okur) + `online_orders`/`online_order_items` tabloları + `create_online_order()` RPC (SECURITY DEFINER, atomik — `complete_sale_offline` ile aynı desen, fiyat/stok/aktiflik sunucuda doğrulanır). `product_groups`'a `anon` için ek public-read policy (kategori navigasyonu). Detay: aşağıdaki "Online Satış (Storefront)" bölümü.
+- `gorev_tamamlamalar` (`0035_gorev_tamamlamalar.sql`) — Görevler raf-kontrol tamamlanma kayıtları, `(product_id, gorev_tarihi)` unique (detay: Görevler bölümü).
+- `audit_log` (`0044_audit_log.sql`) — kalıcı işlemler için kim-ne-zaman-ne kaydı, immutable (update/delete politikası yok), SELECT yalnız owner/admin (detay: `notes/multi-tenant-mimari.md` Faz B).
+- **Online Satış** (`0028_online_satis.sql`, `0029_online_categories_public_read.sql`): `online_products` view (public-safe sütunlar, `is_online_active=true` filtresi, `anon` okur) + `online_orders`/`online_order_items` tabloları + `create_online_order()` RPC (SECURITY DEFINER, atomik — `complete_sale_offline` ile aynı desen, fiyat/stok/aktiflik sunucuda doğrulanır). `product_groups`'a `anon` için ek public-read policy (kategori navigasyonu). Detay: `notes/online-satis-ve-domain.md`.
+
+## Çok Kiracılı Mimari (Multi-Tenant SaaS)
+
+NicePOS artık tek şirket için değil, birden çok şirkete SaaS olarak satılabilecek şekilde dönüştürülüyor (kullanıcının kendi mağazası "1. kiracı" olarak sorunsuz devam ediyor). Yol haritası: `~/.claude/plans/bu-uygulamay-kendi-firmamda-synthetic-koala.md` (Faz A–G). Migration'lar `0036`–`0043`.
+
+**Detaylı Faz A–G tarihçesi (RLS/tenant_id izolasyonu kuruluşu, kendi-kendine kayıt + personel daveti, rol-bazlı UI kısıtlaması, marka/storage kiracı-izolasyonu, Etiket şablonlarının kiracı-bazlı hale getirilmesi, çapraz-kiracı önbellek sızıntısı düzeltmesi gibi yaşanmış hatalar dahil) `notes/multi-tenant-mimari.md`'ye taşındı** — uzun/büyük ölçüde tamamlanmış geçmiş içerik, gündelik geliştirmede nadiren gerekir; RLS/tenant izolasyonu/storage/rol kısıtlaması alanında çalışırken oradan oku.
+
+**Kısa özet:** Faz A (RLS temeli) / B (kayıt+davet) / C (marka) / D (Etiket şablonları) / E (storage izolasyonu) **tamamlandı, canlıda doğrulandı**. Faz F Adım 1 (storefront çoklu-kiracı filtreleme) tamamlandı; Faz F Adım 2 (domain) ve Faz G (gerçek faturalama) ⏸️ **beklemede** (bkz. dosyanın en üstündeki tablo).
 
 ## Online Satış (Storefront)
 
-Ana POS'un dışında, **ayrı bir Flutter web projesi** olarak kurulu ikinci bir müşteri-karşısı site: `storefront/` (paket adı `nicepos_storefront`, kendi `pubspec.yaml`'ı var, ana projeyle kod paylaşmaz). Aynı Supabase projesine (aynı `SUPABASE_URL`/`SUPABASE_ANON_KEY` dart-define'ları) `anon` rolüyle bağlanır.
+Ana POS'un dışında, **ayrı bir Flutter web projesi** olarak kurulu ikinci bir müşteri-karşısı site: `storefront/` (paket adı `nicepos_storefront`, kendi `pubspec.yaml`'ı var, ana projeyle kod paylaşmaz). Aynı Supabase projesine `anon` rolüyle bağlanır. Kontrol paneli ana uygulamada `/online-satis` (`lib/features/online_satis/`).
 
-- **Kontrol paneli** ana uygulamada: `/online-satis` (`lib/features/online_satis/`) — canlı ürün arama (sales_screen'deki desenin sadeleştirilmiş hali) ile seçilen ürün `products.is_online_active=true` yapılır; ürün formundaki mevcut "Online Aç" anahtarıyla AYNI alanı paylaşır (ikisi birbirini tamamlar, ayrı bir online-ürün tablosu YOK).
-- **Storefront ekranları** (`storefront/lib/`): anasayfa (`features/home/`, kategori `Wrap` filtresi + arama + ürün grid'i), ürün detay (`features/product/`), sepet (`features/cart/`, yalnız bellekte — `cartProvider`, sayfa yenilenince sıfırlanır, bilinçli v1 basitleştirmesi), checkout (`features/checkout/`, misafir bilgi formu → `create_online_order` RPC → sipariş kodu onay ekranı). State: plain `flutter_riverpod` (codegen YOK, ana projenin `@riverpod` deseninden farklı — küçük proje için daha az boilerplate). Routing: `go_router`, tüm rotalar `_fadeThroughPage` (ana uygulamanın `router.dart`'ıyla birebir aynı 240ms/180ms `easeOutCubic` fade+slide eğrisi, `storefront/lib/app.dart`).
-- **v1.1 UI/UX güçlendirme turu** (2026-08-09, design-tokens KARAR v1.1): dört ekrana (anasayfa/ürün detay/sepet/checkout+onay) ortak paylaşılan örüntüler eklendi — `widgets/skeleton_box.dart` (shimmer yükleme durumları, `shimmer` paketi, navy-alfa/ALTIN DEĞİL), `widgets/store_breadcrumb.dart`, `widgets/checkout_stepper.dart` (Sepet→Teslimat Bilgileri→Sipariş Onayı — "Ödeme" adım adı olarak KULLANILMAZ, iyzico henüz yok), `widgets/store_empty_state.dart` (birleşik boş durum: ikon+mesaj+opsiyonel ikincil buton), sipariş özeti kartı, 3 buton varyantı (birincil dolu/ikincil outline/destructive). Ürün görselleri (`product_card.dart`, ürün detay, sepet satırı) `Image.network`'ten `cached_network_image`'e geçti (cache+fade-in). Checkout'ta `_submit()` artık `clear()`'dan ÖNCE sepeti/toplamı yakalayıp `context.go(..., extra: OrderSummary(...))` ile sipariş onay ekranına taşıyor — `app.dart`'ın `/siparis-alindi/:code` route'u bunun için `state.extra`'yı okur. Detay/token: `storefront/design/design-tokens.md` §4-§12.
-- **v1'de online müşteri GİRİŞİ (Supabase Auth hesabı) YOK, yalnız misafir sipariş** — mevcut RLS `auth.role()='authenticated'` blanket-tam-erişim politikası yüzünden (bkz. `0002_rls.sql`), online müşteri hesabı aynı Auth havuzunda olsaydı tüm POS verisine erişebilirdi. Gerçek müşteri hesabı istenirse önce TÜM RLS politikalarının staff-allowlist kontrolüne geçmesi gerekir (ayrı, büyük bir iş — bkz. `0028_online_satis.sql` migration yorumu).
-- **Tasarım sistemi AYRI:** `storefront/design/design-tokens.md` — ana uygulamanın koyu "Enstrüman Konsolu" diliyle KARIŞTIRILMAZ, sıcak/aydınlık perakende kimliği (Space Grotesk başlık + Inter gövde tipografik çifti, `google_fonts`; ana uygulamanın "altın ray" imzasının statik/ışıltısız yorumu — hero banner + AppBar alt çizgisi). Agent rosteri de ayrı (`magaza-tasarim-lideri`/`magaza-tasarimci`/`magaza-gorsel-elestirmen` — bkz. yukarıdaki "Agent'lar" bölümü).
-- **⚠️ Bilinen tuzak:** yatay `ListView` cross-axis'te çocuklarına DAR (tight) yükseklik zorlar — 200+ kategori bu yüzden `Wrap` (sabit `maxHeight` + dikey kaydırma) ile gösterilir, yatay `ListView` DEĞİL (kategori chip'i içeriden taşıyordu, yaşanmış hata).
-
-### Ödeme Entegrasyonu (planlandı, HENÜZ YAPILMADI)
-
-**Karar: iyzico.** Türkiye'de TL hesaba ödeme aktarımı yapan, hosted checkout/iframe sunan (kart bilgisi bize hiç dokunmaz, PCI yükü minimal) bir sağlayıcı gerekiyordu — Stripe TL/Türkiye tarafında sınırlı olduğundan elenmiş, PayTR ikinci sırada değerlendirilmişti. **Kullanıcının henüz bir iyzico üye işyeri hesabı YOK** — bu, entegrasyon çalışmasının önündeki ilk ve zorunlu adım (KYC/işletme doğrulaması gerektirir, Claude bunu kullanıcı adına yapamaz).
-
-**Şu anki durum (ödeme entegrasyonu yokken):** `create_online_order` RPC'si siparişi doğrudan `'yeni'` durumunda oluşturuyor — online mağazadan gelen HİÇBİR sipariş şu an gerçek bir ödeme adımından geçmiyor (fiilen "kapıda ödeme/elle mutabakat" modeli). Bu bilinçli bir v1 sınırlaması, ödeme eklenene kadar böyle kalacak.
-
-**Planlanan mimari (üye işyeri hesabı açılınca uygulanacak):**
-1. Checkout akışına bir ödeme adımı eklenir — iyzico'nun hosted Checkout Form'una yönlendirme ya da embed (kart verisi storefront'a/Supabase'e hiç değmez).
-2. **Sunucu tarafı bir webhook/callback ucu şart** — istemcinin "ödeme başarılı" demesine GÜVENİLMEZ, yalnız iyzico'nun imzalı async callback'i siparişi kesinleştirir. Bu, şu an sistemde OLMAYAN yeni bir bileşen gerektirir: Supabase Edge Function ya da (storefront zaten Cloudflare'de barındığından daha doğal) bir Cloudflare Worker.
-3. `online_orders` şemasına ödeme alanları eklenmesi gerekecek (ör. `payment_status`, `payment_provider_ref`) — mevcut `status` enum'u (`yeni/onaylandi/hazirlaniyor/kargoda/tamamlandi/iptal`) sipariş lojistik durumu için, ödeme durumu için AYRI bir alan daha doğru olur.
-4. Stok düşümü şu an sipariş anında (`create_online_order` içinde) yapılıyor — ödeme eklenince bunun ödeme ONAYINDAN SONRAYA mı taşınacağı (stok kilitleme riski vs. ödenmemiş sipariş için stok bloke etme riski) ayrıca karara bağlanmalı.
-
-**Sıradaki somut adım:** kullanıcı iyzico üye işyeri başvurusunu tamamlayıp API anahtarlarını aldığında bu bölüm güncellenip gerçek migration/Worker/checkout-akışı işine başlanacak.
-
-### Deploy — Cloudflare Pages
-
-Site: `https://nicepos-online-satis.pages.dev` (custom domain YOK, deneme aşaması). GitHub Pages'ten TAMAMEN AYRI bir deploy akışı — GitHub Actions/webhook'a bağlı DEĞİL, `wrangler` CLI ile elle deploy edilir:
-
-```powershell
-cd storefront
-flutter build web --release `
-  --dart-define=SUPABASE_URL=https://maogkrllltlxkfdwfsdj.supabase.co `
-  "--dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hb2drcmxsbHRseGtmZHdmc2RqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MDk3NjQsImV4cCI6MjA5NzA4NTc2NH0.BsPCU9Hx1OuMf-JI7TU4I6SRuSKsLcmL2MIpQc2gKp0"
-cd ..
-npx wrangler pages deploy storefront/build/web --project-name nicepos-online-satis --branch master
-```
-
-`storefront/build/` git'e commit EDİLMEZ (kendi `.gitignore`'u `/build/` — ana projenin `docs/`+`build/web` deseninin AKSİNE, burada build çıktısı yalnız Cloudflare'e gider, repoda tutulmaz). Kaynak kod (`storefront/lib/`) normal şekilde ana repoya commit edilir. `.wrangler/` (yerel wrangler cache/oturum) kök `.gitignore`'da hariç tutulur.
+**Detaylı mimari (storefront ekranları, tasarım sistemi, v1 kapsamı) + ⏸️ beklemede olan üç alt bölüm (Ödeme Entegrasyonu/iyzico, Kiracı Domain Satın Alma, Mevcut Domain Bağlama) + Cloudflare Pages deploy komutları `notes/online-satis-ve-domain.md`'ye taşındı** — bu alanda çalışırken (storefront, domain, ödeme) oradan oku.
 
 ## Deploy — GitHub Pages
 
@@ -309,6 +335,7 @@ git diff --stat HEAD    # beklenen dosyalar geldi mi
 - `.gitignore` `/build/*`'ı yoksayar ama `!/build/web` izler → repo hem `build/web` hem `docs` tutar, deploy'da ikisi de commit edilir.
 - `supabase_flutter` **2.14.2**'de sabit tutulmalı — 2.15.x web'de açılış hatası veriyordu (`passkeys_web`/`ua_client_hints` → `dart:html`).
 - PowerShell'de çok satırlı/çift tırnaklı commit mesajları için here-string yerine tek satırlık `git commit -m '...'` tercih et.
+- `.gitignore`'a `*.sql` (migration'lar hariç: `!supabase/migrations/*.sql`) ve `/supabase/.temp/` eklendi — `pg_dump` yedekleri ve Supabase CLI önbelleği yanlışlıkla public repo'ya commit edilmesin diye (yaşanmış hata: bir yedek dosyası proje köküne düşüp `git status`'ta göründü).
 
 ## Önemli Konvansiyonlar
 
@@ -328,5 +355,13 @@ Henüz uygulanmamış, kullanıcıyla konuşma sırasında ortaya çıkan özell
 
 - **Düşük stok / stok tükenmesi uyarısı** — `product_status` view'ı zaten "Tükendi" durumunu sunucuda hesaplıyor; Dashboard'a rozet/bildirim katmanı eklenecek. Gerçek zamanlı bildirim (push/e-posta) istenirse ayrı bir tetikleyici (Supabase Edge Function veya periyodik client kontrolü) gerekir — yalnız "Dashboard'da görünür uyarı" ise mevcut mimariyle ek maliyeti düşük.
 - **Müşteri SMS/WhatsApp bildirimi** (borç hatırlatma, sipariş hazır) — dış servis entegrasyonu gerektirir, sağlayıcı henüz seçilmedi.
-- **Kullanıcı rolleri/izinler** — şu an tek yönetici hesabı (Supabase Auth) var; çalışan girişi ayrı ve kısıtlı yetkilerle eklenebilir. Auth/RLS politikalarına dokunan orta ölçekli bir iş (bkz. Online Satış bölümündeki RLS notu — mevcut politikalar `auth.role()='authenticated'` blanket-erişim, rol bazlı kısıtlama için hepsi gözden geçirilmeli).
-- **iyzico ödeme entegrasyonu** — ayrıntılı plan yukarıda "Online Satış (Storefront) → Ödeme Entegrasyonu" bölümünde; kullanıcının iyzico üye işyeri başvurusu tamamlanmadan başlanamaz.
+- **Audit log kapsamının daha da genişletilmesi** — `lib/features/audit/` (0044 migration) şu an satış silme (SaleEditScreen + CustomerDetailScreen), ürün silme (tekil+toplu), müşteri silme, ödeme/borç hareketi silme (tekil+toplu) loglar. `products_list_screen.dart`'taki toplu Excel içe/dışa aktarım gibi diğer hacimli işlemler henüz kapsam dışı — istenirse eklenebilir.
+- **iyzico ödeme entegrasyonu** — ayrıntılı plan `notes/online-satis-ve-domain.md` → Ödeme Entegrasyonu bölümünde; kullanıcının iyzico üye işyeri başvurusu tamamlanmadan başlanamaz.
+- **Müşteri borç yaşlandırma görünümü** — kimin borcu ne kadar süredir duruyor, en riskli müşteriler kim. Veri (`customer_balances`, `customer_payments`) zaten var, eksik olan yalnızca bir "yaşlandırma" raporu/görünümü.
+- **Offline kapsamının genişletilmesi** — Açık Hesap/Parçalı/İade şu an dead-zone'da çalışmıyor (bkz. Mobil Çevrimdışı Satış bölümü, "Kapsam dışı" notu); dükkânda sinyal çekmeyen bölgede bu satış türleri de sık oluyorsa değerli olur, aksi halde gereksiz karmaşıklık katar.
+- **Online sipariş bildirimi** — storefront'tan bir sipariş geldiğinde POS tarafında (ürün/satış senkron toast'larıyla aynı desende) sesli/görsel bir bildirim yok; şu an "Online Satış" sayfasına gidip elle kontrol ediliyor. Düşük efor, storefront canlı kullanılıyorsa hemen fayda sağlar.
+- **e-Fatura/e-Arşiv entegrasyonu** — şu an yalnız kendi A4 sepet çıktısı var, resmi mali fatura/fiş yok. KDV mükellefiyseniz potansiyel bir yasal zorunluluk açığı olabilir; önem kullanıcının bu konudaki durumuna bağlı.
+- **Gün sonu özet bildirimi** — akşam kapanışta günlük ciro/nakit-POS kırılımını otomatik WhatsApp/e-posta ile göndermek. Borç hatırlatmadan ayrı bir kullanım ama aynı SMS/WhatsApp altyapısını paylaşabilir.
+- **Test kapsamının genişletilmesi** — şu an yalnız birkaç render/golden test var (dashboard, ödeme paneli, sepet, etiket); offline senkron mantığı, Analiz/Görevler gibi hesaplama ağırlıklı yerlerde birim test yok. Kullanıcıya doğrudan görünmez ama regresyon riskini azaltır.
+- **Her kullanıcı için domain adresi alma sekmesi** — Faz F Adım 1 tamamlandı (paylaşılan `nicepos-online-satis.pages.dev`, `?magaza=<slug>`). Faz F Adım 2 iki alt özelliğe ayrıldı, bkz. `notes/online-satis-ve-domain.md`: **(a) Kiracı Domain Satın Alma** — Aşama A tamamlandı, Aşama B (Cloudflare hesabı) sürüyor, gerçek hesaplar bekleniyor. **(b) Mevcut Domain Bağlama** — kullanıcının halihazırda başka yerden sahip olduğu bir domain'i (ödeme YOK, yalnız DNS) bağlaması, henüz başlanmadı — aynı dosyada, şu an bir Cloudflare token izin eksikliği (Pages: Edit) bekleniyor.
+- **Yardım Modu'nun diğer ekranlara yayılması** — bkz. "Yardım Modu" bölümü, altyapı genel/ekrana özel değil, `HelpHotspot` ile sarmak yeterli; şu an yalnız Satış ekranı kapsamda. Sıradaki adaylar: Ürünler (Liste Gir, Eşlenik Barkod), Etiket (9 sekme), Kasa, Raporlar.

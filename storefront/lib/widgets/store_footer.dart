@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../core/theme.dart';
+import '../state/tenant_provider.dart';
 
 // Yasal/iletişim sayfaları (KVKK, Mesafeli Satış Sözleşmesi, gerçek iletişim
 // bilgileri) henüz yok — bu ayrı bir sonraki aşama (bkz. sohbet geçmişi:
 // "önce görsel cila"). Burada gerçek olmayan iletişim bilgisi UYDURULMAZ,
 // yalnız marka + hızlı bağlantılar + telif hakkı satırı gösterilir.
-class StoreFooter extends StatelessWidget {
+class StoreFooter extends ConsumerWidget {
   const StoreFooter({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final storeName = ref.watch(currentTenantProvider).name;
     return Container(
       width: double.infinity,
       color: StoreColors.navyDeep,
@@ -26,7 +29,7 @@ class StoreFooter extends StatelessWidget {
               LayoutBuilder(
                 builder: (context, constraints) {
                   final narrow = constraints.maxWidth < 480;
-                  final brand = _BrandBlock();
+                  final brand = _BrandBlock(storeName: storeName);
                   final links = _LinksBlock();
                   if (narrow) {
                     return Column(
@@ -47,7 +50,7 @@ class StoreFooter extends StatelessWidget {
               Container(height: 1, color: Colors.white.withValues(alpha: 0.08)),
               const SizedBox(height: 16),
               Text(
-                '© ${DateTime.now().year} NicePOS — Tüm hakları saklıdır.',
+                '© ${DateTime.now().year} $storeName — Tüm hakları saklıdır.',
                 style: GoogleFonts.inter(
                   color: Colors.white.withValues(alpha: 0.5),
                   fontSize: 12,
@@ -62,6 +65,10 @@ class StoreFooter extends StatelessWidget {
 }
 
 class _BrandBlock extends StatelessWidget {
+  final String storeName;
+
+  const _BrandBlock({required this.storeName});
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -76,7 +83,7 @@ class _BrandBlock extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              'NicePOS',
+              storeName,
               style: GoogleFonts.spaceGrotesk(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
