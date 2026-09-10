@@ -118,10 +118,11 @@ lib/
     auth/          # Login, Signup (yeni işletme/davet kodu), ConfigMissingScreen — bkz. notes/multi-tenant-mimari.md
     home/          # Anasayfa — kısayol kart grid + Dashboard (stat kartları + grafikler)
     gorevler/      # Görevler — dünkü satışların raf-kontrol listesi, günde bir kez otomatik açılır
+    analiz/        # Analiz — Ürün Analizi + İndirim Önerileri + Ciro Analiz (3 sekme)
     products/      # Ürünler, Ürün Grupları, Liste Gir
     customers/     # Müşteri listesi, detay (geçmiş işlem yönetimi + toplu yazdırma), ödeme
     sales/         # Satış ekranı — 5 sekme, sepet, ödeme paneli, hızlı ürünler
-    reports/       # Günlük / Tarihsel / Ürün raporları (3 sekme)
+    reports/       # Günlük / Tarihsel / Ürün Raporları / En Çok Satanlar / Ürün Analizi (5 sekme)
     labels/        # Etiket — raf etiketi A4 yazdırma
     kasa/          # Kasa — gelir-gider defteri + mutabakat + firma giderleri
     online_satis/  # Online Satış kontrol paneli — bkz. notes/online-satis-ve-domain.md
@@ -238,14 +239,17 @@ Dükkânın bazı bölgelerinde internet çekmiyor (Wi-Fi/cell "bağlı" görün
 
 ## Analiz
 
-`/analiz` — bir ürün seçilince (barkod okutma/yazma veya Satış ekranındaki ile PAYLAŞILAN `LiveProductSearchField` canlı arama açılır listesi) seçili tarih aralığındaki günlük/haftalık/aylık satış adedi grafiği (`fl_chart` `BarChart`, aralığa göre `_pickBucket` gün/hafta/ay seçer).
+`/analiz` (`lib/features/analiz/`) — 3 sekme: **Ürün Analizi** · **İndirim Önerileri** · **Ciro Analiz**.
 
-- **Çubuğa tıklayınca döküm diyaloğu:** `BarTouchData.touchCallback` (`FlTapUpEvent`) bir çubuğa tıklanmasını yakalar, o dönemin (gün/hafta/ay) satışlarını `_BucketSalesDialog`'da listeler — Saat/Satış Kodu/Müşteri/Ürün/İskonto/Ödeme/Toplam/Not sütunlu `DataTable` (yatay taşarsa `SingleChildScrollView` ile kaydırılır). İskonto/Ödeme/Not `sale_items` değil `sales` (satış) seviyesi alanlar olduğundan `ProductSaleRecord` bu alanlarla genişletildi (`report_repository.dart` `fetchProductSalesHistory` — aynı provider Ürün Raporları sekmesiyle PAYLAŞILIR, dikkat: alanları değiştirirsen orayı da kontrol et).
-- **Satış Kodu → Satışı Düzenle, ÜSTTE (kullanıcı isteği):** Satış Kodu'na dokunmak `SaleEditScreen`'i AYRI bir `showDialog` ile açar — bu, `_BucketSalesDialog`'un ÜSTÜNE biner (Flutter route stack'i alttaki dialog'u pop/replace ETMEZ). Kullanıcı Satışı Düzenle'yi kapatınca alttaki döküm listesi ekranda KALIR. Değişiklik yapılırsa (`SaleEditResult.changed`) liste bayat kalmasın diye `productSalesHistoryProvider` invalidate edilip taze veriyle güncellenir — dialog KAPANMADAN.
+- **Ürün Analizi:** bir ürün seçilince (barkod okutma/yazma veya Satış ekranındaki ile PAYLAŞILAN `LiveProductSearchField` canlı arama açılır listesi) seçili tarih aralığındaki günlük/haftalık/aylık satış adedi grafiği (`fl_chart` `BarChart`, aralığa göre `_pickBucket` gün/hafta/ay seçer).
+  - **Çubuğa tıklayınca döküm diyaloğu:** `BarTouchData.touchCallback` (`FlTapUpEvent`) bir çubuğa tıklanmasını yakalar, o dönemin (gün/hafta/ay) satışlarını `_BucketSalesDialog`'da listeler — Saat/Satış Kodu/Müşteri/Ürün/İskonto/Ödeme/Toplam/Not sütunlu `DataTable` (yatay taşarsa `SingleChildScrollView` ile kaydırılır). İskonto/Ödeme/Not `sale_items` değil `sales` (satış) seviyesi alanlar olduğundan `ProductSaleRecord` bu alanlarla genişletildi (`report_repository.dart` `fetchProductSalesHistory` — aynı provider Ürün Raporları sekmesiyle PAYLAŞILIR, dikkat: alanları değiştirirsen orayı da kontrol et).
+  - **Satış Kodu → Satışı Düzenle, ÜSTTE (kullanıcı isteği):** Satış Kodu'na dokunmak `SaleEditScreen`'i AYRI bir `showDialog` ile açar — bu, `_BucketSalesDialog`'un ÜSTÜNE biner (Flutter route stack'i alttaki dialog'u pop/replace ETMEZ). Kullanıcı Satışı Düzenle'yi kapatınca alttaki döküm listesi ekranda KALIR. Değişiklik yapılırsa (`SaleEditResult.changed`) liste bayat kalmasın diye `productSalesHistoryProvider` invalidate edilip taze veriyle güncellenir — dialog KAPANMADAN.
+- **İndirim Önerileri:** `discount_recommendations` RPC'sinin (0051 migration, fiyat esnekliği regresyonu) döndürdüğü veri-temelli ciro-artırıcı indirim önerileri — eşiği geçenler kart listesi, geçemeyenler "Diğer Ürünler" bölümünde gerekçesiyle (elenmez). Bir karta dokunmak Ürün Analizi sekmesine geçip o ürünün grafiğini yükler.
+- **Ciro Analiz** (`ciro_analiz_tab.dart`, `CiroAnalizTab`) — **eskiden Raporlar'ın "Eksik Listesi" sekmesiydi**, kullanıcı isteğiyle buraya taşındı ve yeniden adlandırıldı (dosya/sınıf/provider adları da güncellendi: `fetchCiroAnaliz`, `ciroAnalizProvider`, `CiroAnalizRecord`). Tarama/analiz ekranı → HERO YOK. Seçili tarih aralığında satılan ürünleri adet azalan sırayla, güncel stok + Firma (`products.description` alanının ilk parçası) + gerçek (indirim sonrası) toplam ciro + ciro payı (%) ile listeler; **%80 ciro vurgusu** (Pareto/ABC, açık yeşil satır) + masaüstünde Firma hücresi tıkla-düzenle (`CompanyAutocompleteField`, ürün formuyla PAYLAŞILIR).
 
 ## Raporlar
 
-`/reports` — Günlük / Tarihsel / Ürün raporları. İskonto sütunu `% 82.25` formatında (2 ondalık).
+`/reports` — 5 sekme: Günlük Rapor · Tarihsel Rapor · Ürün Raporları · En Çok Satanlar · Ürün Analizi (ciro/durağanlık/vazgeçilmesi önerilen ürün analizi — Analiz sayfasındaki "Ürün Analizi" sekmesiyle AYNI isim ama FARKLI ekran, `product_analysis_tab.dart`, karıştırma). İskonto sütunu `% 82.25` formatında (2 ondalık).
 
 **"TOPLAM CİRO" hero (Günlük + Tarihsel) = nakit-esaslı**, ana sayfa "günlük ciro" ile BİREBİR: `Nakit + POS + Alınan Ödemeler (borç tahsilatı)`; **açık hesap/borç HARİÇ** ("o gün kasaya giren para"). Kaynak: `DailyReportSummary.cashBasisTurnover` (`= cashTotal + posTotal + receivedPaymentsTotal`). `grandTotal` (borç DAHİL) modelde durur ama hero'yu beslemez — yalnız tablo/diğer kullanımlar için. Hero widget'ı `ReportHero` artık paylaşılan `InstrumentHero`'yu sarar (altın ray). Dashboard'ın nakit-esaslı ciro tanımı da aynıdır (`sales_revenue_between` RPC: `paid_amount` + `type='odeme'` tahsilatları).
 
@@ -294,13 +298,15 @@ Ana POS'un dışında, **ayrı bir Flutter web projesi** olarak kurulu ikinci bi
 
 ## Deploy — GitHub Pages
 
-Site: `https://ercinnn.github.io/nicepos` · Repo: `https://github.com/ercinnn/nicepos` · Branch: `master`, klasör: `/docs`. Yerel checkout (`C:\Projects\Flutter\nicepos`) doğrudan bu repo — `origin` zaten doğru remote'a bağlı, ayrı bir deploy klasörü YOK.
+Site: `https://ercinnn.github.io/nicepos` · Repo: `https://github.com/ercinnn/nicepos` · Branch: `master`, klasör: `/docs`. Yerel checkout doğrudan bu repo (makineye göre yolu değişir — ör. bu oturumda `C:\Users\Erdinc\nicepos`) — `origin` zaten doğru remote'a bağlı, ayrı bir deploy klasörü YOK.
 
 **Akış:** `flutter build web --release --base-href /nicepos/ --dart-define=...` → `Remove-Item -Recurse -Force docs; Copy-Item -Recurse build\web docs` → `git add docs build; git commit`. Push öncesi `git fetch` + `git log origin/master..master` ile fast-forward teyit et.
 
-**Kullanıcı tercihi:** deploy'da build+commit'i Claude hazırlar, `git push origin master`'ı kullanıcı kendisi çalıştırır (komut kendisine verilir, sonra `git fetch && git log origin/master -1` ile doğrulanır).
+**Kullanıcı tercihi:** varsayılan olarak deploy'da build+commit'i Claude hazırlar, `git push origin master`'ı kullanıcı kendisi çalıştırır (komut kendisine verilir, sonra `git fetch && git log origin/master -1` ile doğrulanır) — ama kullanıcı açıkça "commit et, githuba at" derse (yaşanmış, 2026-09-10) Claude push'u da kendisi yapar, sonra `git fetch && git log origin/master -1` ile teyit eder.
 
 **⚠️ `MissingPluginException` (release'de, localde değil) — yaşanmış kök neden:** Yeni bir paket (`pubspec.yaml`) eklendikten sonra `.dart_tool` derleme önbelleği bayat kalıp web plugin registrant'ını (ör. `flutter_tts`'in web implementasyonu) atlayabiliyor — `flutter run -d web-server` her seferinde taze başladığı için sorun çıkmaz ama `flutter build web --release` önbelleği yeniden kullanabilir. Belirti: konsolda `MissingPluginException(No implementation found for method X on channel Y)`, paket kodu doğru olsa bile. **Çözüm:** yeni bağımlılık eklendikten sonraki İLK release build'den önce `flutter clean && flutter pub get` çalıştır.
+
+**⚠️ Git Bash'te `--base-href /nicepos/` MSYS path dönüşümüne takılır (yaşanmış):** Git Bash (MSYS) `/` ile başlayan argümanları otomatik Windows yoluna çevirir — `/nicepos/` sessizce `C:/Program Files/Git/nicepos/`e döner, build "`--base-href` should start and end with /" hatasıyla çöker. PowerShell'de sorun yok; Bash'ten çalıştırılıyorsa komutun başına `MSYS_NO_PATHCONV=1` eklenmeli (`MSYS_NO_PATHCONV=1 flutter build web --release --base-href /nicepos/ ...`).
 
 **⚠️ Ortam izolasyonu — agent yazma engeli:** Arka planda spawn edilen agent'lar paylaşılan checkout'a doğrudan yazamaz ("hasn't isolated its changes yet" hatası) — bu yüzden kod değişikliği gerektiren her görev `isolation: "worktree"` ile verilir (agent build/push YAPMAZ), ardından ana oturum (bu kısıtlamaya tabi değil) `git merge worktree-agent-<id>` ile ana checkout'a alır, `git worktree remove` ile temizler, `flutter analyze` ile doğrular. Yalnızca markdown/doküman değişikliğinde web rebuild gerekmez.
 
