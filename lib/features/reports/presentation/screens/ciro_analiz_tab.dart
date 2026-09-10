@@ -10,10 +10,12 @@ import '../../../products/data/repositories/product_repository.dart'
     show composeDescriptionWithFirma;
 import '../../../products/presentation/widgets/company_autocomplete_field.dart';
 import '../../application/reports_provider.dart';
-import '../../data/models/missing_list_record.dart';
+import '../../data/models/ciro_analiz_record.dart';
 import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 
-/// Eksik Listesi sekmesi (Raporlar 6. sekme).
+/// Ciro Analiz sekmesi (Analiz sayfası 3. sekme — eski adı "Eksik Listesi",
+/// Raporlar'daydı; kullanıcı isteğiyle Analiz sayfasına taşındı ve yeniden
+/// adlandırıldı — dosya/sınıf adları da buna göre güncellendi).
 ///
 /// Tarama/analiz ekranı → HERO YOK. Kolonlar: Sıra · Ürün (+ barkod) · Adet
 /// (aralıkta satılan) · Stok (güncel) · Toplam Ciro (gerçek/indirim-sonrası) ·
@@ -40,7 +42,7 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// KORUDUĞUNDAN (`requestFocus()`) öneriye tıklamak odak kaybı SAYILMAZ.
 /// Kaydetme `ProductRepository.updateFirma()` ile ürünün `description`
 /// alanının firma parçasını değiştirir (tarih/durum KORUNUR), ardından
-/// `missingListProvider` invalidate edilip taze veriyle güncellenir (Analiz
+/// `ciroAnalizProvider` invalidate edilip taze veriyle güncellenir (Analiz
 /// sayfasındaki `productSalesHistoryProvider` invalidate deseniyle AYNI).
 ///
 /// **Sayfalama:** `_pageSize` (100) — tüm liste tek seferde çekilir
@@ -55,14 +57,14 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// İşaretli satırlar `AppColors.success` @0.12 alfa ile açık yeşil boyanır.
 /// Filtre: tarih aralığı (default 2026-01-01 → bugün) — `best_sellers_tab.dart`
 /// ile aynı desen, yalnız min-fiyat filtresi yok.
-class MissingListTab extends ConsumerStatefulWidget {
-  const MissingListTab({super.key});
+class CiroAnalizTab extends ConsumerStatefulWidget {
+  const CiroAnalizTab({super.key});
 
   @override
-  ConsumerState<MissingListTab> createState() => _MissingListTabState();
+  ConsumerState<CiroAnalizTab> createState() => _CiroAnalizTabState();
 }
 
-class _MissingListTabState extends ConsumerState<MissingListTab> {
+class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
   static const _pageSize = 100;
 
   DateTime _start = DateTime(2026, 1, 1);
@@ -77,8 +79,8 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
   int _page = 0;
 
   // Firma kaydından sonra ekranı YALNIZ o hücre için güncellemek üzere:
-  // sunucudan taze veri çekmek (`ref.invalidate(missingListProvider(...))`)
-  // hem YAVAŞ (tüm `fetchMissingList` sorgusu — çok sayfalı `sale_items`
+  // sunucudan taze veri çekmek (`ref.invalidate(ciroAnalizProvider(...))`)
+  // hem YAVAŞ (tüm `fetchCiroAnaliz` sorgusu — çok sayfalı `sale_items`
   // sorgusu — baştan çalışırdı) hem de TÜM tabloyu yeniden yükleyip
   // spinner'a düşürürdü (kullanıcı şikayeti: "çok uzun sürüyor" +
   // "ekran anında yenilenmesin, sadece değişen hücre yenilensin"). Bunun
@@ -89,7 +91,7 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
   final Map<String, String> _firmaNameOverrides = {};
   final Map<String, String> _firmaDescriptionOverrides = {};
 
-  List<MissingListRecord> _applyFirmaOverrides(List<MissingListRecord> records) {
+  List<CiroAnalizRecord> _applyFirmaOverrides(List<CiroAnalizRecord> records) {
     if (_firmaNameOverrides.isEmpty) return records;
     return records.map((r) {
       final name = _firmaNameOverrides[r.productId];
@@ -112,12 +114,12 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
   // odağı kasıtlı KORUDUĞUNDAN (`widget.focusNode.requestFocus()`) öneriye
   // tıklamak odak kaybı SAYILMAZ; yalnız gerçekten hücre dışına tıklamak/
   // Tab'lamak tetikler.
-  MissingListRecord? _editingFirmaRecord;
+  CiroAnalizRecord? _editingFirmaRecord;
   TextEditingController? _firmaCtrl;
   FocusNode? _firmaFocus;
   bool _savingFirma = false;
 
-  void _enterFirmaEdit(MissingListRecord r) {
+  void _enterFirmaEdit(CiroAnalizRecord r) {
     _firmaFocus?.removeListener(_onFirmaFocusChange);
     _firmaCtrl?.dispose();
     _firmaFocus?.dispose();
@@ -150,7 +152,7 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
     });
   }
 
-  Future<void> _saveFirma(MissingListRecord r) async {
+  Future<void> _saveFirma(CiroAnalizRecord r) async {
     final ctrl = _firmaCtrl;
     if (ctrl == null || _editingFirmaRecord?.productId != r.productId) return;
     final newValue = ctrl.text.trim();
@@ -204,9 +206,9 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
     });
   }
 
-  List<MissingListRecord> _sortRecords(List<MissingListRecord> records) {
-    final sorted = List<MissingListRecord>.from(records);
-    int compare(MissingListRecord a, MissingListRecord b) {
+  List<CiroAnalizRecord> _sortRecords(List<CiroAnalizRecord> records) {
+    final sorted = List<CiroAnalizRecord>.from(records);
+    int compare(CiroAnalizRecord a, CiroAnalizRecord b) {
       switch (_sortColumn) {
         case 'name':
           return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -234,8 +236,8 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
   // olarak ulaşan (eşiği aşan son ürün DAHİL) ürün id'lerini döner —
   // mevcut sıralama/sayfadan bağımsız, her zaman `totalRevenue` azalana
   // göre hesaplanır (klasik ABC/Pareto "A sınıfı" tanımı).
-  Set<String> _computeTop80ProductIds(List<MissingListRecord> records) {
-    final byRevenue = List<MissingListRecord>.from(records)
+  Set<String> _computeTop80ProductIds(List<CiroAnalizRecord> records) {
+    final byRevenue = List<CiroAnalizRecord>.from(records)
       ..sort((a, b) => b.totalRevenue.compareTo(a.totalRevenue));
     final grandTotal = byRevenue.fold<num>(0, (sum, r) => sum + r.totalRevenue);
     if (grandTotal <= 0) return {};
@@ -293,7 +295,7 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
     final end = _start.isBefore(_end) ? _end : _start;
 
     final recordsAsync = ref.watch(
-      missingListProvider(start: start, end: end),
+      ciroAnalizProvider(start: start, end: end),
     );
 
     return Column(
@@ -356,12 +358,12 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
                     ),
                     ReportTableCard(
                       child: isMobile
-                          ? _MissingListMobileList(
+                          ? _CiroAnalizMobileList(
                               records: pageRecords,
                               startIndex: startIdx,
                               topProductIds: topProductIds,
                             )
-                          : _MissingListTable(
+                          : _CiroAnalizTable(
                               records: pageRecords,
                               startIndex: startIdx,
                               topProductIds: topProductIds,
@@ -432,7 +434,7 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
   Widget _buildDesktopControls() {
     return Row(
       children: [
-        Text('Eksik Listesi', style: Theme.of(context).textTheme.titleLarge),
+        Text('Ciro Analiz', style: Theme.of(context).textTheme.titleLarge),
         const Spacer(),
         OutlinedButton.icon(
           icon: const Icon(Icons.calendar_today, size: 16),
@@ -456,7 +458,7 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Eksik Listesi', style: Theme.of(context).textTheme.titleLarge),
+        Text('Ciro Analiz', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: AppSizes.space12),
         Row(
           children: [
@@ -496,23 +498,23 @@ class _MissingListTabState extends ConsumerState<MissingListTab> {
 
 // ── Masaüstü tablo ─────────────────────────────────────────────────────────
 
-class _MissingListTable extends StatelessWidget {
-  final List<MissingListRecord> records;
+class _CiroAnalizTable extends StatelessWidget {
+  final List<CiroAnalizRecord> records;
   final int startIndex;
   final Set<String> topProductIds;
   final String sortColumn;
   final bool sortAscending;
   final void Function(String column, bool ascending) onSort;
 
-  // Firma hücresi tıkla-düzenle — bkz. _MissingListTabState.
+  // Firma hücresi tıkla-düzenle — bkz. _CiroAnalizTabState.
   final String? editingFirmaProductId;
   final TextEditingController? firmaController;
   final FocusNode? firmaFocusNode;
   final bool savingFirma;
-  final void Function(MissingListRecord r) onFirmaTap;
-  final void Function(MissingListRecord r) onFirmaSave;
+  final void Function(CiroAnalizRecord r) onFirmaTap;
+  final void Function(CiroAnalizRecord r) onFirmaSave;
 
-  const _MissingListTable({
+  const _CiroAnalizTable({
     required this.records,
     required this.startIndex,
     required this.topProductIds,
@@ -667,10 +669,10 @@ class _MissingListTable extends StatelessWidget {
   // Firma hücresi: normalde tıkla-düzenlemeye geçen salt-okunur `Text`;
   // düzenlenen satırda paylaşılan `CompanyAutocompleteField` (akıllı P→2
   // eşleşme/PA→PALA/PE→PERDECİ önerisi). Kaydetme odak kaybında VEYA Enter'da
-  // tetiklenir (bkz. _MissingListTabState._onFirmaFocusChange — `TapRegion`
+  // tetiklenir (bkz. _CiroAnalizTabState._onFirmaFocusChange — `TapRegion`
   // KASITLI kullanılmaz, öneri overlay'i hücrenin dışında render edildiğinden
   // yanlış "dışarı tıklama" sayılırdı).
-  Widget _buildFirmaCell(MissingListRecord r) {
+  Widget _buildFirmaCell(CiroAnalizRecord r) {
     if (editingFirmaProductId == r.productId &&
         firmaController != null &&
         firmaFocusNode != null) {
@@ -716,11 +718,11 @@ class _MissingListTable extends StatelessWidget {
 
 // ── Mobil kart listesi ─────────────────────────────────────────────────────
 
-class _MissingListMobileList extends StatelessWidget {
-  final List<MissingListRecord> records;
+class _CiroAnalizMobileList extends StatelessWidget {
+  final List<CiroAnalizRecord> records;
   final int startIndex;
   final Set<String> topProductIds;
-  const _MissingListMobileList({
+  const _CiroAnalizMobileList({
     required this.records,
     required this.startIndex,
     required this.topProductIds,

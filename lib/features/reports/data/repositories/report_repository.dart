@@ -4,7 +4,7 @@ import '../../../sales/data/models/sale.dart';
 import '../models/best_seller_record.dart';
 import '../models/daily_report_summary.dart';
 import '../models/discount_recommendation.dart';
-import '../models/missing_list_record.dart';
+import '../models/ciro_analiz_record.dart';
 import '../models/product_analysis_record.dart';
 import '../models/product_sale_record.dart';
 
@@ -234,7 +234,7 @@ class ReportRepository {
     return records;
   }
 
-  /// Eksik Listesi (Raporlar 6. sekme). Seçili tarih aralığında satılan
+  /// Ciro Analiz (Analiz sayfası 3. sekme). Seçili tarih aralığında satılan
   /// ürünleri adet azalan sırayla, güncel stok + Firma (products.description
   /// alanının ilk parçası, bkz. product_form_screen._applyDescription) +
   /// gerçek (indirim sonrası) toplam ciro ile birlikte döndürür.
@@ -251,7 +251,7 @@ class ReportRepository {
   ///    bazında `totalRevenue` olarak birikir (adet = Σ quantity ile aynı
   ///    desende). Firma/stok/ad/barkod ürün satırından bir kez alınır (satış
   ///    başına değişmez).
-  Future<List<MissingListRecord>> fetchMissingList({
+  Future<List<CiroAnalizRecord>> fetchCiroAnaliz({
     required DateTime start,
     required DateTime end,
   }) async {
@@ -288,7 +288,7 @@ class ReportRepository {
       saleGroups.putIfAbsent(saleId, () => []).add(row);
     }
 
-    final agg = <String, _MissingListAgg>{};
+    final agg = <String, _CiroAnalizAgg>{};
 
     // 2. geçiş: her satış grubunda genel indirimi orantılı dağıt.
     for (final saleRows in saleGroups.values) {
@@ -336,7 +336,7 @@ class ReportRepository {
 
         final existing = agg[productId];
         if (existing == null) {
-          agg[productId] = _MissingListAgg(
+          agg[productId] = _CiroAnalizAgg(
             name: (product['name'] as String?) ?? '-',
             barcode: product['barcode'] as String?,
             companyName:
@@ -357,7 +357,7 @@ class ReportRepository {
         agg.values.fold<num>(0, (sum, a) => sum + a.totalRevenue);
 
     final records = agg.entries
-        .map((e) => MissingListRecord(
+        .map((e) => CiroAnalizRecord(
               productId: e.key,
               name: e.value.name,
               barcode: e.value.barcode,
@@ -475,8 +475,8 @@ class _BestSellerAgg {
   });
 }
 
-/// Eksik Listesi aggregation'ı için değişebilir (mutable) ara birikim kabı.
-class _MissingListAgg {
+/// Ciro Analiz aggregation'ı için değişebilir (mutable) ara birikim kabı.
+class _CiroAnalizAgg {
   final String name;
   final String? barcode;
   final String companyName;
@@ -485,7 +485,7 @@ class _MissingListAgg {
   num quantity;
   num totalRevenue;
 
-  _MissingListAgg({
+  _CiroAnalizAgg({
     required this.name,
     required this.barcode,
     required this.companyName,

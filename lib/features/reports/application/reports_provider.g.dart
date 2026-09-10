@@ -324,25 +324,25 @@ class _BestSellersProviderElement
   num get minPrice => (origin as BestSellersProvider).minPrice;
 }
 
-String _$missingListHash() => r'f75f00d0d186b6fef8a29370867e30856cc075b3';
+String _$ciroAnalizHash() => r'bfc31160b174c56d48d0dff0e2f06c42775167e8';
 
-/// See also [missingList].
-@ProviderFor(missingList)
-const missingListProvider = MissingListFamily();
+/// See also [ciroAnaliz].
+@ProviderFor(ciroAnaliz)
+const ciroAnalizProvider = CiroAnalizFamily();
 
-/// See also [missingList].
-class MissingListFamily extends Family<AsyncValue<List<MissingListRecord>>> {
-  /// See also [missingList].
-  const MissingListFamily();
+/// See also [ciroAnaliz].
+class CiroAnalizFamily extends Family<AsyncValue<List<CiroAnalizRecord>>> {
+  /// See also [ciroAnaliz].
+  const CiroAnalizFamily();
 
-  /// See also [missingList].
-  MissingListProvider call({required DateTime start, required DateTime end}) {
-    return MissingListProvider(start: start, end: end);
+  /// See also [ciroAnaliz].
+  CiroAnalizProvider call({required DateTime start, required DateTime end}) {
+    return CiroAnalizProvider(start: start, end: end);
   }
 
   @override
-  MissingListProvider getProviderOverride(
-    covariant MissingListProvider provider,
+  CiroAnalizProvider getProviderOverride(
+    covariant CiroAnalizProvider provider,
   ) {
     return call(start: provider.start, end: provider.end);
   }
@@ -359,28 +359,28 @@ class MissingListFamily extends Family<AsyncValue<List<MissingListRecord>>> {
       _allTransitiveDependencies;
 
   @override
-  String? get name => r'missingListProvider';
+  String? get name => r'ciroAnalizProvider';
 }
 
-/// See also [missingList].
-class MissingListProvider
-    extends AutoDisposeFutureProvider<List<MissingListRecord>> {
-  /// See also [missingList].
-  MissingListProvider({required DateTime start, required DateTime end})
+/// See also [ciroAnaliz].
+class CiroAnalizProvider
+    extends AutoDisposeFutureProvider<List<CiroAnalizRecord>> {
+  /// See also [ciroAnaliz].
+  CiroAnalizProvider({required DateTime start, required DateTime end})
     : this._internal(
-        (ref) => missingList(ref as MissingListRef, start: start, end: end),
-        from: missingListProvider,
-        name: r'missingListProvider',
+        (ref) => ciroAnaliz(ref as CiroAnalizRef, start: start, end: end),
+        from: ciroAnalizProvider,
+        name: r'ciroAnalizProvider',
         debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
             ? null
-            : _$missingListHash,
-        dependencies: MissingListFamily._dependencies,
-        allTransitiveDependencies: MissingListFamily._allTransitiveDependencies,
+            : _$ciroAnalizHash,
+        dependencies: CiroAnalizFamily._dependencies,
+        allTransitiveDependencies: CiroAnalizFamily._allTransitiveDependencies,
         start: start,
         end: end,
       );
 
-  MissingListProvider._internal(
+  CiroAnalizProvider._internal(
     super._createNotifier, {
     required super.name,
     required super.dependencies,
@@ -396,12 +396,12 @@ class MissingListProvider
 
   @override
   Override overrideWith(
-    FutureOr<List<MissingListRecord>> Function(MissingListRef provider) create,
+    FutureOr<List<CiroAnalizRecord>> Function(CiroAnalizRef provider) create,
   ) {
     return ProviderOverride(
       origin: this,
-      override: MissingListProvider._internal(
-        (ref) => create(ref as MissingListRef),
+      override: CiroAnalizProvider._internal(
+        (ref) => create(ref as CiroAnalizRef),
         from: from,
         name: null,
         dependencies: null,
@@ -414,13 +414,13 @@ class MissingListProvider
   }
 
   @override
-  AutoDisposeFutureProviderElement<List<MissingListRecord>> createElement() {
-    return _MissingListProviderElement(this);
+  AutoDisposeFutureProviderElement<List<CiroAnalizRecord>> createElement() {
+    return _CiroAnalizProviderElement(this);
   }
 
   @override
   bool operator ==(Object other) {
-    return other is MissingListProvider &&
+    return other is CiroAnalizProvider &&
         other.start == start &&
         other.end == end;
   }
@@ -437,7 +437,7 @@ class MissingListProvider
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin MissingListRef on AutoDisposeFutureProviderRef<List<MissingListRecord>> {
+mixin CiroAnalizRef on AutoDisposeFutureProviderRef<List<CiroAnalizRecord>> {
   /// The parameter `start` of this provider.
   DateTime get start;
 
@@ -445,15 +445,15 @@ mixin MissingListRef on AutoDisposeFutureProviderRef<List<MissingListRecord>> {
   DateTime get end;
 }
 
-class _MissingListProviderElement
-    extends AutoDisposeFutureProviderElement<List<MissingListRecord>>
-    with MissingListRef {
-  _MissingListProviderElement(super.provider);
+class _CiroAnalizProviderElement
+    extends AutoDisposeFutureProviderElement<List<CiroAnalizRecord>>
+    with CiroAnalizRef {
+  _CiroAnalizProviderElement(super.provider);
 
   @override
-  DateTime get start => (origin as MissingListProvider).start;
+  DateTime get start => (origin as CiroAnalizProvider).start;
   @override
-  DateTime get end => (origin as MissingListProvider).end;
+  DateTime get end => (origin as CiroAnalizProvider).end;
 }
 
 // ignore_for_file: type=lint

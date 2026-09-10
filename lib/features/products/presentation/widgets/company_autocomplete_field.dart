@@ -7,7 +7,7 @@ import '../../application/products_provider.dart';
 import '../../data/models/company.dart';
 
 /// Firma otomatik tamamlama alanı — paylaşılan (`product_form_screen.dart`
-/// "Diğer Detaylar" formu + `missing_list_tab.dart` Eksik Listesi Firma
+/// "Diğer Detaylar" formu + `ciro_analiz_tab.dart` Ciro Analiz Firma
 /// hücresi tıkla-düzenle akışı AYNI widget'ı kullanır).
 ///
 /// KURAL: girilen önek (starts with, Türkçe-duyarlı) TAM 1 firmayla eşleşirse

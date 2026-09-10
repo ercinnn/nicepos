@@ -2,7 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/models/best_seller_record.dart';
 import '../data/models/daily_report_summary.dart';
 import '../data/models/discount_recommendation.dart';
-import '../data/models/missing_list_record.dart';
+import '../data/models/ciro_analiz_record.dart';
 import '../data/models/product_analysis_record.dart';
 import '../data/models/product_sale_record.dart';
 import '../data/repositories/report_repository.dart';
@@ -31,17 +31,17 @@ Future<List<BestSellerRecord>> bestSellers(
       .fetchBestSellers(start: start, end: end, minPrice: minPrice);
 }
 
-// ─── Eksik Listesi (Raporlar 6. sekme) ───────────────────────────────────────
+// ─── Ciro Analiz (Analiz sayfası 3. sekme) ────────────────────────────────────
 // Tarih aralığı parametreli; adet azalan sıralı liste + Firma + güncel stok.
 @riverpod
-Future<List<MissingListRecord>> missingList(
-  MissingListRef ref, {
+Future<List<CiroAnalizRecord>> ciroAnaliz(
+  CiroAnalizRef ref, {
   required DateTime start,
   required DateTime end,
 }) {
   return ref
       .watch(reportRepositoryProvider)
-      .fetchMissingList(start: start, end: end);
+      .fetchCiroAnaliz(start: start, end: end);
 }
 
 // ─── Tarihsel rapor için parametre sınıfı ────────────────────────────────────

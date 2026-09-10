@@ -424,8 +424,8 @@ class ProductRepository {
 
   // Yalnızca description'ı (Firma & GG/AA/YY & Durum biçimi) günceller — TEK
   // round-trip (`updatePrice1`/`setOnlineActive` ile aynı hedefli-update
-  // deseni). Eksik Listesi Firma hücresi tıkla-düzenle akışı (bkz.
-  // missing_list_tab.dart) yeni description'ı `composeDescriptionWithFirma()`
+  // deseni). Ciro Analiz Firma hücresi tıkla-düzenle akışı (bkz.
+  // ciro_analiz_tab.dart) yeni description'ı `composeDescriptionWithFirma()`
   // ile ÖNCEDEN elindeki (rapor satırından gelen) ham description'dan
   // istemci tarafında kurup buraya hazır geçirir — önceki sürüm burada önce
   // bir SELECT ile description'ı taze çekiyordu (2 round-trip), bu da Firma
@@ -539,7 +539,7 @@ class ProductRepository {
 /// biçimdeyse (son parça 'Y' veya 'G') tarih/durum AYNEN korunur; aksi halde
 /// (boş/eski serbest metin) tarih=bugün, durum='Y' varsayılır — geriye dönük
 /// uyumluluk için `_applyDescription`'ın fallback'iyle birebir aynı. Public
-/// (top-level, `_` önekisiz) — `missing_list_tab.dart` Firma hücresi
+/// (top-level, `_` önekisiz) — `ciro_analiz_tab.dart` Firma hücresi
 /// tıkla-düzenle akışı elindeki (rapor satırından gelen) ham description'ı
 /// bu fonksiyonla istemci tarafında yeniden kurup `ProductRepository.
 /// updateDescription()`'a hazır geçirir (ekstra bir SELECT round-trip'i

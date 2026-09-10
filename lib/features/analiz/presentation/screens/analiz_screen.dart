@@ -14,6 +14,7 @@ import '../../../products/presentation/widgets/live_product_search_field.dart';
 import '../../../reports/application/reports_provider.dart';
 import '../../../reports/data/models/discount_recommendation.dart';
 import '../../../reports/data/models/product_sale_record.dart';
+import '../../../reports/presentation/screens/ciro_analiz_tab.dart';
 import '../../../sales/data/models/sale.dart';
 import '../../../sales/data/repositories/sales_repository.dart';
 import '../../../sales/presentation/screens/sale_edit_screen.dart';
@@ -35,7 +36,7 @@ class AnalizScreen extends ConsumerStatefulWidget {
 
 class _AnalizScreenState extends ConsumerState<AnalizScreen>
     with SingleTickerProviderStateMixin {
-  late final _tabController = TabController(length: 2, vsync: this);
+  late final _tabController = TabController(length: 3, vsync: this);
 
   final _barcodeCtrl = TextEditingController();
   final _barcodeFocus = FocusNode();
@@ -155,6 +156,7 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen>
           tabs: const [
             Tab(text: 'Ürün Analizi'),
             Tab(text: 'İndirim Önerileri'),
+            Tab(text: 'Ciro Analiz'),
           ],
         ),
         const SizedBox(height: AppSizes.space12),
@@ -180,6 +182,7 @@ class _AnalizScreenState extends ConsumerState<AnalizScreen>
               _DiscountRecommendationsTab(
                 onOpenProduct: _openFromRecommendation,
               ),
+              const CiroAnalizTab(),
             ],
           ),
         ),
