@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
@@ -40,10 +41,24 @@ import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
 /// `TapRegion` öneriye tıklamayı pointer-down anında "dışarı" sayıp seçim
 /// tamamlanmadan kaydedip controller'ı erken dispose ederdi; `_select()` odağı
 /// KORUDUĞUNDAN (`requestFocus()`) öneriye tıklamak odak kaybı SAYILMAZ.
-/// Kaydetme `ProductRepository.updateFirma()` ile ürünün `description`
-/// alanının firma parçasını değiştirir (tarih/durum KORUNUR), ardından
-/// `ciroAnalizProvider` invalidate edilip taze veriyle güncellenir (Analiz
-/// sayfasındaki `productSalesHistoryProvider` invalidate deseniyle AYNI).
+/// Kaydetme `ProductRepository.updateDescription()` ile ürünün `description`
+/// alanının firma parçasını değiştirir (tarih/durum KORUNUR).
+///
+/// **Stok hücresi tıkla-düzenle (yalnız masaüstü, KARAR — kullanıcı isteği):**
+/// Firma hücresiyle BİREBİR aynı iskelet (ayrı bir `_editingStockRecord`/
+/// `_stockCtrl`/`_stockFocus` durum üçlüsü) — sayısal `TextField`, kaydetme
+/// Enter'da VEYA odak kaybında. `ProductRepository.updateStockQuantity()` ile
+/// ürünün `products.stock_quantity` alanını DOĞRUDAN (satış/description'a
+/// dokunmadan) günceller — bu tablodaki "Stok" değeri zaten `products`
+/// tablosundan geldiğinden (bkz. model doc'u) kaydetme aynı zamanda ürünün
+/// GERÇEK stok bilgisini de günceller, ayrı bir senkron adımı GEREKMEZ.
+///
+/// **Her iki hücre de kaydettikten sonra:** sunucudan taze veri çekmek YERİNE
+/// (tüm `fetchCiroAnaliz` sorgusu — çok sayfalı `sale_items` sorgusu — baştan
+/// çalışır, TÜM tabloyu spinner'a düşürürdü) yalnız değişen hücre yerel bir
+/// override map'i üzerinden yamanır; `ciroAnalizProvider` bir sonraki GERÇEK
+/// sebeple (tarih aralığı değişince) yeniden çektiğinde zaten güncel veriyle
+/// örtüşür.
 ///
 /// **Sayfalama:** `_pageSize` (100) — tüm liste tek seferde çekilir
 /// (`records`), sayfalama yalnız GÖRÜNTÜLEME amaçlı istemci tarafı dilimleme
@@ -190,11 +205,93 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
     }
   }
 
+  // Stok hücresi tıkla-düzenle — Firma hücresiyle BİREBİR aynı iskelet (bkz.
+  // yukarıdaki class doc'u), yalnız sayısal `TextField` + hedef alan
+  // `products.stock_quantity`. Ayrı bir override map'i (`_stockOverrides`)
+  // kullanılır ki Firma ve Stok birbirinden bağımsız kaydedilebilsin.
+  final Map<String, num> _stockOverrides = {};
+
+  List<CiroAnalizRecord> _applyStockOverrides(List<CiroAnalizRecord> records) {
+    if (_stockOverrides.isEmpty) return records;
+    return records.map((r) {
+      final stock = _stockOverrides[r.productId];
+      if (stock == null) return r;
+      return r.copyWith(stockQuantity: stock);
+    }).toList();
+  }
+
+  CiroAnalizRecord? _editingStockRecord;
+  TextEditingController? _stockCtrl;
+  FocusNode? _stockFocus;
+  bool _savingStock = false;
+
+  void _enterStockEdit(CiroAnalizRecord r) {
+    _stockFocus?.removeListener(_onStockFocusChange);
+    _stockCtrl?.dispose();
+    _stockFocus?.dispose();
+    final focus = FocusNode();
+    focus.addListener(_onStockFocusChange);
+    setState(() {
+      _editingStockRecord = r;
+      _stockCtrl = TextEditingController(text: _formatStockForEdit(r.stockQuantity));
+      _stockFocus = focus;
+    });
+  }
+
+  void _onStockFocusChange() {
+    if (_stockFocus != null && !_stockFocus!.hasFocus) {
+      final r = _editingStockRecord;
+      if (r != null) _saveStock(r);
+    }
+  }
+
+  void _exitStockEdit() {
+    _stockFocus?.removeListener(_onStockFocusChange);
+    _stockCtrl?.dispose();
+    _stockFocus?.dispose();
+    setState(() {
+      _editingStockRecord = null;
+      _stockCtrl = null;
+      _stockFocus = null;
+    });
+  }
+
+  Future<void> _saveStock(CiroAnalizRecord r) async {
+    final ctrl = _stockCtrl;
+    if (ctrl == null || _editingStockRecord?.productId != r.productId) return;
+    final newValue = _parseStockInput(ctrl.text);
+    if (newValue == null || newValue == r.stockQuantity) {
+      _exitStockEdit();
+      return;
+    }
+    setState(() => _savingStock = true);
+    try {
+      await ref
+          .read(productRepositoryProvider)
+          .updateStockQuantity(r.productId, newValue);
+      setState(() => _stockOverrides[r.productId] = newValue);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Stok güncellenemedi: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _savingStock = false);
+        _exitStockEdit();
+      }
+    }
+  }
+
   @override
   void dispose() {
     _firmaFocus?.removeListener(_onFirmaFocusChange);
     _firmaCtrl?.dispose();
     _firmaFocus?.dispose();
+    _stockFocus?.removeListener(_onStockFocusChange);
+    _stockCtrl?.dispose();
+    _stockFocus?.dispose();
     super.dispose();
   }
 
@@ -266,6 +363,7 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
         _page = 0;
         _firmaNameOverrides.clear();
         _firmaDescriptionOverrides.clear();
+        _stockOverrides.clear();
       });
     }
   }
@@ -283,6 +381,7 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
         _page = 0;
         _firmaNameOverrides.clear();
         _firmaDescriptionOverrides.clear();
+        _stockOverrides.clear();
       });
     }
   }
@@ -316,10 +415,12 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
                   'Seçili aralıkta satılan ürün bulunamadı.',
                 );
               }
-              // Firma kaydı sonrası tam sunucu round-trip'i YERİNE yerel
-              // yama (bkz. _firmaNameOverrides doc'u) — yalnız değişen
-              // hücre(ler) güncellenmiş görünür, tablo yeniden yüklenmez.
-              final records = _applyFirmaOverrides(rawRecords);
+              // Firma/Stok kaydından sonra tam sunucu round-trip'i YERİNE
+              // yerel yama (bkz. _firmaNameOverrides/_stockOverrides doc'u) —
+              // yalnız değişen hücre(ler) güncellenmiş görünür, tablo
+              // yeniden yüklenmez.
+              final records =
+                  _applyStockOverrides(_applyFirmaOverrides(rawRecords));
               final sorted = _sortRecords(records);
               final topProductIds = _computeTop80ProductIds(records);
 
@@ -376,6 +477,12 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
                               savingFirma: _savingFirma,
                               onFirmaTap: _enterFirmaEdit,
                               onFirmaSave: _saveFirma,
+                              editingStockProductId: _editingStockRecord?.productId,
+                              stockController: _stockCtrl,
+                              stockFocusNode: _stockFocus,
+                              savingStock: _savingStock,
+                              onStockTap: _enterStockEdit,
+                              onStockSave: _saveStock,
                             ),
                     ),
                     const SizedBox(height: AppSizes.space12),
@@ -514,6 +621,15 @@ class _CiroAnalizTable extends StatelessWidget {
   final void Function(CiroAnalizRecord r) onFirmaTap;
   final void Function(CiroAnalizRecord r) onFirmaSave;
 
+  // Stok hücresi tıkla-düzenle — Firma ile BİREBİR aynı desen, bkz.
+  // _CiroAnalizTabState.
+  final String? editingStockProductId;
+  final TextEditingController? stockController;
+  final FocusNode? stockFocusNode;
+  final bool savingStock;
+  final void Function(CiroAnalizRecord r) onStockTap;
+  final void Function(CiroAnalizRecord r) onStockSave;
+
   const _CiroAnalizTable({
     required this.records,
     required this.startIndex,
@@ -527,6 +643,12 @@ class _CiroAnalizTable extends StatelessWidget {
     required this.savingFirma,
     required this.onFirmaTap,
     required this.onFirmaSave,
+    required this.editingStockProductId,
+    required this.stockController,
+    required this.stockFocusNode,
+    required this.savingStock,
+    required this.onStockTap,
+    required this.onStockSave,
   });
 
   // Sütun sırası: #(0, sıralanamaz) · Ürün(1) · Adet(2) · Stok(3, öne alındı
@@ -635,14 +757,7 @@ class _CiroAnalizTable extends StatelessWidget {
                 fontFeatures: [FontFeature.tabularFigures()],
               ),
             )),
-            DataCell(Text(
-              formatNumber(r.stockQuantity),
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: lowStock ? AppColors.danger : AppColors.textPrimary,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            )),
+            DataCell(_buildStockCell(r, lowStock)),
             DataCell(Text(
               formatCurrency(r.totalRevenue),
               style: const TextStyle(
@@ -709,6 +824,65 @@ class _CiroAnalizTable extends StatelessWidget {
           style: const TextStyle(
             fontSize: 13,
             color: AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Stok hücresi: Firma hücresiyle BİREBİR aynı iskelet (normalde tıkla-
+  // düzenlemeye geçen salt-okunur `Text`; düzenlenen satırda sayısal
+  // `TextField`). Kaydetme odak kaybında VEYA Enter'da (bkz.
+  // _CiroAnalizTabState._onStockFocusChange).
+  Widget _buildStockCell(CiroAnalizRecord r, bool lowStock) {
+    if (editingStockProductId == r.productId &&
+        stockController != null &&
+        stockFocusNode != null) {
+      if (savingStock) {
+        return const SizedBox(
+          width: 80,
+          height: 20,
+          child: Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      }
+      return SizedBox(
+        width: 80,
+        child: TextField(
+          controller: stockController!,
+          focusNode: stockFocusNode!,
+          autofocus: true,
+          textAlign: TextAlign.right,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: _stockInputFormatters,
+          onSubmitted: (_) => onStockSave(r),
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+          decoration: const InputDecoration(
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(vertical: AppSizes.space6),
+          ),
+        ),
+      );
+    }
+    return InkWell(
+      onTap: () => onStockTap(r),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSizes.space6),
+        child: Text(
+          formatNumber(r.stockQuantity),
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: lowStock ? AppColors.danger : AppColors.textPrimary,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ),
@@ -854,3 +1028,25 @@ class _CiroAnalizMobileList extends StatelessWidget {
 
 // Ciro Payı hücresi biçimi: nokta sonrası daima 2 hane, boşluksuz (%2.50).
 String _formatRevenueShare(num value) => '%${value.toStringAsFixed(2)}';
+
+// Stok tıkla-düzenle: `formatNumber`'ın binlik ayracı (`1.294`) düzenleme
+// alanında KAFA KARIŞTIRIR (ondalık noktasıyla karışabilir) — bu yüzden
+// `products_list_screen.dart` `_fmtNum` ile AYNI sade biçim kullanılır.
+String _formatStockForEdit(num v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+// Yalnız `_parseStockInput` içinde kullanılan gevşek ayrıştırma — ',' ve '.'
+// ikisi de ondalık ayracı sayılır (kullanıcı hangisini yazarsa yazsın).
+num? _parseStockInput(String s) => num.tryParse(s.trim().replaceAll(',', '.'));
+
+// `products_list_screen.dart` `_decimalInputFormatters` ile AYNI desen —
+// yalnız rakam/nokta/virgül, en fazla bir ondalık ayracı. Eksi işareti
+// KASITLI izin verilmez: bu hücre bir SAYIM/düzeltme girişi, satışlardan
+// doğan negatif stok (bkz. tablodaki kırmızı değerler) buradan elle
+// girilmez.
+final _stockInputFormatters = <TextInputFormatter>[
+  FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+  TextInputFormatter.withFunction(
+    (o, n) => RegExp(r'[.,]').allMatches(n.text).length > 1 ? o : n,
+  ),
+];

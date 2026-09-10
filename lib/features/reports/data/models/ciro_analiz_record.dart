@@ -33,14 +33,18 @@ class CiroAnalizRecord {
     this.rawDescription,
   });
 
-  CiroAnalizRecord copyWith({String? companyName, String? rawDescription}) {
+  CiroAnalizRecord copyWith({
+    String? companyName,
+    String? rawDescription,
+    num? stockQuantity,
+  }) {
     return CiroAnalizRecord(
       productId: productId,
       name: name,
       barcode: barcode,
       companyName: companyName ?? this.companyName,
       quantitySold: quantitySold,
-      stockQuantity: stockQuantity,
+      stockQuantity: stockQuantity ?? this.stockQuantity,
       totalRevenue: totalRevenue,
       revenueSharePercent: revenueSharePercent,
       rawDescription: rawDescription ?? this.rawDescription,

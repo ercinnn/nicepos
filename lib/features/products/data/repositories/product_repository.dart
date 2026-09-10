@@ -413,6 +413,14 @@ class ProductRepository {
         .update({'price1': newPrice}).eq('id', productId);
   }
 
+  // Yalnızca stok adedini kalıcı olarak günceller — updatePrice1 ile aynı
+  // hedefli-update deseni (Ciro Analiz Stok hücresi tıkla-düzenle akışı).
+  Future<void> updateStockQuantity(String productId, num newStock) async {
+    await _client
+        .from('products')
+        .update({'stock_quantity': newStock}).eq('id', productId);
+  }
+
   // Yalnızca online mağaza görünürlüğünü değiştirir (Online Satış kontrol
   // paneli + ürün formundaki "Online Aç" anahtarı ortak metod) — updatePrice1
   // ile aynı hedefli-update deseni, diğer alanları etkilemez.
