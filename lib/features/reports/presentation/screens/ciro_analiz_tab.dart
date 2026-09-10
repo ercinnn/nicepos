@@ -10,6 +10,7 @@ import '../../../products/application/products_provider.dart';
 import '../../../products/data/repositories/product_repository.dart'
     show composeDescriptionWithFirma;
 import '../../../products/presentation/widgets/company_autocomplete_field.dart';
+import '../../application/eksik_listesi_provider.dart';
 import '../../application/reports_provider.dart';
 import '../../data/models/ciro_analiz_record.dart';
 import 'daily_report_screen.dart' show ReportTableCard, ReportEmptyCard;
@@ -92,6 +93,52 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
   bool _sortAscending = false;
 
   int _page = 0;
+
+  // Stok/Satış filtre haneleri (kullanıcı isteği: tabloyu düşük stok + yüksek
+  // satış ürünlerine daraltma) — istemci tarafında `_applyRangeFilters` ile
+  // uygulanır, sunucuya gitmez (`records` zaten tek seferde tam çekili).
+  // "Stok ≤ X" VE "Satış ≥ Y" birlikte AND ile uygulanır.
+  final _stockMaxCtrl = TextEditingController();
+  final _salesMinCtrl = TextEditingController();
+  num? _stockMaxFilter;
+  num? _salesMinFilter;
+
+  // Filtrelenmiş sonuçtaki firmaları seçip (inline `FilterChip`'ler) Eksik
+  // Listesi'ne aktarmak için — bkz. `_buildCompanyPicker`/`_addSelectedCompaniesToEksikListesi`.
+  final Set<String> _selectedCompanies = {};
+
+  void _onFilterFieldChanged() {
+    setState(() {
+      _stockMaxFilter = _parseStockInput(_stockMaxCtrl.text);
+      _salesMinFilter = _parseStockInput(_salesMinCtrl.text);
+      _page = 0;
+      _selectedCompanies.clear();
+    });
+  }
+
+  List<CiroAnalizRecord> _applyRangeFilters(List<CiroAnalizRecord> records) {
+    if (_stockMaxFilter == null && _salesMinFilter == null) return records;
+    return records.where((r) {
+      final stockOk = _stockMaxFilter == null || r.stockQuantity <= _stockMaxFilter!;
+      final salesOk = _salesMinFilter == null || r.quantitySold >= _salesMinFilter!;
+      return stockOk && salesOk;
+    }).toList();
+  }
+
+  Future<void> _addSelectedCompaniesToEksikListesi(
+    List<CiroAnalizRecord> filtered,
+  ) async {
+    if (_selectedCompanies.isEmpty) return;
+    final matches =
+        filtered.where((r) => _selectedCompanies.contains(r.companyName)).toList();
+    ref.read(eksikListesiControllerProvider.notifier).addAll(matches);
+    setState(() => _selectedCompanies.clear());
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${matches.length} ürün Eksik Listesi\'ne eklendi.')),
+      );
+    }
+  }
 
   // Firma kaydından sonra ekranı YALNIZ o hücre için güncellemek üzere:
   // sunucudan taze veri çekmek (`ref.invalidate(ciroAnalizProvider(...))`)
@@ -292,6 +339,8 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
     _stockFocus?.removeListener(_onStockFocusChange);
     _stockCtrl?.dispose();
     _stockFocus?.dispose();
+    _stockMaxCtrl.dispose();
+    _salesMinCtrl.dispose();
     super.dispose();
   }
 
@@ -404,6 +453,8 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
           _buildMobileControls()
         else
           _buildDesktopControls(),
+        const SizedBox(height: AppSizes.space12),
+        _buildFilterRow(),
         const SizedBox(height: AppSizes.space16),
         Expanded(
           child: recordsAsync.when(
@@ -419,9 +470,18 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
               // yerel yama (bkz. _firmaNameOverrides/_stockOverrides doc'u) —
               // yalnız değişen hücre(ler) güncellenmiş görünür, tablo
               // yeniden yüklenmez.
-              final records =
+              final withOverrides =
                   _applyStockOverrides(_applyFirmaOverrides(rawRecords));
+              // Stok/Satış filtreleri (varsa) — bkz. `_applyRangeFilters`.
+              final records = _applyRangeFilters(withOverrides);
+              if (records.isEmpty) {
+                return const ReportEmptyCard(
+                  'Filtrelere uyan ürün bulunamadı.',
+                );
+              }
               final sorted = _sortRecords(records);
+              // %80 vurgusu FİLTRELENMİŞ sete göre hesaplanır — ekranda
+              // görünen (filtrelenmiş) tabloyla tutarlı kalsın.
               final topProductIds = _computeTop80ProductIds(records);
 
               final pageCount = (sorted.length / _pageSize).ceil();
@@ -429,6 +489,9 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
               final startIdx = safePage * _pageSize;
               final endIdx = (startIdx + _pageSize).clamp(0, sorted.length);
               final pageRecords = sorted.sublist(startIdx, endIdx);
+
+              final filterActive =
+                  _stockMaxFilter != null || _salesMinFilter != null;
 
               return SingleChildScrollView(
                 child: Column(
@@ -457,6 +520,10 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
                         ],
                       ),
                     ),
+                    if (filterActive) ...[
+                      _buildCompanyPicker(records),
+                      const SizedBox(height: AppSizes.space12),
+                    ],
                     ReportTableCard(
                       child: isMobile
                           ? _CiroAnalizMobileList(
@@ -599,6 +666,116 @@ class _CiroAnalizTabState extends ConsumerState<CiroAnalizTab> {
           ],
         ),
       ],
+    );
+  }
+
+  // ── Stok/Satış filtre haneleri ─────────────────────────────────────────────
+  // "Stok ≤" bu sayıya eşit VE bu sayıdan az olan ürünleri, "Satış ≥" bu
+  // sayıya eşit VE yüksek olan ürünleri bırakır (ikisi birlikte AND).
+  Widget _buildFilterRow() {
+    Widget field(String label, TextEditingController ctrl) => SizedBox(
+          width: 150,
+          child: TextField(
+            controller: ctrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: _stockInputFormatters,
+            onChanged: (_) => _onFilterFieldChanged(),
+            style: const TextStyle(fontSize: 13),
+            decoration: InputDecoration(
+              labelText: label,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSizes.space12,
+                vertical: AppSizes.space8,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppSizes.radiusSm),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+            ),
+          ),
+        );
+
+    return Wrap(
+      spacing: AppSizes.space12,
+      runSpacing: AppSizes.space8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        field('Stok ≤', _stockMaxCtrl),
+        field('Satış ≥', _salesMinCtrl),
+        if (_stockMaxFilter != null || _salesMinFilter != null)
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _stockMaxCtrl.clear();
+                _salesMinCtrl.clear();
+                _stockMaxFilter = null;
+                _salesMinFilter = null;
+                _page = 0;
+                _selectedCompanies.clear();
+              });
+            },
+            icon: const Icon(Icons.close, size: 16),
+            label: const Text('Filtreyi Temizle'),
+          ),
+      ],
+    );
+  }
+
+  // ── Firma seçici — filtre sonucundaki firmaları yan yana `FilterChip` +
+  // "Eksik Listesine Ekle" butonuyla gösterir (bkz. `_addSelectedCompaniesToEksikListesi`).
+  Widget _buildCompanyPicker(List<CiroAnalizRecord> filtered) {
+    final companies = filtered.map((r) => r.companyName).toSet().toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return Container(
+      padding: const EdgeInsets.all(AppSizes.space12),
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Filtrelenen ürünlerdeki firmalar — Eksik Listesi\'ne aktarmak '
+            'istediklerinizi seçin:',
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: AppSizes.space8),
+          Wrap(
+            spacing: AppSizes.space8,
+            runSpacing: AppSizes.space8,
+            children: [
+              for (final company in companies)
+                FilterChip(
+                  label: Text(company),
+                  selected: _selectedCompanies.contains(company),
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedCompanies.add(company);
+                      } else {
+                        _selectedCompanies.remove(company);
+                      }
+                    });
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSizes.space12),
+          FilledButton.icon(
+            onPressed: _selectedCompanies.isEmpty
+                ? null
+                : () => _addSelectedCompaniesToEksikListesi(filtered),
+            icon: const Icon(Icons.playlist_add, size: 18),
+            label: Text(
+              'Eksik Listesine Ekle (${_selectedCompanies.length} firma)',
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
