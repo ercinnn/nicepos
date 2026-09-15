@@ -748,7 +748,7 @@ String _buildWideHtml({
     align-items: center;
     justify-content: center;
   }
-  .wbc svg { width: 100%; height: 100%; display: block; }
+  .wbc svg { width: 50%; height: 100%; display: block; }
   /* Alt satır: barkod no SOLDA · tarih SAĞDA. */
   .wbottom {
     flex: 0 0 9%;

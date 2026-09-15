@@ -5338,13 +5338,19 @@ class _WideLabelCell extends StatelessWidget {
                   flex: 13,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: BarcodeWidget(
-                      barcode: bc.Barcode.code128(),
-                      data: s.barcode,
-                      drawText: false,
-                      color: Colors.black,
-                      errorBuilder: (context, error) =>
-                          const SizedBox.shrink(),
+                    child: Center(
+                      child: FractionallySizedBox(
+                        widthFactor: 0.5,
+                        heightFactor: 1,
+                        child: BarcodeWidget(
+                          barcode: bc.Barcode.code128(),
+                          data: s.barcode,
+                          drawText: false,
+                          color: Colors.black,
+                          errorBuilder: (context, error) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
                   ),
                 ),

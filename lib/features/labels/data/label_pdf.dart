@@ -662,11 +662,20 @@ pw.Widget _wideCell(LabelSlot? slot, pw.MemoryImage? logoImage) {
           child: pw.Padding(
             padding: const pw.EdgeInsets.symmetric(vertical: 2),
             child: hasBarcode
-                ? pw.BarcodeWidget(
-                    barcode: bc.Barcode.code128(),
-                    data: slot.barcode,
-                    drawText: false,
-                    color: PdfColors.black,
+                ? pw.Row(
+                    children: [
+                      pw.Expanded(child: pw.SizedBox()),
+                      pw.Expanded(
+                        flex: 2,
+                        child: pw.BarcodeWidget(
+                          barcode: bc.Barcode.code128(),
+                          data: slot.barcode,
+                          drawText: false,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                      pw.Expanded(child: pw.SizedBox()),
+                    ],
                   )
                 : pw.SizedBox(),
           ),
