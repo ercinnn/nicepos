@@ -17,7 +17,15 @@ import '../../data/models/product_group.dart';
 /// tek bir SQL fonksiyonu, kullanıcının kendi ürün kataloğuyla "öğrenir".
 /// Kullanıcı öneriyi gözden geçirip onaylar/düzeltir, sonra toplu uygulanır.
 class AiGroupingDialog extends ConsumerStatefulWidget {
-  const AiGroupingDialog({super.key});
+  /// Ekrandaki o anki arama/filtre kriterlerine uyan, grubu boş ürünlerin
+  /// id kümesi (bkz. products_list_screen.dart çağrı noktası — `fetchAll`
+  /// Excel Aktar ile AYNI desende, `_query`/`_selectedGroupId`/`_filters`
+  /// geçirilerek hesaplanır). AI önerileri ve "Sınıflandırılamadı" listesi
+  /// bu kümenin DIŞINDAKİ ürünleri dikkate ALMAZ — filtre dışı ürünler
+  /// gruplandırma tercihine karışmaz.
+  final Set<String> candidateProductIds;
+
+  const AiGroupingDialog({super.key, required this.candidateProductIds});
 
   @override
   ConsumerState<AiGroupingDialog> createState() => _AiGroupingDialogState();
@@ -90,6 +98,15 @@ class _AiGroupingDialogState extends ConsumerState<AiGroupingDialog> {
     final unassignedAsync = ref.watch(unassignedGroupProductsProvider);
     final groups = ref.watch(productGroupsProvider).valueOrNull ?? const <ProductGroup>[];
 
+    // Yalnız ekrandaki o anki arama/filtreye uyan ürünler dikkate alınır —
+    // filtre dışı kalan ürünler için üretilen öneriler (RPC tüm etiketsiz
+    // ürünler için hesaplar) burada elenir. `actions`'taki "Uygula" butonu
+    // da bu filtrelenmiş listeyi kullanır.
+    final rawSuggestions = suggestionsAsync.valueOrNull;
+    final filteredSuggestions = (rawSuggestions == null || widget.candidateProductIds.isEmpty)
+        ? const <AiGroupSuggestion>[]
+        : rawSuggestions.where((s) => widget.candidateProductIds.contains(s.productId)).toList();
+
     return AlertDialog(
       title: Row(
         children: [
@@ -111,22 +128,36 @@ class _AiGroupingDialogState extends ConsumerState<AiGroupingDialog> {
           error: (e, _) => Center(
             child: Text('Hata: $e', style: const TextStyle(color: AppColors.danger)),
           ),
-          data: (suggestions) {
+          data: (_) {
+            final suggestions = filteredSuggestions;
             _initApprovalIfNeeded(suggestions);
             final unassigned = unassignedAsync.valueOrNull;
             final suggestedIds = suggestions.map((s) => s.productId).toSet();
             final unclassified = unassigned == null
                 ? const <Map<String, String>>[]
-                : unassigned.where((p) => !suggestedIds.contains(p['id'])).toList();
+                : unassigned
+                    .where((p) =>
+                        !suggestedIds.contains(p['id']) && widget.candidateProductIds.contains(p['id']))
+                    .toList();
+
+            if (widget.candidateProductIds.isEmpty) {
+              return const EmptyState(
+                icon: Icons.psychology_outlined,
+                title: 'Aday ürün yok',
+                message: 'Geçerli arama/filtreye uyan, grubu boş bir ürün yok. '
+                    'Filtreleri değiştirip tekrar deneyin.',
+              );
+            }
 
             if (suggestions.isEmpty) {
               return EmptyState(
                 icon: Icons.psychology_outlined,
                 title: 'Öneri üretilemedi',
-                message: (unassigned != null && unassigned.isEmpty)
-                    ? 'Grubu boş ürün yok — hepsi zaten gruplanmış.'
-                    : 'Yeterince benzer, zaten gruplanmış bir ürün bulunamadı. '
-                        'Önce birkaç ürünü elle gruplandırın, AI bunlardan öğrenir.',
+                message: (unassigned != null &&
+                        !unassigned.any((p) => widget.candidateProductIds.contains(p['id'])))
+                    ? 'Filtrelenmiş ürünler arasında grubu boş ürün yok — hepsi zaten gruplanmış.'
+                    : 'Filtrelenmiş ürünler arasında yeterince benzer, zaten gruplanmış bir ürün '
+                        'bulunamadı. Önce birkaç ürünü elle gruplandırın, AI bunlardan öğrenir.',
               );
             }
 
@@ -217,9 +248,9 @@ class _AiGroupingDialogState extends ConsumerState<AiGroupingDialog> {
           child: const Text('Vazgeç'),
         ),
         ElevatedButton.icon(
-          onPressed: _applying || suggestionsAsync.valueOrNull == null || _approved.isEmpty
+          onPressed: _applying || rawSuggestions == null || _approved.isEmpty
               ? null
-              : () => _apply(suggestionsAsync.value!),
+              : () => _apply(filteredSuggestions),
           icon: _applying
               ? const SizedBox(
                   width: 16,

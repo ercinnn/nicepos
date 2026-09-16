@@ -720,8 +720,23 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
               onPressed: _offline
                   ? () => _offlineUnavailable(context)
                   : () async {
+                      // Ekrandaki o anki arama/filtreye (Excel Aktar ile AYNI
+                      // `fetchAll` çağrısı) uyan, grubu boş ürünlerin id'leri —
+                      // AI önerisi yalnız bu küme içinden üretilir, filtre
+                      // dışındaki ürünler dikkate alınmaz.
+                      final filtered = await ref.read(productRepositoryProvider).fetchAll(
+                            query: _query, groupId: _selectedGroupId, filters: _filters,
+                            sortColumn: _sortColumn, sortAscending: _sortAscending,
+                            activeOnly: widget.activeOnly);
+                      if (!mounted) return;
+                      final candidateIds = filtered
+                          .where((p) => p.groupId == null)
+                          .map((p) => p.id)
+                          .toSet();
                       await showDialog(
-                          context: context, builder: (_) => const AiGroupingDialog());
+                          // ignore: use_build_context_synchronously
+                          context: context,
+                          builder: (_) => AiGroupingDialog(candidateProductIds: candidateIds));
                       if (!mounted) return;
                       ref.invalidate(productGroupsProvider);
                       await _loadProducts();
