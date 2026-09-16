@@ -38,14 +38,17 @@ class _AiGroupingDialogState extends ConsumerState<AiGroupingDialog> {
   bool _applying = false;
   String? _resultMessage;
 
-  // Düşük güvenli (<%50) öneriler varsayılan olarak İŞARETSİZ bırakılır —
-  // kısa/az bilgilendirici ürün adlarında trigram benzerliği yanıltıcı
-  // yüksek çıkabilir, kullanıcı bilinçli onaylasın.
+  // Düşük güvenli (<%35 — RPC'nin p_min_similarity tabanıyla AYNI eşik)
+  // öneriler varsayılan olarak İŞARETSİZ bırakılır — kısa/az bilgilendirici
+  // ürün adlarında trigram benzerliği yanıltıcı yüksek çıkabilir, kullanıcı
+  // bilinçli onaylasın. Eşik önceden %50'ydi (kullanıcı isteğiyle düşürüldü).
+  static const _autoApproveThreshold = 0.35;
+
   void _initApprovalIfNeeded(List<AiGroupSuggestion> suggestions) {
     if (_initializedApproval) return;
     _initializedApproval = true;
     for (final s in suggestions) {
-      if (s.confidence >= 0.5) _approved.add(s.productId);
+      if (s.confidence >= _autoApproveThreshold) _approved.add(s.productId);
     }
   }
 
@@ -180,7 +183,7 @@ class _AiGroupingDialogState extends ConsumerState<AiGroupingDialog> {
                     ),
                   ),
                 Text(
-                  '${suggestions.length} öneri bulundu (güveni %50\'nin altında olanlar varsayılan seçili değil).',
+                  '${suggestions.length} öneri bulundu (güveni %35\'in altında olanlar varsayılan seçili değil).',
                   style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
                 const SizedBox(height: AppSizes.space8),
@@ -282,9 +285,34 @@ class _SuggestionRow extends StatelessWidget {
     required this.onOverride,
   });
 
+  // Bir grubun "üst grup"u: kendi parentGroupId'si varsa o, yoksa (kendisi
+  // zaten üst-seviye bir grupsa) kendi id'si — `productGroupsProvider`'daki
+  // HER satır (üst-seviye dahil) tek düz listede geldiğinden bu şekilde
+  // türetiliyor, ayrı bir "üst gruplar" sorgusu gerekmiyor.
+  static String _rootIdOf(ProductGroup g) => g.parentGroupId ?? g.id;
+
+  ProductGroup? _findGroup(String id) {
+    for (final g in groups) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedGroupId = overrideGroupId ?? suggestion.suggestedGroupId;
+    final selectedGroup = _findGroup(selectedGroupId);
+    final rootId = selectedGroup == null ? null : _rootIdOf(selectedGroup);
+
+    final rootOptions = groups.where((g) => g.parentGroupId == null).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    // Bir üst grubun "Grup" seçenekleri: kendisi (alt grubu olmayan/doğrudan
+    // atanan ürünler için) + doğrudan çocukları.
+    final childOptions = rootId == null
+        ? const <ProductGroup>[]
+        : (groups.where((g) => g.id == rootId || g.parentGroupId == rootId).toList()
+          ..sort((a, b) => a.name.compareTo(b.name)));
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSizes.space8),
       child: Row(
@@ -301,26 +329,66 @@ class _SuggestionRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSizes.space12),
+          // Üst Grup seçimi kendi kendini yansıtır (yalnız kullanıcı bu
+          // dropdown'dan seçince değişir) — sabit key, dış etkenle
+          // yeniden kurulmaz.
           Expanded(
-            flex: 3,
-            child: DropdownButtonFormField<String>(
-              initialValue: groups.any((g) => g.id == selectedGroupId) ? selectedGroupId : null,
-              isDense: true,
-              isExpanded: true,
-              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
-              items: groups
-                  .map((g) => DropdownMenuItem<String>(
-                        value: g.id,
-                        child: Text(
-                          g.parentGroupName != null ? '${g.parentGroupName} ▸ ${g.name}' : g.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ))
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) onOverride(v);
-              },
+            flex: 2,
+            child: LayoutBuilder(
+              builder: (context, constraints) => DropdownMenu<String>(
+                key: ValueKey('root-${suggestion.productId}'),
+                width: constraints.maxWidth,
+                initialSelection: rootId,
+                enableFilter: true,
+                requestFocusOnTap: true,
+                label: const Text('Üst Grup', style: TextStyle(fontSize: 11)),
+                textStyle: const TextStyle(fontSize: 12),
+                inputDecorationTheme: const InputDecorationTheme(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  border: OutlineInputBorder(),
+                ),
+                dropdownMenuEntries: rootOptions
+                    .map((g) => DropdownMenuEntry<String>(value: g.id, label: g.name))
+                    .toList(),
+                onSelected: (v) {
+                  // Üst grup değişince varsayılan olarak üst grubun
+                  // KENDİSİ seçilir — "Grup" dropdown'u bunu bir alt grup
+                  // seçenekleri arasından değiştirebilir.
+                  if (v != null) onOverride(v);
+                },
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSizes.space8),
+          // Grup seçenekleri seçili üst gruba göre değişir — üst grup
+          // değiştiğinde `key` de değişip dropdown'u güncel seçenek/değerle
+          // yeniden kurar (aksi halde eski üst gruba ait bir seçim ekranda
+          // asılı kalabilirdi).
+          Expanded(
+            flex: 2,
+            child: LayoutBuilder(
+              builder: (context, constraints) => DropdownMenu<String>(
+                key: ValueKey('group-${suggestion.productId}-$rootId'),
+                width: constraints.maxWidth,
+                enabled: childOptions.isNotEmpty,
+                initialSelection: childOptions.any((g) => g.id == selectedGroupId) ? selectedGroupId : null,
+                enableFilter: true,
+                requestFocusOnTap: true,
+                label: const Text('Grup', style: TextStyle(fontSize: 11)),
+                textStyle: const TextStyle(fontSize: 12),
+                inputDecorationTheme: const InputDecorationTheme(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  border: OutlineInputBorder(),
+                ),
+                dropdownMenuEntries: childOptions
+                    .map((g) => DropdownMenuEntry<String>(value: g.id, label: g.name))
+                    .toList(),
+                onSelected: (v) {
+                  if (v != null) onOverride(v);
+                },
+              ),
             ),
           ),
           const SizedBox(width: AppSizes.space8),
@@ -346,7 +414,7 @@ class _ConfidenceBadge extends StatelessWidget {
     final Color color;
     if (confidence >= 0.8) {
       color = AppColors.success;
-    } else if (confidence >= 0.5) {
+    } else if (confidence >= 0.35) {
       color = AppColors.warning;
     } else {
       color = AppColors.textMuted;
