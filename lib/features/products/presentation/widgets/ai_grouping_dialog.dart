@@ -1,0 +1,336 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../core/constants/app_colors.dart';
+import '../../../../core/constants/app_sizes.dart';
+import '../../../../core/widgets/empty_state.dart';
+import '../../../audit/data/repositories/audit_log_repository.dart';
+import '../../application/products_provider.dart';
+import '../../data/models/ai_group_suggestion.dart';
+import '../../data/models/product_group.dart';
+
+/// "AI ile Grupla" — grubu boş ürünler için `suggest_product_groups` RPC'sinin
+/// (0063_product_group_suggestions.sql, pg_trgm tabanlı k-NN sınıflandırıcı)
+/// önerilerini gösterir. Harici bir API çağrısı YOK — tamamen sunucu tarafında
+/// tek bir SQL fonksiyonu, kullanıcının kendi ürün kataloğuyla "öğrenir".
+/// Kullanıcı öneriyi gözden geçirip onaylar/düzeltir, sonra toplu uygulanır.
+class AiGroupingDialog extends ConsumerStatefulWidget {
+  const AiGroupingDialog({super.key});
+
+  @override
+  ConsumerState<AiGroupingDialog> createState() => _AiGroupingDialogState();
+}
+
+class _AiGroupingDialogState extends ConsumerState<AiGroupingDialog> {
+  final Set<String> _approved = {};
+  final Map<String, String> _overrides = {};
+  bool _initializedApproval = false;
+  bool _applying = false;
+  String? _resultMessage;
+
+  // Düşük güvenli (<%50) öneriler varsayılan olarak İŞARETSİZ bırakılır —
+  // kısa/az bilgilendirici ürün adlarında trigram benzerliği yanıltıcı
+  // yüksek çıkabilir, kullanıcı bilinçli onaylasın.
+  void _initApprovalIfNeeded(List<AiGroupSuggestion> suggestions) {
+    if (_initializedApproval) return;
+    _initializedApproval = true;
+    for (final s in suggestions) {
+      if (s.confidence >= 0.5) _approved.add(s.productId);
+    }
+  }
+
+  void _refresh() {
+    _initializedApproval = false;
+    _approved.clear();
+    _overrides.clear();
+    setState(() => _resultMessage = null);
+    ref.invalidate(aiGroupSuggestionsProvider);
+    ref.invalidate(unassignedGroupProductsProvider);
+  }
+
+  Future<void> _apply(List<AiGroupSuggestion> suggestions) async {
+    final map = <String, String>{};
+    for (final s in suggestions) {
+      if (!_approved.contains(s.productId)) continue;
+      map[s.productId] = _overrides[s.productId] ?? s.suggestedGroupId;
+    }
+    if (map.isEmpty) return;
+
+    setState(() => _applying = true);
+    final result = await ref.read(productRepositoryProvider).bulkAssignGroups(map);
+    if (!mounted) return;
+
+    unawaited(AuditLogRepository().log(
+      action: 'product.ai_group_bulk_assign',
+      entityType: 'product',
+      entityId: 'bulk',
+      summary: '${result.updated} ürün AI önerisiyle gruplandı',
+    ));
+
+    ref.invalidate(productGroupsProvider);
+    ref.invalidate(aiGroupSuggestionsProvider);
+    ref.invalidate(unassignedGroupProductsProvider);
+
+    setState(() {
+      _applying = false;
+      _initializedApproval = false;
+      _approved.clear();
+      _overrides.clear();
+      _resultMessage = result.failed > 0
+          ? '${result.updated} ürün gruplandı, ${result.failed} üründe hata oluştu.'
+          : '${result.updated} ürün gruplandı.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final suggestionsAsync = ref.watch(aiGroupSuggestionsProvider);
+    final unassignedAsync = ref.watch(unassignedGroupProductsProvider);
+    final groups = ref.watch(productGroupsProvider).valueOrNull ?? const <ProductGroup>[];
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.auto_awesome_outlined, color: AppColors.gold),
+          const SizedBox(width: AppSizes.space8),
+          const Expanded(child: Text('AI ile Grupla')),
+          IconButton(
+            tooltip: 'Yenile',
+            icon: const Icon(Icons.refresh),
+            onPressed: _applying ? null : _refresh,
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 820,
+        height: 560,
+        child: suggestionsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(
+            child: Text('Hata: $e', style: const TextStyle(color: AppColors.danger)),
+          ),
+          data: (suggestions) {
+            _initApprovalIfNeeded(suggestions);
+            final unassigned = unassignedAsync.valueOrNull;
+            final suggestedIds = suggestions.map((s) => s.productId).toSet();
+            final unclassified = unassigned == null
+                ? const <Map<String, String>>[]
+                : unassigned.where((p) => !suggestedIds.contains(p['id'])).toList();
+
+            if (suggestions.isEmpty) {
+              return EmptyState(
+                icon: Icons.psychology_outlined,
+                title: 'Öneri üretilemedi',
+                message: (unassigned != null && unassigned.isEmpty)
+                    ? 'Grubu boş ürün yok — hepsi zaten gruplanmış.'
+                    : 'Yeterince benzer, zaten gruplanmış bir ürün bulunamadı. '
+                        'Önce birkaç ürünü elle gruplandırın, AI bunlardan öğrenir.',
+              );
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_resultMessage != null)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSizes.space12),
+                    margin: const EdgeInsets.only(bottom: AppSizes.space12),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppSizes.radiusMd),
+                      border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      _resultMessage!,
+                      style: const TextStyle(color: AppColors.success, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                Text(
+                  '${suggestions.length} öneri bulundu (güveni %50\'nin altında olanlar varsayılan seçili değil).',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: AppSizes.space8),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: suggestions.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1, color: AppColors.divider),
+                    itemBuilder: (context, index) {
+                      final s = suggestions[index];
+                      return _SuggestionRow(
+                        suggestion: s,
+                        approved: _approved.contains(s.productId),
+                        overrideGroupId: _overrides[s.productId],
+                        groups: groups,
+                        onToggle: (v) => setState(() {
+                          if (v) {
+                            _approved.add(s.productId);
+                          } else {
+                            _approved.remove(s.productId);
+                          }
+                        }),
+                        onOverride: (groupId) => setState(() {
+                          _overrides[s.productId] = groupId;
+                          _approved.add(s.productId);
+                        }),
+                      );
+                    },
+                  ),
+                ),
+                if (unclassified.isNotEmpty) ...[
+                  const SizedBox(height: AppSizes.space8),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: Text(
+                      'Sınıflandırılamadı (${unclassified.length})',
+                      style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+                    ),
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 140),
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: unclassified
+                              .map((p) => Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                    child: Text(
+                                      '• ${p['name']}',
+                                      style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                                    ),
+                                  ))
+                              .toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _applying ? null : () => Navigator.pop(context),
+          child: const Text('Vazgeç'),
+        ),
+        ElevatedButton.icon(
+          onPressed: _applying || suggestionsAsync.valueOrNull == null || _approved.isEmpty
+              ? null
+              : () => _apply(suggestionsAsync.value!),
+          icon: _applying
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.check),
+          label: Text('Seçilenleri Uygula (${_approved.length})'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SuggestionRow extends StatelessWidget {
+  final AiGroupSuggestion suggestion;
+  final bool approved;
+  final String? overrideGroupId;
+  final List<ProductGroup> groups;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<String> onOverride;
+
+  const _SuggestionRow({
+    required this.suggestion,
+    required this.approved,
+    required this.overrideGroupId,
+    required this.groups,
+    required this.onToggle,
+    required this.onOverride,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedGroupId = overrideGroupId ?? suggestion.suggestedGroupId;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSizes.space8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Checkbox(value: approved, onChanged: (v) => onToggle(v ?? false)),
+          const SizedBox(width: AppSizes.space8),
+          Expanded(
+            flex: 3,
+            child: Text(
+              suggestion.productName,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: AppSizes.space12),
+          Expanded(
+            flex: 3,
+            child: DropdownButtonFormField<String>(
+              initialValue: groups.any((g) => g.id == selectedGroupId) ? selectedGroupId : null,
+              isDense: true,
+              isExpanded: true,
+              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+              items: groups
+                  .map((g) => DropdownMenuItem<String>(
+                        value: g.id,
+                        child: Text(
+                          g.parentGroupName != null ? '${g.parentGroupName} ▸ ${g.name}' : g.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) onOverride(v);
+              },
+            ),
+          ),
+          const SizedBox(width: AppSizes.space8),
+          Tooltip(
+            message: suggestion.sampleMatches.isEmpty
+                ? 'Eşleşen örnek yok'
+                : 'Benzer bulunan ürünler: ${suggestion.sampleMatches}',
+            child: _ConfidenceBadge(confidence: suggestion.confidence),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfidenceBadge extends StatelessWidget {
+  final double confidence;
+
+  const _ConfidenceBadge({required this.confidence});
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    if (confidence >= 0.8) {
+      color = AppColors.success;
+    } else if (confidence >= 0.5) {
+      color = AppColors.warning;
+    } else {
+      color = AppColors.textMuted;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        '%${(confidence * 100).round()}',
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
+      ),
+    );
+  }
+}

@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/ai_group_suggestion.dart';
 import '../models/product_group.dart';
 
 class ProductGroupRepository {
@@ -51,5 +52,21 @@ class ProductGroupRepository {
     }
     _nameToIdCache[cacheKey] = id;
     return id;
+  }
+
+  // "AI ile Grupla": grubu boş ürünler için pg_trgm tabanlı k-NN
+  // sınıflandırıcının (0063_product_group_suggestions.sql) önerilerini
+  // getirir — harici bir API çağrısı yok, tamamen sunucu tarafında SQL RPC.
+  Future<List<AiGroupSuggestion>> suggestGroupsForUnlabeledProducts({
+    int k = 5,
+    double minSimilarity = 0.35,
+  }) async {
+    final rows = await _client.rpc('suggest_product_groups', params: {
+      'p_k': k,
+      'p_min_similarity': minSimilarity,
+    });
+    return (rows as List)
+        .map((r) => AiGroupSuggestion.fromMap(Map<String, dynamic>.from(r as Map)))
+        .toList();
   }
 }

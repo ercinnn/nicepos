@@ -25,6 +25,7 @@ import '../../application/products_provider.dart';
 import '../../application/sync_status.dart';
 import '../widgets/excel_import_dialog.dart';
 import '../widgets/excel_export.dart';
+import '../widgets/ai_grouping_dialog.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 
 // ── Sağ üst köşe bildirimi (2sn otomatik kaybolur) ─────────────────────────────
@@ -713,6 +714,20 @@ class _ProductsListScreenState extends ConsumerState<ProductsListScreen> {
                     },
               icon: const Icon(Icons.file_upload_outlined),
               label: const Text('Excel İçe Aktar'),
+            ),
+            const SizedBox(width: AppSizes.space8),
+            OutlinedButton.icon(
+              onPressed: _offline
+                  ? () => _offlineUnavailable(context)
+                  : () async {
+                      await showDialog(
+                          context: context, builder: (_) => const AiGroupingDialog());
+                      if (!mounted) return;
+                      ref.invalidate(productGroupsProvider);
+                      await _loadProducts();
+                    },
+              icon: const Icon(Icons.auto_awesome_outlined),
+              label: const Text('AI ile Grupla'),
             ),
             const SizedBox(width: AppSizes.space8),
             ElevatedButton.icon(

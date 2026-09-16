@@ -493,5 +493,45 @@ class _PagedProductsProviderElement
   ProductsQuery get q => (origin as PagedProductsProvider).q;
 }
 
+String _$aiGroupSuggestionsHash() =>
+    r'f173e99d1d2a723da2d45f1858331a88a239b42f';
+
+/// See also [aiGroupSuggestions].
+@ProviderFor(aiGroupSuggestions)
+final aiGroupSuggestionsProvider =
+    AutoDisposeFutureProvider<List<AiGroupSuggestion>>.internal(
+      aiGroupSuggestions,
+      name: r'aiGroupSuggestionsProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$aiGroupSuggestionsHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AiGroupSuggestionsRef =
+    AutoDisposeFutureProviderRef<List<AiGroupSuggestion>>;
+String _$unassignedGroupProductsHash() =>
+    r'5b55024d217f346d1251216eae68adf7aa830101';
+
+/// See also [unassignedGroupProducts].
+@ProviderFor(unassignedGroupProducts)
+final unassignedGroupProductsProvider =
+    AutoDisposeFutureProvider<List<Map<String, String>>>.internal(
+      unassignedGroupProducts,
+      name: r'unassignedGroupProductsProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$unassignedGroupProductsHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef UnassignedGroupProductsRef =
+    AutoDisposeFutureProviderRef<List<Map<String, String>>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

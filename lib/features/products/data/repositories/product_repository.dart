@@ -537,6 +537,48 @@ class ProductRepository {
     await _client.storage.from('product-images').uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
     return _client.storage.from('product-images').getPublicUrl(path);
   }
+
+  /// "AI ile Grupla" — grubu boş ürünlerin adı+id'sini getirir. Öneri
+  /// üretilemeyenleri ("sınıflandırılamadı") hesaplamak için kullanılır:
+  /// bu listeden `suggest_product_groups` RPC'sinin döndürdüğü id'ler
+  /// çıkarılır.
+  Future<List<Map<String, String>>> fetchUnassignedGroupProducts() async {
+    final rows = await _client.from('products').select('id, name').isFilter('group_id', null).order('name');
+    return (rows as List)
+        .map((r) => {'id': (r as Map)['id'] as String, 'name': r['name'] as String})
+        .toList();
+  }
+
+  /// AI grup önerilerinin toplu uygulanması: aynı group_id'ye atanan ürün
+  /// id'leri gruplanır, her benzersiz group_id için `inFilter` ile toplu
+  /// update yapılır (bkz. linkEquivalentBarcode'daki aynı desen) — N adet
+  /// tekli update yerine benzersiz-grup-sayısı-kadar sorgu.
+  /// ⚠️ inFilter id listesi çok uzarsa PostgREST "Bad Request (400)"
+  /// verebilir (bkz. fetchStatuses üstündeki durum-filtresi notu, yaşanmış
+  /// hata) — bu yüzden her grup kendi içinde 100'lük parçalara bölünür.
+  /// Bir chunk hata verirse diğerleri denenmeye devam eder (kısmi başarı
+  /// şeffaf raporlanır, tüm işlem geri alınmaz — DB transaction'ı yok).
+  Future<({int updated, int failed})> bulkAssignGroups(Map<String, String> productIdToGroupId) async {
+    final byGroup = <String, List<String>>{};
+    productIdToGroupId.forEach((productId, groupId) {
+      byGroup.putIfAbsent(groupId, () => []).add(productId);
+    });
+    var updated = 0;
+    var failed = 0;
+    for (final entry in byGroup.entries) {
+      for (var i = 0; i < entry.value.length; i += 100) {
+        final end = (i + 100 < entry.value.length) ? i + 100 : entry.value.length;
+        final chunk = entry.value.sublist(i, end);
+        try {
+          await _client.from('products').update({'group_id': entry.key}).inFilter('id', chunk);
+          updated += chunk.length;
+        } catch (_) {
+          failed += chunk.length;
+        }
+      }
+    }
+    return (updated: updated, failed: failed);
+  }
 }
 
 /// "$firma & $ggaayy & $durum" biçimini koruyarak yalnız firma parçasını

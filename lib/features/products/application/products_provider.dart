@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/local/product_local_cache_dao.dart';
 import '../data/local/reference_cache_dao.dart';
+import '../data/models/ai_group_suggestion.dart';
 import '../data/models/product.dart';
 import '../data/models/product_group.dart';
 import '../data/models/company.dart';
@@ -101,4 +102,19 @@ Future<List<Product>> pagedProducts(PagedProductsRef ref, ProductsQuery q) {
     page: q.page,
     pageSize: q.pageSize,
   );
+}
+
+// "AI ile Grupla": grubu boş ürünler için pg_trgm k-NN sınıflandırıcının
+// önerileri. autoDispose — Dashboard/Görevler provider'larıyla aynı
+// gerekçeyle, diyalog her açıldığında taze hesaplama.
+@riverpod
+Future<List<AiGroupSuggestion>> aiGroupSuggestions(AiGroupSuggestionsRef ref) async {
+  return ref.watch(productGroupRepositoryProvider).suggestGroupsForUnlabeledProducts();
+}
+
+// "Sınıflandırılamadı" bölümü: grubu boş TÜM ürünler içinden AI önerisi
+// üretilenler çıkarılır.
+@riverpod
+Future<List<Map<String, String>>> unassignedGroupProducts(UnassignedGroupProductsRef ref) async {
+  return ref.watch(productRepositoryProvider).fetchUnassignedGroupProducts();
 }
