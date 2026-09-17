@@ -1,0 +1,55 @@
+EDM BİLİŞİM'DEN İSTENECEK BİLGİLER — e-Fatura/e-Arşiv Entegrasyonu
+====================================================================
+
+Amaç: NicePOS (kendi satış programımız) üzerinden EDM'nin e-Fatura/e-Arşiv
+API'sine bağlanıp satışlardan doğrudan resmi fatura kesebilmek. Aşağıdaki
+bilgiler EDM müşteri temsilcisinden/teknik destekten istenmeli.
+
+1) KİMLİK BİLGİLERİ / ERİŞİM
+   - API kullanıcı adı ve şifresi (veya API anahtarı/token)
+   - Test (sandbox) ortamı için AYRI bir kullanıcı adı/şifre var mı?
+   - Canlı (production) ortam için kullanıcı adı/şifre
+
+2) BAĞLANTI NOKTALARI (ENDPOINT)
+   - Test ortamı WSDL/SOAP adresi VEYA REST/JSON base URL'i
+   - Canlı ortam WSDL/SOAP adresi VEYA REST/JSON base URL'i
+   - Kimlik doğrulama yöntemi (basic auth / API key header / OAuth token vb.)
+
+3) VERİ FORMATI
+   - Fatura verisi UBL-TR XML formatında mı gönderiliyor, yoksa EDM'nin
+     kendi JSON/XML şeması mı var?
+   - Örnek bir istek (request) ve yanıt (response) dokümanı/örneği istenmeli
+   - Zorunlu alanlar hangileri (satıcı/alıcı bilgisi, KDV kırılımı, para
+     birimi, iskonto satırı nasıl gösteriliyor vb.)
+
+4) e-FATURA / e-ARŞİV AYRIMI
+   - Alıcının (müşterinin) e-Fatura mükellefi olup olmadığını (VKN sorgusu)
+     EDM mi otomatik kontrol ediyor, yoksa bunu NicePOS'un mu önceden
+     belirleyip istekte belirtmesi gerekiyor?
+   - VKN sorgusu için ayrı bir API çağrısı var mı?
+
+5) TEST İMKANI
+   - Test ortamında gerçek bir deneme faturası kesilip PDF çıktısı/yanıt
+     görülebiliyor mu?
+   - Test ortamındaki faturalar gerçek mükellefiyeti/kotayı etkiliyor mu?
+
+6) İPTAL / İADE
+   - Kesilen bir faturayı iptal etme veya iade (alacak dekontu) kesme akışı
+     nasıl işliyor? Ayrı bir API endpoint'i var mı?
+   - NicePOS'ta "Satışı Sil" özelliği zaten var — daha önce fatura kesilmiş
+     bir satış silinirse EDM tarafında ne yapılması gerekiyor?
+
+7) LİMİT / KOTA
+   - Günlük/aylık fatura kesme limiti var mı?
+   - API çağrı sıklığı (rate limit) kısıtı var mı?
+
+8) FATURA ÇIKTISI
+   - Kesilen faturanın PDF çıktısına nasıl erişiliyor (API yanıtında direkt
+     link mi dönüyor, ayrı bir "PDF getir" endpoint'i mi var)?
+   - PDF'in kaç gün/süresiz erişilebilir kaldığı
+
+--------------------------------------------------------------------
+Not: Bu liste notes/e-fatura-entegrasyonu.md dosyasındaki mimari planla
+birlikte kullanılır. EDM'den yanıt gelince yalnızca efatura/edm_client.py
+dosyası doldurulacak, geri kalan yapı (Flutter "Fatura Kes" butonu, DB
+şeması) değişmeyecek.
