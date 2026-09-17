@@ -9,6 +9,12 @@
 *.log
 *.pyc
 *.swp
+
+# efatura/ (Python e-Fatura script'i) — sanal ortam/önbellek, .env zaten
+# yukarıdaki genel ".env" kuralıyla kapsanıyor
+efatura/venv/
+efatura/.venv/
+efatura/__pycache__/
 .DS_Store
 .atom/
 .build/

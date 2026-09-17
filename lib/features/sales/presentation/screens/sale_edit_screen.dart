@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_sizes.dart';
@@ -15,6 +16,7 @@ import '../../../../features/products/application/products_provider.dart';
 import '../../../../features/products/data/models/product.dart';
 import '../../data/models/cart_item.dart' show DiscountType;
 import '../../data/models/sale.dart';
+import '../../data/models/sale_invoice.dart';
 import '../../data/models/sale_item.dart';
 import '../../data/repositories/sales_repository.dart';
 import '../widgets/sale_print.dart';
@@ -67,6 +69,14 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
   final _cashCtrl = TextEditingController();
   final _cardCtrl = TextEditingController();
 
+  // ── e-Fatura/e-Arşiv durumu (0066 migration, bkz. notes/e-fatura-entegrasyonu.md) ──
+  // NicePOS burada EDM'yi ÇAĞIRMAZ, yalnız `sale_invoices`'a bir talep satırı
+  // yazar/okur — gönderim kullanıcının bilgisayarındaki Python script'iyle olur.
+  // Tek seferlik ekran-ömürlü sorgu olduğundan ayrı bir riverpod provider
+  // yerine basit bir Future + setState yeterli (script elle çalıştırıldığından
+  // gerçek zamanlı dinlemeye gerek yok).
+  Future<SaleInvoice?>? _invoiceFuture;
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +94,7 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
         widget.sale.cashAmount == 0 ? '' : formatNumber(widget.sale.cashAmount);
     _cardCtrl.text =
         widget.sale.cardAmount == 0 ? '' : formatNumber(widget.sale.cardAmount);
+    _invoiceFuture = SalesRepository().fetchLatestInvoice(widget.sale.id);
   }
 
   @override
@@ -261,6 +272,116 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
       subtotal: _subtotal,
       discountAmount: _discountAmount,
       netTotal: _netTotal,
+    );
+  }
+
+  /// "Fatura Kes" — yalnız `sale_invoices`'a bir `pending` talep satırı yazar,
+  /// EDM'yi doğrudan ÇAĞIRMAZ (bkz. notes/e-fatura-entegrasyonu.md). Kullanıcı
+  /// hangi satışın resmi fatura gerektirdiğine kendi karar verdiğinden
+  /// (Türkiye'de her POS satışı e-Arşiv gerektirmez) tetikleme manueldir.
+  Future<void> _requestInvoice() async {
+    final invoiceType = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Fatura Kes'),
+        content: const Text(
+          'Fatura türünü seçin. Talep oluşturulduktan sonra bilgisayarınızdaki '
+          'e-fatura script\'ini çalıştırmanız gerekir.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 'e_arsiv'),
+            child: const Text('e-Arşiv'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 'e_fatura'),
+            child: const Text('e-Fatura'),
+          ),
+        ],
+      ),
+    );
+    if (invoiceType == null || !mounted) return;
+
+    final requestedBy = ref.read(currentUserEmailProvider);
+    try {
+      await SalesRepository().requestInvoice(
+        saleId: widget.sale.id,
+        invoiceType: invoiceType,
+        requestedBy: requestedBy,
+      );
+      if (!mounted) return;
+      setState(() {
+        _invoiceFuture = SalesRepository().fetchLatestInvoice(widget.sale.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'Fatura talebi oluşturuldu. Bilgisayarınızdaki e-fatura script\'ini '
+          'çalıştırmanız gerekiyor.',
+        ),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Fatura talebi oluşturulamadı: $e'),
+        backgroundColor: AppColors.danger,
+      ));
+    }
+  }
+
+  /// Son fatura talebinin durumu — pending (turuncu saat), sent (yeşil check
+  /// + varsa PDF linki), failed (kırmızı ünlem + hata mesajı). Talep hiç
+  /// yoksa hiçbir şey göstermez.
+  Widget _buildInvoiceStatus() {
+    return FutureBuilder<SaleInvoice?>(
+      future: _invoiceFuture,
+      builder: (context, snapshot) {
+        final invoice = snapshot.data;
+        if (invoice == null) return const SizedBox.shrink();
+
+        late final IconData icon;
+        late final Color color;
+        late final String label;
+        switch (invoice.status) {
+          case SaleInvoiceStatus.pending:
+            icon = Icons.hourglass_top;
+            color = AppColors.gold;
+            label = 'Fatura talebi bekliyor — bilgisayarınızdaki script\'i çalıştırın.';
+            break;
+          case SaleInvoiceStatus.sent:
+            icon = Icons.check_circle;
+            color = AppColors.success;
+            label = 'Fatura gönderildi.';
+            break;
+          case SaleInvoiceStatus.failed:
+            icon = Icons.error_outline;
+            color = AppColors.danger;
+            label = invoice.errorMessage ?? 'Fatura gönderilemedi.';
+            break;
+        }
+
+        return InkWell(
+          onTap: invoice.pdfUrl == null
+              ? null
+              : () => launchUrl(Uri.parse(invoice.pdfUrl!),
+                  mode: LaunchMode.externalApplication),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 11.5, color: color),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -874,8 +995,19 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                       ),
                                       onPressed: _items.isEmpty ? null : _print,
                                     ),
+                                  OutlinedButton.icon(
+                                    icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                                    label: const Text('Fatura Kes'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.gold,
+                                      side: const BorderSide(color: AppColors.gold),
+                                    ),
+                                    onPressed: _items.isEmpty ? null : _requestInvoice,
+                                  ),
                                 ],
                               ),
+                              const SizedBox(height: 8),
+                              _buildInvoiceStatus(),
                               const Divider(height: 28, color: AppColors.divider),
                               const Text(
                                 'ÖDEME TÜRÜ',

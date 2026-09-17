@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cart_item.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
+import '../models/sale_invoice.dart';
 import '../../../customers/data/models/customer_payment.dart';
 import '../../../customers/data/repositories/customer_repository.dart';
 import '../../../products/data/repositories/product_repository.dart';
@@ -153,6 +154,36 @@ class SalesRepository {
   /// tek transaction (completeSale() ile aynı desen).
   Future<void> deleteSale(String saleId) async {
     await _client.rpc('delete_sale', params: {'p_sale_id': saleId});
+  }
+
+  /// Bu satışın en son fatura talebini döndürür (yoksa null) — `sale_invoices`
+  /// (0066 migration). NicePOS burada EDM'yi ÇAĞIRMAZ, yalnız durumu okur;
+  /// gerçek gönderim kullanıcının bilgisayarındaki Python script'iyle olur.
+  Future<SaleInvoice?> fetchLatestInvoice(String saleId) async {
+    final rows = await _client
+        .from('sale_invoices')
+        .select()
+        .eq('sale_id', saleId)
+        .order('requested_at', ascending: false)
+        .limit(1);
+    if (rows.isEmpty) return null;
+    return SaleInvoice.fromMap(rows.first);
+  }
+
+  /// Fatura talebi oluşturur — yalnız `sale_invoices`'a bir `pending` satırı
+  /// yazar (bkz. `notes/e-fatura-entegrasyonu.md`). `sale_id` için zaten
+  /// `pending`/`sent` bir talep varsa unique index bunu reddeder (23505) —
+  /// çağıran taraf önce `fetchLatestInvoice` ile durumu kontrol etmeli.
+  Future<void> requestInvoice({
+    required String saleId,
+    required String invoiceType,
+    String? requestedBy,
+  }) async {
+    await _client.from('sale_invoices').insert({
+      'sale_id': saleId,
+      'invoice_type': invoiceType,
+      'requested_by': requestedBy,
+    });
   }
 
   /// `SaleSyncService` de kullanır — offline kuyruktan senkron edilen bir

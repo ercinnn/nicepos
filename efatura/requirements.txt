@@ -1,0 +1,4 @@
+supabase>=2.0.0
+python-dotenv>=1.0.0
+# EDM'nin API'si WSDL/SOAP mu yoksa REST/JSON mu netleşince buraya
+# `zeep` (SOAP) veya `requests` (REST) eklenecek — bkz. notes/e-fatura-entegrasyonu.md
