@@ -1,34 +1,30 @@
--- ⚠️⚠️ TEKRAR ÇALIŞTIRMAYIN — fonksiyon gövdeleri 0040'ın kiracı korumasını
--- geri alıyor (yaşanmış hata). Doğru/güncel sürüm 0068_restore_tenant_guard_sale_rpcs.sql.
--- 0065 yalnız ilk iki `alter table` satırı açısından hâlâ geçerlidir.
 -- =============================================================================
--- 0065: e-Fatura/e-Arşiv ön hazırlığı — satış anı KDV donması
+-- 0068: complete_sale / complete_sale_offline — kiracı korumasının geri gelmesi
 -- =============================================================================
--- Amaç: `products.vat_rate` ürün üzerinde duruyor ve sonradan değişebilir —
--- bir satış kalemi için fatura kesileceğinde SATIŞ ANINDAKİ oranın donmuş
--- halde saklanması gerekir (aksi halde geçmiş bir satışın gerçek KDV'si
--- geriye dönük bulunamaz). Detay: notes/e-fatura-entegrasyonu.md
+-- YAŞANMIŞ HATA: 0065 (satış anı KDV donması) bu iki fonksiyonu 0040'ın
+-- kiracı-farkında sürümü yerine ESKİ 0030/0027 gövdesinin üzerine yazdı.
+-- `security definer` fonksiyonlarda RLS devre dışı olduğundan 0040'ın eklediği
+-- korumalar kayboldu (2026-10-02'de canlıda `pg_get_functiondef` ile doğrulandı):
+--   - `current_tenant_id()` NULL kontrolü ("Kiracı bulunamadı") yok,
+--   - stok düşümü `where id = ...` ile — ürünün BU kiracıya ait olduğu
+--     denetlenmiyor (başka kiracının ürün id'si gelirse onun stoğu düşerdi),
+--   - KDV oranı okuması da kiracı süzgeçsiz.
+-- Satışlar yine doğru kiracıya yazılıyordu (`tenant_id` sütun varsayılanı
+-- `current_tenant_id()`), yani mevcut veride bozulma YOK — açık yalnız
+-- kiracılar arası izolasyondaydı.
 --
--- `vat_amount` fiyatların KDV DAHİL olduğu varsayımıyla (`unit_price`/`total`
--- mevcut satış akışında hep KDV dahil girilir) satır toplamından geriye doğru
--- ayrıştırılır: vat_amount = total - total / (1 + vat_rate/100). EDM'nin
--- gerçek beklediği yuvarlama/format farklı çıkarsa bu formül `edm_client.py`
--- tarafında değil, BURADA (tek kaynak) güncellenir.
+-- Bu migration = 0040'ın gövdesi + 0065'in `vat_rate`/`vat_amount` kaydı.
+-- Parametre imzası/dönüş tipi DEĞİŞMİYOR → `create or replace` yeterli
+-- (DROP FUNCTION gerekmez, istemci kodu değişmez).
 --
--- Geriye dönük satırlar (bu migration'dan ÖNCEKİ satışlar) NULL kalır — fatura
--- özelliği yalnız bundan sonraki satışlarda kullanılabilir.
---
--- `complete_sale`/`complete_sale_offline` parametre imzası/dönüş tipi
--- DEĞİŞMİYOR (yalnız gövde içi insert genişliyor) — CLAUDE.md'nin "önce DROP
--- FUNCTION" dersi burada geçerli değil, `CREATE OR REPLACE FUNCTION` yeterli.
---
--- Uygulama: DDL anon key ile çalıştırılamaz → Supabase SQL Editor'da uygulanır.
--- Idempotenttir (add column if not exists, create or replace function).
+-- Uygulama: Supabase SQL Editor'da çalıştırılır. Idempotenttir.
+-- Doğrulama (uyguladıktan sonra iki satır da true dönmeli):
+--   select p.proname,
+--          pg_get_functiondef(p.oid) like '%v_tenant_id%' as kiraci_korumasi,
+--          pg_get_functiondef(p.oid) like '%vat_rate%'    as kdv_kaydi
+--     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public' and p.proname in ('complete_sale', 'complete_sale_offline');
 -- =============================================================================
-
-alter table sale_items
-  add column if not exists vat_rate numeric,
-  add column if not exists vat_amount numeric;
 
 create or replace function complete_sale(
   p_customer_id uuid,
@@ -45,6 +41,7 @@ create or replace function complete_sale(
   p_items jsonb
 ) returns text as $$
 declare
+  v_tenant_id uuid := current_tenant_id();
   v_sale_id uuid;
   v_sale_code text;
   item jsonb;
@@ -52,14 +49,18 @@ declare
   v_vat_rate numeric;
   v_total numeric;
 begin
+  if v_tenant_id is null then
+    raise exception 'Kiracı bulunamadı (current_tenant_id).';
+  end if;
+
   v_sale_code := generate_sale_code();
 
   insert into sales (
-    sale_code, customer_id, total_amount, discount_percent, discount_amount,
+    tenant_id, sale_code, customer_id, total_amount, discount_percent, discount_amount,
     discount_type, paid_amount, payment_type, cash_amount, card_amount,
     remaining_debt, personnel, note, sale_date
   ) values (
-    v_sale_code, p_customer_id, p_total_amount, p_discount_percent, p_discount_amount,
+    v_tenant_id, v_sale_code, p_customer_id, p_total_amount, p_discount_percent, p_discount_amount,
     'percent', p_paid_amount, p_payment_type, p_cash_amount, p_card_amount,
     p_remaining_debt, coalesce(p_personnel, 'Yönetici'), p_note, now()
   ) returning id into v_sale_id;
@@ -70,14 +71,17 @@ begin
     v_total := (item->>'total')::numeric;
     v_vat_rate := null;
     if v_product_id is not null then
-      select vat_rate into v_vat_rate from products where id = v_product_id;
+      select vat_rate into v_vat_rate
+        from products
+       where id = v_product_id and tenant_id = v_tenant_id;
     end if;
 
     insert into sale_items (
-      sale_id, product_id, product_name, quantity, unit_price, discount_value, total,
+      tenant_id, sale_id, product_id, product_name, quantity, unit_price, discount_value, total,
       vat_rate, vat_amount
     )
     values (
+      v_tenant_id,
       v_sale_id,
       v_product_id,
       item->>'product_name',
@@ -93,13 +97,14 @@ begin
       update products
       set stock_quantity = stock_quantity - (item->>'quantity')::numeric,
           updated_at = now()
-      where id = v_product_id;
+      where id = v_product_id
+        and tenant_id = v_tenant_id;
     end if;
   end loop;
 
   if p_customer_id is not null and p_remaining_debt > 0 then
-    insert into customer_payments (customer_id, sale_id, type, amount, note, payment_date)
-    values (p_customer_id, v_sale_id, 'borc', p_remaining_debt, 'Satış: ' || v_sale_code, now());
+    insert into customer_payments (tenant_id, customer_id, sale_id, type, amount, note, payment_date)
+    values (v_tenant_id, p_customer_id, v_sale_id, 'borc', p_remaining_debt, 'Satış: ' || v_sale_code, now());
   end if;
 
   return v_sale_code;
@@ -124,21 +129,28 @@ create or replace function complete_sale_offline(
   p_items jsonb
 ) returns void as $$
 declare
+  v_tenant_id uuid := current_tenant_id();
   item jsonb;
   v_product_id uuid;
   v_vat_rate numeric;
   v_total numeric;
 begin
+  if v_tenant_id is null then
+    raise exception 'Kiracı bulunamadı (current_tenant_id).';
+  end if;
+
+  -- idempotency: satır zaten varsa (önceki deneme sunucuda başarılı olmuş
+  -- ama istemci yanıtı alamamışsa) no-op — retry her zaman güvenlidir.
   if exists (select 1 from sales where id = p_id) then
     return;
   end if;
 
   insert into sales (
-    id, sale_code, customer_id, total_amount, discount_percent, discount_amount,
+    id, tenant_id, sale_code, customer_id, total_amount, discount_percent, discount_amount,
     discount_type, paid_amount, payment_type, cash_amount, card_amount,
     remaining_debt, personnel, note, sale_date
   ) values (
-    p_id, p_sale_code, p_customer_id, p_total_amount, p_discount_percent, p_discount_amount,
+    p_id, v_tenant_id, p_sale_code, p_customer_id, p_total_amount, p_discount_percent, p_discount_amount,
     'percent', p_paid_amount, p_payment_type, p_cash_amount, p_card_amount,
     p_remaining_debt, coalesce(p_personnel, 'Yönetici'), p_note, p_sale_date
   );
@@ -149,14 +161,17 @@ begin
     v_total := (item->>'total')::numeric;
     v_vat_rate := null;
     if v_product_id is not null then
-      select vat_rate into v_vat_rate from products where id = v_product_id;
+      select vat_rate into v_vat_rate
+        from products
+       where id = v_product_id and tenant_id = v_tenant_id;
     end if;
 
     insert into sale_items (
-      sale_id, product_id, product_name, quantity, unit_price, discount_value, total,
+      tenant_id, sale_id, product_id, product_name, quantity, unit_price, discount_value, total,
       vat_rate, vat_amount
     )
     values (
+      v_tenant_id,
       p_id,
       v_product_id,
       item->>'product_name',
@@ -172,7 +187,8 @@ begin
       update products
       set stock_quantity = stock_quantity - (item->>'quantity')::numeric,
           updated_at = now()
-      where id = v_product_id;
+      where id = v_product_id
+        and tenant_id = v_tenant_id;
     end if;
   end loop;
 end;
