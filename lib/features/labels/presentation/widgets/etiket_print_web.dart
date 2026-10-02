@@ -192,6 +192,24 @@ const String _storeIconSvg =
     '<path fill="#1B2A4A" d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
     '</svg>';
 
+// Raf/Tel fiyatı sabit 39pt ile hücreye sığmıyordu ("179 TL" → "179 Tl",
+// 4 haneli fiyatlarda "TL" tamamen kırpılıyordu — yaşanmış hata). PDF yolu
+// `FittedBox(scaleDown)` ile küçültüyor; HTML yolunda karşılığı bu betik:
+// yalnız taşan fiyatı yarım piksel adımlarla sığana dek küçültür, sığanlara
+// dokunmaz. Yazdırmadan ÖNCE çalışmalı (body onload sırası).
+const String _fitPriceScript = '''
+<script>
+  function fitPrices() {
+    document.querySelectorAll('.price').forEach(function (el) {
+      var size = parseFloat(getComputedStyle(el).fontSize);
+      while (el.scrollWidth > el.clientWidth && size > 8) {
+        size -= 0.5;
+        el.style.fontSize = size + 'px';
+      }
+    });
+  }
+</script>''';
+
 String _cellHtml(LabelSlot? slot, String? logoDataUrl) {
   if (slot == null) {
     // Boş hane → boş hücre (kesim kılavuzu korunur).
@@ -288,6 +306,10 @@ String _buildHtml({
     letter-spacing: -0.5px;
     text-align: center;
     flex: 1 1 auto;
+    /* min-width:0 → flex öğesi içeriğe göre genişlemez, taşma ölçülebilir;
+       sığmazsa _fitPriceScript fontu küçültür (PDF'teki FittedBox karşılığı). */
+    min-width: 0;
+    overflow: hidden;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
@@ -323,8 +345,9 @@ String _buildHtml({
   .bcno { font-size: 14pt; letter-spacing: 0.5px; text-align: center; }
   .cdate { font-size: 5.5pt; color: #444; }
 </style>
+$_fitPriceScript
 </head>
-<body onload="window.focus(); window.print();">
+<body onload="fitPrices(); window.focus(); window.print();">
   <div class="sheet">
     $cells
   </div>
@@ -403,6 +426,10 @@ String _buildTelHtml({
     letter-spacing: -0.5px;
     text-align: center;
     flex: 1 1 auto;
+    /* min-width:0 → flex öğesi içeriğe göre genişlemez, taşma ölçülebilir;
+       sığmazsa _fitPriceScript fontu küçültür (PDF'teki FittedBox karşılığı). */
+    min-width: 0;
+    overflow: hidden;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
@@ -438,8 +465,9 @@ String _buildTelHtml({
   .bcno { font-size: 14pt; letter-spacing: 0.5px; text-align: center; }
   .cdate { font-size: 5.5pt; color: #444; }
 </style>
+$_fitPriceScript
 </head>
-<body onload="window.focus(); window.print();">
+<body onload="fitPrices(); window.focus(); window.print();">
   <div class="sheet">
     $cells
   </div>
