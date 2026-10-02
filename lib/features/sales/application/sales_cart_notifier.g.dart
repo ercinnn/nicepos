@@ -23,7 +23,7 @@ final salesRepositoryProvider = Provider<SalesRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef SalesRepositoryRef = ProviderRef<SalesRepository>;
-String _$salesCartHash() => r'35ae8e75197fac3b2760dcb4ccd6778b54b9f93c';
+String _$salesCartHash() => r'346463bfa0c079f71c9b4a3d441f5c653a507f6b';
 
 /// See also [SalesCart].
 @ProviderFor(SalesCart)

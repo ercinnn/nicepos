@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/local_db/app_database.dart';
 import '../../../core/supabase/supabase_client_provider.dart';
 import '../../sales/application/barcode_cache.dart';
+import '../../sales/application/concept_cache.dart';
 
 part 'auth_provider.g.dart';
 
@@ -127,6 +128,7 @@ Future<void> ensureTenantProvisioned(EnsureTenantProvisionedRef ref) async {
   // tutulan önbellek her token yenilemesinde boşuna silinirdi.
   if (authState?.event == AuthChangeEvent.signedIn) {
     ref.invalidate(barcodeCacheProvider);
+    ref.invalidate(conceptCacheProvider);
     if (!kIsWeb) {
       try {
         await ref.read(appDatabaseProvider).clearTenantScopedCaches();

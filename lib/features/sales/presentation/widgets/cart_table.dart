@@ -537,6 +537,7 @@ class _CartTableState extends ConsumerState<CartTable> {
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
+                if (item.conceptCode != null) _ConceptTag(code: item.conceptCode!),
               ],
             ),
           ),
@@ -1123,6 +1124,7 @@ class _MobileCartItem extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (item.conceptCode != null) _ConceptTag(code: item.conceptCode!),
                   const SizedBox(height: 2),
                   Row(
                     children: [
@@ -2118,5 +2120,34 @@ class _MobileQtyDialogState extends State<_MobileQtyDialog> {
       case _PriceStatus.idle:
         return const SizedBox.shrink();
     }
+  }
+}
+
+/// Konsept Ürün parçası olan sepet satırının altındaki küçük işaret
+/// ("Konsept C261002001") — iskontonun nereden geldiğini açıklar.
+class _ConceptTag extends StatelessWidget {
+  final String code;
+  const _ConceptTag({required this.code});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 1),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.layers_outlined, size: 12, color: AppColors.textSecondary),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(
+              'Konsept $code',
+              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

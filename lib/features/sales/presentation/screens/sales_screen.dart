@@ -14,11 +14,14 @@ import '../../../../core/utils/network_timeout.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/utils/scan_sound.dart';
 import '../../../../features/products/application/products_provider.dart';
+import '../../../../features/products/application/concept_products_provider.dart';
 import '../../../../features/products/data/local/product_local_cache_dao.dart';
+import '../../../../features/products/data/models/concept_product.dart';
 import '../../../../features/products/data/models/product.dart';
 import '../../../../features/products/presentation/widgets/live_product_search_field.dart';
 import '../../application/barcode_cache.dart';
 import '../../application/barcode_focus_notifier.dart';
+import '../../application/concept_cache.dart';
 import '../../application/sales_cart_notifier.dart';
 import '../widgets/barcode_scanner_modal.dart';
 import '../widgets/cart_table.dart';
@@ -51,6 +54,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     // Barkod → Product bellek indeksini bir kez prefetch et (keepAlive cache;
     // her ekran açılışında yeniden çekmez). Okutmada ağ turu beklemeden ekleme.
     ref.read(barcodeCacheProvider).ensureLoaded();
+    ref.read(conceptCacheProvider).ensureLoaded();
   }
 
   @override
@@ -80,9 +84,75 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     _barcodeFocusNode.requestFocus();
   }
 
+  /// Konsept barkodu (C + YYAAGG + sıra, ör. C261002001) ise parçaları
+  /// sepete ekler ve true döner. Konsept bulunamazsa false → çağıran normal
+  /// ürün aramasına devam eder (bu biçimde bir ÜRÜN barkodu da olabilir).
+  Future<bool> _tryAddConcept(String query) async {
+    final conceptCache = ref.read(conceptCacheProvider);
+    var concept = conceptCache.lookup(query);
+    final knownOffline =
+        !kIsWeb && ref.read(connectivityStatusServiceProvider).phase == ConnectivityPhase.offline;
+    if (concept == null && !knownOffline) {
+      try {
+        concept = await withNetworkTimeout(ref.read(conceptRepositoryProvider).fetchByBarcode(query));
+        if (concept != null) conceptCache.put(concept);
+      } catch (_) {
+        // Ağ yok — konsept çözülemedi, normal ürün akışına düşülür.
+      }
+    }
+    if (concept == null) return false;
+
+    // Parçaları barkod önbelleğindeki güncel hâliyle çöz (Eşlenik Barkod
+    // grup fiyatı dahil, tekil okutmayla aynı fiyat); yoksa gömülü ürün.
+    final barcodeCache = ref.read(barcodeCacheProvider);
+    final resolved = ConceptProduct(
+      id: concept.id,
+      barcode: concept.barcode,
+      name: concept.name,
+      price: concept.price,
+      items: [
+        for (final i in concept.items)
+          i.copyWith(
+            product: (i.product?.barcode != null ? barcodeCache.lookup(i.product!.barcode!) : null) ??
+                i.product,
+          ),
+      ],
+    );
+    final missing = resolved.items.where((i) => i.product == null).length;
+    if (resolved.items.length == missing) {
+      playScanBeep(success: false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('"${concept.name}" konseptinin parçaları okunamadı.'),
+        ));
+      }
+      _barcodeController.clear();
+      _barcodeFocusNode.requestFocus();
+      return true;
+    }
+
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true);
+    ref.read(salesCartProvider.notifier).addConcept(resolved);
+    _barcodeController.clear();
+    _barcodeFocusNode.requestFocus();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(missing == 0
+            ? 'Konsept eklendi: ${concept.name} '
+                '(${resolved.items.length} parça, ${formatCurrency(resolved.effectivePrice)})'
+            : 'Konsept eklendi: ${concept.name} — $missing parça bulunamadı, atlandı.'),
+      ));
+    }
+    return true;
+  }
+
   Future<void> _onBarcodeSubmitted(String value) async {
     final query = value.trim();
     if (query.isEmpty) return;
+
+    if (looksLikeConceptBarcode(query) && await _tryAddConcept(query)) return;
 
     // ÖNCE bellek cache'i: hit ise ağ beklemeden anında ekle (senkron).
     final cache = ref.read(barcodeCacheProvider);

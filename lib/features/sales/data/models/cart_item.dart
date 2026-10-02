@@ -10,6 +10,12 @@ class CartItem {
   final DiscountType discountType;
   final String? note;
 
+  /// Bu satır bir Konsept Ürün'ün parçasıysa o konseptin barkodu (ör.
+  /// C261002001). Aynı konsept tekrar okutulunca satır bununla birleşir;
+  /// tekil ürün okutması konsept satırına DEĞİL ayrı satıra gider (konsept
+  /// satırı fiyat farkını iskonto olarak taşıyabilir).
+  final String? conceptCode;
+
   const CartItem({
     this.productId,
     required this.productName,
@@ -19,6 +25,7 @@ class CartItem {
     this.discountValue = 0,
     this.discountType = DiscountType.tl,
     this.note,
+    this.conceptCode,
   });
 
   num get lineTotal => unitPrice * quantity;
@@ -42,6 +49,7 @@ class CartItem {
       'discount_value': discountValue,
       'discount_type': discountType.name,
       'note': note,
+      'concept_code': conceptCode,
     };
   }
 
@@ -55,6 +63,7 @@ class CartItem {
       discountValue: map['discount_value'] as num? ?? 0,
       discountType: DiscountType.values.byName(map['discount_type'] as String? ?? 'tl'),
       note: map['note'] as String?,
+      conceptCode: map['concept_code'] as String?,
     );
   }
 
@@ -77,6 +86,7 @@ class CartItem {
       discountValue: discountValue ?? this.discountValue,
       discountType: discountType ?? this.discountType,
       note: note ?? this.note,
+      conceptCode: conceptCode,
     );
   }
 }

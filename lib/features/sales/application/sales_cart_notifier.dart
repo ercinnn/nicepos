@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../data/models/cart_item.dart';
 import '../data/repositories/sales_repository.dart';
+import '../../../features/products/data/models/concept_product.dart';
 import '../../../features/products/data/models/product.dart';
 
 export '../data/models/cart_item.dart' show DiscountType;
@@ -69,6 +70,52 @@ class SalesState {
   CustomerTabState get active => tabs[activeTab];
 }
 
+/// Konsept Ürün'ü sepet satırlarına açar — her parça kendi Fiyat1'iyle ayrı
+/// satır olur (stok/rapor/offline akışı tekil ürün satışıyla birebir aynı).
+/// Konseptin kendi fiyatı varsa parça toplamıyla aradaki fark dağıtılır:
+///  - fiyat < toplam → her satıra AYNI yüzde iskonto (oransal dağıtım; aynı
+///    konsept tekrar okutulup adet artınca da toplam doğru kalır),
+///  - fiyat > toplam → birim fiyatlar aynı oranla ölçeklenir (negatif iskonto
+///    yok),
+///  - parça toplamı 0 ise tutarın tamamı ilk satıra yazılır.
+/// Ürünü okunamayan parça (`product == null`) atlanır.
+List<CartItem> conceptCartLines(ConceptProduct concept) {
+  final parts = concept.items.where((i) => i.product != null).toList();
+  if (parts.isEmpty) return const [];
+  final sum = parts.fold<num>(0, (s, i) => s + i.product!.price1 * i.quantity);
+  final price = concept.price;
+
+  CartItem line(ConceptProductItem i, {num? unitPrice, num discountPercent = 0}) {
+    final p = i.product!;
+    return CartItem(
+      productId: p.id,
+      productName: p.name,
+      barcode: p.barcode,
+      quantity: i.quantity,
+      unitPrice: unitPrice ?? p.price1,
+      discountValue: discountPercent,
+      discountType: DiscountType.percent,
+      conceptCode: concept.barcode,
+    );
+  }
+
+  if (price == null || price == sum) {
+    return [for (final i in parts) line(i)];
+  }
+  if (sum <= 0) {
+    return [
+      for (var k = 0; k < parts.length; k++)
+        line(parts[k], unitPrice: k == 0 ? price / parts[k].quantity : 0),
+    ];
+  }
+  if (price < sum) {
+    final pct = (sum - price) / sum * 100;
+    return [for (final i in parts) line(i, discountPercent: pct)];
+  }
+  final ratio = price / sum;
+  return [for (final i in parts) line(i, unitPrice: i.product!.price1 * ratio)];
+}
+
 @Riverpod(keepAlive: true)
 SalesRepository salesRepository(SalesRepositoryRef ref) => SalesRepository();
 
@@ -94,11 +141,34 @@ class SalesCart extends _$SalesCart {
   void addProduct(Product product) {
     _updateActive((tab) {
       final items = [...tab.items];
-      final index = items.indexWhere((i) => i.productId == product.id);
+      // Konsept satırları (iskontolu olabilir) tekil okutmayla birleşmez.
+      final index = items.indexWhere(
+          (i) => i.productId == product.id && i.conceptCode == null);
       if (index >= 0) {
         items[index] = items[index].copyWith(quantity: items[index].quantity + 1);
       } else {
         items.add(CartItem(productId: product.id, productName: product.name, barcode: product.barcode, unitPrice: product.price1));
+      }
+      return tab.copyWith(items: items);
+    });
+  }
+
+  /// Konsept barkodu okutulunca parçaları sepete ekler. Aynı konseptin
+  /// satırı zaten varsa adedi artırılır (satırın iskonto %'si korunur →
+  /// konsept fiyatı adetle orantılı kalır).
+  void addConcept(ConceptProduct concept) {
+    final lines = conceptCartLines(concept);
+    if (lines.isEmpty) return;
+    _updateActive((tab) {
+      final items = [...tab.items];
+      for (final line in lines) {
+        final index = items.indexWhere(
+            (i) => i.productId == line.productId && i.conceptCode == line.conceptCode);
+        if (index >= 0) {
+          items[index] = items[index].copyWith(quantity: items[index].quantity + line.quantity);
+        } else {
+          items.add(line);
+        }
       }
       return tab.copyWith(items: items);
     });
