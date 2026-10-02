@@ -41,7 +41,17 @@ class ConceptCache {
 
   ConceptProduct? lookup(String barcode) => _byBarcode[barcode.trim().toUpperCase()];
 
-  void put(ConceptProduct concept) {
+  /// Ad veya barkodda geçen konseptler (Türkçe büyük/küçük harf duyarsız) —
+  /// etiket ekranındaki adla canlı aramaya konseptleri de katmak için.
+  List<ConceptProduct> search(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    return _byBarcode.values
+        .where((c) => c.name.toLowerCase().contains(q) || c.barcode.toLowerCase().contains(q))
+        .toList();
+  }
+
+    void put(ConceptProduct concept) {
     _byBarcode[concept.barcode.trim().toUpperCase()] = concept;
   }
 }

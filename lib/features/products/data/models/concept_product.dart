@@ -1,4 +1,7 @@
+import '../../../sales/data/models/cart_item.dart' show DiscountType;
 import 'product.dart';
+
+export '../../../sales/data/models/cart_item.dart' show DiscountType;
 
 /// Konsept ürün — birden çok parçadan oluşan, tek barkodla satılan set
 /// (ör. 1× vazo + 2× papatya + 5× okaliptus). Kendi stoku YOKTUR; satışta
@@ -8,7 +11,9 @@ class ConceptProduct {
   final String barcode;
   final String name;
 
-  /// Konseptin satış fiyatı. null → parçaların Fiyat1 toplamı geçerli.
+  /// ESKİ (0067) konsept geneli fiyat — 0069'dan beri form bunu yazmaz
+  /// (NULL kaydeder), indirim parça bazındadır. Hiç parça indirimi olmayan
+  /// eski bir konseptte satışta hâlâ geçerlidir (fark tüm parçalara dağılır).
   final num? price;
   final List<ConceptProductItem> items;
   final DateTime? createdAt;
@@ -22,12 +27,28 @@ class ConceptProduct {
     this.createdAt,
   });
 
-  /// Parçaların Fiyat1 × adet toplamı (konsept fiyatı yokken satış fiyatı).
-  num get componentsTotal =>
-      items.fold<num>(0, (sum, i) => sum + (i.product?.price1 ?? 0) * i.quantity);
+  /// Parçaların indirimsiz Fiyat1 × adet toplamı.
+  num get componentsTotal => items.fold<num>(0, (sum, i) => sum + i.grossTotal);
 
-  /// Satışta sepete yansıyacak tutar.
-  num get effectivePrice => price ?? componentsTotal;
+  /// En az bir parçada indirim tanımlı mı (0069 parça bazlı indirim).
+  bool get hasItemDiscounts => items.any((i) => i.discountValue > 0);
+
+  /// Satışta sepete yansıyacak tutar: parça indirimleri varsa onlardan
+  /// hesaplanır, yoksa eski konsept fiyatı, o da yoksa parça toplamı.
+  num get effectivePrice => hasItemDiscounts
+      ? items.fold<num>(0, (sum, i) => sum + i.netTotal)
+      : (price ?? componentsTotal);
+
+  /// Etiket ekranı için ürün görünümü — tüm etiket sekmeleri `Product`
+  /// üzerinden çalıştığından konsept, adı + barkodu + satış fiyatıyla bir
+  /// ürün gibi basılır. `id` konseptin id'sidir (products'ta YOKTUR — stok/
+  /// ürün tablosuna yazan hiçbir akışa verilmemeli).
+  Product asLabelProduct() => Product(
+        id: id,
+        barcode: barcode,
+        name: name,
+        price1: effectivePrice,
+      );
 
   factory ConceptProduct.fromMap(Map<String, dynamic> map) {
     final rawItems = map['concept_product_items'] as List? ?? const [];
@@ -53,6 +74,11 @@ class ConceptProductItem {
   final num quantity;
   final int sortOrder;
 
+  /// Parça bazlı indirim (0069): % ise yüzde, ₺ ise bu parça SATIRININ
+  /// (konsept içindeki adetin tamamı) toplam indirim tutarı. 0 → indirim yok.
+  final num discountValue;
+  final DiscountType discountType;
+
   /// `products(*)` embed'iyle gelir; ürün okunamazsa null.
   final Product? product;
 
@@ -60,8 +86,19 @@ class ConceptProductItem {
     required this.productId,
     required this.quantity,
     this.sortOrder = 0,
+    this.discountValue = 0,
+    this.discountType = DiscountType.percent,
     this.product,
   });
+
+  num get grossTotal => (product?.price1 ?? 0) * quantity;
+
+  /// TL cinsinden indirim — `CartItem.discountAmount` ile birebir aynı kural.
+  num get discountAmount => discountType == DiscountType.percent
+      ? grossTotal * discountValue / 100
+      : discountValue.clamp(0, grossTotal);
+
+  num get netTotal => grossTotal - discountAmount;
 
   factory ConceptProductItem.fromMap(Map<String, dynamic> map) {
     final rawProduct = map['products'];
@@ -69,17 +106,26 @@ class ConceptProductItem {
       productId: map['product_id'] as String,
       quantity: map['quantity'] as num? ?? 1,
       sortOrder: map['sort_order'] as int? ?? 0,
+      discountValue: map['discount_value'] as num? ?? 0,
+      discountType: map['discount_type'] == 'tl' ? DiscountType.tl : DiscountType.percent,
       product: rawProduct is Map
           ? Product.fromMap(Map<String, dynamic>.from(rawProduct))
           : null,
     );
   }
 
-  ConceptProductItem copyWith({num? quantity, Product? product}) {
+  ConceptProductItem copyWith({
+    num? quantity,
+    num? discountValue,
+    DiscountType? discountType,
+    Product? product,
+  }) {
     return ConceptProductItem(
       productId: productId,
       quantity: quantity ?? this.quantity,
       sortOrder: sortOrder,
+      discountValue: discountValue ?? this.discountValue,
+      discountType: discountType ?? this.discountType,
       product: product ?? this.product,
     );
   }

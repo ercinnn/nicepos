@@ -16,10 +16,13 @@ import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/responsive.dart';
 import '../../../../core/utils/scan_sound.dart';
+import '../../../products/application/concept_products_provider.dart';
 import '../../../products/application/products_provider.dart';
 import '../../../products/data/local/product_local_cache_dao.dart';
+import '../../../products/data/models/concept_product.dart';
 import '../../../products/data/models/product.dart';
 import '../../../sales/application/barcode_cache.dart';
+import '../../../sales/application/concept_cache.dart';
 import '../../../sales/presentation/widgets/barcode_scanner_modal.dart';
 import '../../application/labels_provider.dart';
 import '../../data/label_pdf.dart';
@@ -249,6 +252,8 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     // Barkod → Product bellek indeksini bir kez prefetch et (satış ekranıyla
     // paylaşılan keepAlive cache) → okutmada ağ turu beklemeden çözüm.
     ref.read(barcodeCacheProvider).ensureLoaded();
+    // Konsept Ürünler de etiketlenebilir — konsept barkodları/adla arama için.
+    ref.read(conceptCacheProvider).ensureLoaded();
     // Kayıtlı mağaza logosunu Storage'dan geri yükle (KARAR v1.12) — login/logout
     // sonrası korunur. Fire-and-forget (await gerekmez).
     _loadPersistedLogo();
@@ -345,7 +350,25 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // (bkz. `ProductRepository.markLabelScanned`, 0034 migration). Bu fonksiyon
   // TÜM etiket sekmelerinin (Raf/Tel/Geniş/Poster/Ürün/İndirim) paylaştığı TEK
   // barkod-çözme noktası olduğundan tek bir yerden enstrümante edilmesi yeter.
+  //
+  // Konsept barkodu (C + YYAAGG + sıra) ise konsept, adı + satış fiyatıyla
+  // bir ürün gibi döner (`ConceptProduct.asLabelProduct`) — böylece TÜM
+  // sekmeler konsept etiketini değişiklik gerektirmeden basar. Bulunamazsa
+  // normal ürün aramasına devam edilir.
   Future<Product?> _resolveBarcode(String query) async {
+    if (looksLikeConceptBarcode(query)) {
+      final conceptCache = ref.read(conceptCacheProvider);
+      var concept = conceptCache.lookup(query);
+      if (concept == null) {
+        try {
+          concept = await ref.read(conceptRepositoryProvider).fetchByBarcode(query);
+          if (concept != null) conceptCache.put(concept);
+        } catch (_) {
+          // Ağ yok — konsept çözülemedi, ürün aramasına düşülür.
+        }
+      }
+      if (concept != null) return concept.asLabelProduct();
+    }
     final cache = ref.read(barcodeCacheProvider);
     Product? product = cache.lookup(query);
     if (product == null) {
@@ -5620,6 +5643,13 @@ class _PosterSearchFieldState extends ConsumerState<_PosterSearchField> {
       }
       if (!mounted || token != _queryToken) return;
       if (widget.controller.text.trim() != query) return;
+      // Konsept Ürünler de listelenir (önde) — bellekteki konsept önbelleğinden.
+      final concepts = ref
+          .read(conceptCacheProvider)
+          .search(query)
+          .map((c) => c.asLabelProduct())
+          .toList();
+      results = [...concepts, ...results];
       setState(() {
         _results = results.take(40).toList();
         _loading = false;
@@ -5775,6 +5805,11 @@ class _PosterSearchFieldState extends ConsumerState<_PosterSearchField> {
                                 vertical: AppSizes.space8),
                             child: Row(
                               children: [
+                                if (looksLikeConceptBarcode(p.barcode ?? '')) ...[
+                                  const Icon(Icons.layers_outlined,
+                                      size: 14, color: AppColors.textSecondary),
+                                  const SizedBox(width: 4),
+                                ],
                                 Expanded(
                                   child: Text(
                                     p.name,

@@ -162,6 +162,13 @@ class _ConceptCard extends StatelessWidget {
 
   static String _fmtQty(num q) => q == q.roundToDouble() ? q.toInt().toString() : q.toString();
 
+  static String _discountLabel(ConceptProductItem i) {
+    if (i.discountValue <= 0) return '';
+    return i.discountType == DiscountType.percent
+        ? '  · %${_fmtQty(i.discountValue)} indirim'
+        : '  · ${formatCurrency(i.discountValue)} indirim';
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = concept;
@@ -197,7 +204,8 @@ class _ConceptCard extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 2),
                         child: Text(
                           '${_fmtQty(i.quantity)} × ${i.product?.name ?? 'Silinmiş ürün'}'
-                          '${i.product?.barcode != null ? '  (${i.product!.barcode})' : ''}',
+                          '${i.product?.barcode != null ? '  (${i.product!.barcode})' : ''}'
+                          '${_discountLabel(i)}',
                           style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
                         ),
                       ),
@@ -214,7 +222,7 @@ class _ConceptCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                         fontFeatures: [FontFeature.tabularFigures()],
                       )),
-                  if (c.price != null && c.price != total)
+                  if (c.effectivePrice != total)
                     Text('Parça toplamı ${formatCurrency(total)}',
                         style: const TextStyle(
                           fontSize: 11,

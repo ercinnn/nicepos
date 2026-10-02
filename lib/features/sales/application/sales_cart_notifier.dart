@@ -72,12 +72,11 @@ class SalesState {
 
 /// Konsept Ürün'ü sepet satırlarına açar — her parça kendi Fiyat1'iyle ayrı
 /// satır olur (stok/rapor/offline akışı tekil ürün satışıyla birebir aynı).
-/// Konseptin kendi fiyatı varsa parça toplamıyla aradaki fark dağıtılır:
-///  - fiyat < toplam → her satıra AYNI yüzde iskonto (oransal dağıtım; aynı
-///    konsept tekrar okutulup adet artınca da toplam doğru kalır),
-///  - fiyat > toplam → birim fiyatlar aynı oranla ölçeklenir (negatif iskonto
-///    yok),
-///  - parça toplamı 0 ise tutarın tamamı ilk satıra yazılır.
+///  - Parça bazlı indirim (0069) tanımlıysa her satır KENDİ indirimini taşır
+///    (%/₺); indirimsiz parça indirimsiz kalır.
+///  - Hiç parça indirimi yoksa ESKİ konsept fiyatı (0067 `price`) geçerlidir:
+///    fiyat < toplam → her satıra AYNI % iskonto; fiyat > toplam → birim
+///    fiyatlar oranla ölçeklenir; parça toplamı 0 ise tutar ilk satıra yazılır.
 /// Ürünü okunamayan parça (`product == null`) atlanır.
 List<CartItem> conceptCartLines(ConceptProduct concept) {
   final parts = concept.items.where((i) => i.product != null).toList();
@@ -85,7 +84,8 @@ List<CartItem> conceptCartLines(ConceptProduct concept) {
   final sum = parts.fold<num>(0, (s, i) => s + i.product!.price1 * i.quantity);
   final price = concept.price;
 
-  CartItem line(ConceptProductItem i, {num? unitPrice, num discountPercent = 0}) {
+  CartItem line(ConceptProductItem i,
+      {num? unitPrice, num discountValue = 0, DiscountType discountType = DiscountType.percent}) {
     final p = i.product!;
     return CartItem(
       productId: p.id,
@@ -93,12 +93,18 @@ List<CartItem> conceptCartLines(ConceptProduct concept) {
       barcode: p.barcode,
       quantity: i.quantity,
       unitPrice: unitPrice ?? p.price1,
-      discountValue: discountPercent,
-      discountType: DiscountType.percent,
+      discountValue: discountValue,
+      discountType: discountType,
       conceptCode: concept.barcode,
     );
   }
 
+  if (parts.any((i) => i.discountValue > 0)) {
+    return [
+      for (final i in parts)
+        line(i, discountValue: i.discountValue, discountType: i.discountType),
+    ];
+  }
   if (price == null || price == sum) {
     return [for (final i in parts) line(i)];
   }
@@ -110,7 +116,7 @@ List<CartItem> conceptCartLines(ConceptProduct concept) {
   }
   if (price < sum) {
     final pct = (sum - price) / sum * 100;
-    return [for (final i in parts) line(i, discountPercent: pct)];
+    return [for (final i in parts) line(i, discountValue: pct)];
   }
   final ratio = price / sum;
   return [for (final i in parts) line(i, unitPrice: i.product!.price1 * ratio)];
@@ -154,8 +160,9 @@ class SalesCart extends _$SalesCart {
   }
 
   /// Konsept barkodu okutulunca parçaları sepete ekler. Aynı konseptin
-  /// satırı zaten varsa adedi artırılır (satırın iskonto %'si korunur →
-  /// konsept fiyatı adetle orantılı kalır).
+  /// satırı zaten varsa adedi artırılır: % iskonto adetle zaten orantılıdır,
+  /// ₺ iskonto ise satır başına sabit olduğundan yeni satırınkiyle TOPLANIR
+  /// (iki konsept = iki kat ₺ indirim).
   void addConcept(ConceptProduct concept) {
     final lines = conceptCartLines(concept);
     if (lines.isEmpty) return;
@@ -165,7 +172,13 @@ class SalesCart extends _$SalesCart {
         final index = items.indexWhere(
             (i) => i.productId == line.productId && i.conceptCode == line.conceptCode);
         if (index >= 0) {
-          items[index] = items[index].copyWith(quantity: items[index].quantity + line.quantity);
+          final existing = items[index];
+          final addTl = existing.discountType == DiscountType.tl &&
+              line.discountType == DiscountType.tl;
+          items[index] = existing.copyWith(
+            quantity: existing.quantity + line.quantity,
+            discountValue: addTl ? existing.discountValue + line.discountValue : null,
+          );
         } else {
           items.add(line);
         }

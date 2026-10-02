@@ -1,3 +1,4 @@
+import 'package:barcode/barcode.dart' as bc;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,6 +86,70 @@ void main() {
         ConceptProductItem(productId: 'gone', quantity: 2),
       ]);
       expect(conceptCartLines(c).map((l) => l.productId), ['v']);
+    });
+  });
+
+  group('parça bazlı indirim (0069)', () {
+    // Vazo %10, papatya indirimsiz, okaliptus satırına 15 ₺.
+    // 300×0.9=270 + 200 + (200−15)=185 → 655
+    ConceptProduct discounted({num? legacyPrice}) => ConceptProduct(
+          id: 'c2',
+          barcode: 'C261002004',
+          name: 'İndirimli',
+          price: legacyPrice,
+          items: const [
+            ConceptProductItem(productId: 'v', quantity: 1, product: _vazo, discountValue: 10),
+            ConceptProductItem(productId: 'p', quantity: 2, product: _papatya),
+            ConceptProductItem(
+                productId: 'o',
+                quantity: 5,
+                product: _okaliptus,
+                discountValue: 15,
+                discountType: DiscountType.tl),
+          ],
+        );
+
+    test('her parça yalnız kendi indirimini taşır', () {
+      final lines = conceptCartLines(discounted());
+      expect(lines[0].discountType, DiscountType.percent);
+      expect(lines[0].discountValue, 10);
+      expect(lines[1].discountValue, 0);
+      expect(lines[2].discountType, DiscountType.tl);
+      expect(lines[2].discountValue, 15);
+      expect(_sum(lines), closeTo(655, 1e-9));
+      expect(discounted().effectivePrice, closeTo(655, 1e-9));
+    });
+
+    test('parça indirimi varken eski genel fiyat yok sayılır', () {
+      expect(_sum(conceptCartLines(discounted(legacyPrice: 500))), closeTo(655, 1e-9));
+    });
+
+    test('iki kez okutulunca % korunur, ₺ indirim toplanır → toplam tam iki kat', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final cart = container.read(salesCartProvider.notifier);
+      cart.addConcept(discounted());
+      cart.addConcept(discounted());
+
+      final items = container.read(salesCartProvider).active.items;
+      expect(items.map((i) => i.quantity), [2, 4, 10]);
+      expect(items[0].discountValue, 10);
+      expect(items[2].discountValue, 30);
+      expect(container.read(salesCartProvider).active.subtotal, closeTo(1310, 1e-9));
+    });
+  });
+
+  group('etiket', () {
+    test('konsept etiket ürünü: ad, barkod ve satış fiyatı', () {
+      final p = _concept(price: 560).asLabelProduct();
+      expect(p.name, 'Papatyalı Vazo');
+      expect(p.barcode, 'C261002001');
+      expect(p.price1, 560);
+      expect(_concept().asLabelProduct().price1, 700);
+    });
+
+    test('konsept barkodu Code128 ile basılabilir (tüm etiketler Code128)', () {
+      expect(bc.Barcode.code128().isValid('C261002001'), isTrue);
     });
   });
 

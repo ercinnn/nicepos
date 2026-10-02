@@ -7,7 +7,7 @@ import '../models/concept_product.dart';
 class ConceptRepository {
   final SupabaseClient _client = Supabase.instance.client;
 
-  static const _select = '*, concept_product_items(product_id, quantity, sort_order, '
+  static const _select = '*, concept_product_items(product_id, quantity, sort_order, discount_value, discount_type, '
       'products(*, product_groups(name, parent_group:parent_group_id(name))))';
 
   Future<List<ConceptProduct>> fetchAll() async {
@@ -53,7 +53,12 @@ class ConceptRepository {
       'p_name': name,
       'p_price': price,
       'p_items': items
-          .map((i) => {'product_id': i.productId, 'quantity': i.quantity})
+          .map((i) => {
+                'product_id': i.productId,
+                'quantity': i.quantity,
+                'discount_value': i.discountValue,
+                'discount_type': i.discountType == DiscountType.tl ? 'tl' : 'percent',
+              })
           .toList(),
     });
     return result as String;
