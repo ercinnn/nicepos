@@ -1126,28 +1126,34 @@ class _MobileCartItem extends StatelessWidget {
                   ),
                   if (item.conceptCode != null) _ConceptTag(code: item.conceptCode!),
                   const SizedBox(height: 2),
-                  Row(
+                  // Row DEĞİL Wrap: 390px telefonda bu sütuna ~130px kalıyor,
+                  // 13 haneli barkod + "₺2.450,00" yan yana sığmıyordu —
+                  // barkod kesilip boşluksuz fiyata yapışıyordu
+                  // ("86910017811₺179,00", yaşanmış hata). Sığarsa aynı satır,
+                  // sığmazsa fiyat alt satıra iner; barkod hiç kesilmez.
+                  Wrap(
+                    spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Expanded(
-                        child: item.barcode != null && item.barcode!.isNotEmpty
-                            ? SelectableText(
-                                item.barcode!,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textMuted,
-                                  fontFeatures: [FontFeature.tabularFigures()],
-                                ),
-                                maxLines: 1,
-                              )
-                            : Text(
-                                item.note ?? '',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textMuted,
-                                ),
-                                overflow: TextOverflow.ellipsis,
+                      item.barcode != null && item.barcode!.isNotEmpty
+                          ? SelectableText(
+                              item.barcode!,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
-                      ),
+                              maxLines: 1,
+                            )
+                          : Text(
+                              item.note ?? '',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                       Text(
                         formatCurrency(item.unitPrice),
                         style: const TextStyle(
