@@ -110,6 +110,34 @@ void main() {
     expect(String.fromCharCodes(bytes.take(4)), '%PDF');
   });
 
+  test('wrapLongProductName: ≤20 karakter, kelime bölünmez', () {
+    // 20 karaktere sığan kısım ilk satırda, sığmayan kelime alta geçer.
+    expect(
+      wrapLongProductName('Çelik Tencere Seti 24 cm 3 Parça'),
+      ['ÇELIK TENCERE SETI', '24 CM 3 PARÇA'],
+    );
+    // Tam 20 karakter tek satırda kalır.
+    expect(wrapLongProductName('aaaaaaaaa bbbbbbbbbb'), [
+      'AAAAAAAAA BBBBBBBBBB',
+    ]);
+    // 21 karakter olacaksa kelime alta geçer (satır 20'den kısa kalsa da).
+    expect(wrapLongProductName('aaaaaaaaaa bbbbbbbbbb'), [
+      'AAAAAAAAAA',
+      'BBBBBBBBBB',
+    ]);
+    // 20'den uzun tek kelime bölünmez, kendi satırında durur.
+    expect(wrapLongProductName('Su Süperkalitelimükemmelürün 5L'), [
+      'SU',
+      'SÜPERKALITELIMÜKEMMELÜRÜN',
+      '5L',
+    ]);
+    // Fazla boşluklar yok sayılır; her satır ≤20 (tek uzun kelime hariç).
+    for (final line in wrapLongProductName('  Bir   iki  üç dört beş altı yedi sekiz dokuz on  ')) {
+      expect(line.length, lessThanOrEqualTo(20));
+      expect(line.trim(), line);
+    }
+  });
+
   test('paginateProductLabels(perPage: 24): 24 sınırında çok-sayfaya taşar',
       () {
     final pages = paginateProductLabels(

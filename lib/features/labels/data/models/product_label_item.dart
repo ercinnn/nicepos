@@ -19,6 +19,43 @@ const int kLongProductLabelRows = 12;
 const int kLongProductLabelPerPage =
     kLongProductLabelCols * kLongProductLabelRows; // 24
 
+/// Uzun Ürün Etiketi'nde ürün adının satır başına en fazla karakter sayısı.
+const int kLongProductNameLineChars = 20;
+
+/// Uzun Ürün Etiketi'nde ürün adının en fazla satır sayısı (20'şer karakterle
+/// 3 satır ≈ 60 karakter; 15.83mm hücreye 9pt'de sığar).
+const int kLongProductNameMaxLines = 3;
+
+/// Ürün adını (büyük harfe çevirip) satır başına en fazla [maxChars] karakter
+/// olacak şekilde KELİME bölmeden satırlara ayırır. Sığmayan kelime bir alt
+/// satıra geçer (satır 20'den kısa kalsa bile); tek başına [maxChars]'tan uzun
+/// bir kelime bölünmez, kendi satırında durur. Uzun Ürün Etiketi'nin üç çıktısı
+/// (önizleme · HTML · PDF) bu TEK fonksiyonu paylaşır → satır kırılımları
+/// birebir aynıdır.
+List<String> wrapLongProductName(
+  String name, {
+  int maxChars = kLongProductNameLineChars,
+}) {
+  final words = name
+      .toUpperCase()
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty);
+  final lines = <String>[];
+  var current = '';
+  for (final word in words) {
+    if (current.isEmpty) {
+      current = word;
+    } else if (current.length + 1 + word.length <= maxChars) {
+      current = '$current $word';
+    } else {
+      lines.add(current);
+      current = word;
+    }
+  }
+  if (current.isNotEmpty) lines.add(current);
+  return lines;
+}
+
 /// Ürün Etiketi kalemi: bir ürünün (barkod + ad) belirli ADET etiketi. Fiyat ve
 /// logo tutulmaz (bu sekmede yok). Adet kadar çoğaltılıp 72'lik ızgaraya dizilir.
 class ProductLabelItem {

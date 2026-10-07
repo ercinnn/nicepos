@@ -1130,7 +1130,7 @@ String _longProductCellHtml(ProductLabelItem? it) {
   final bcHtml = bc.isEmpty ? '' : '<div class="lbc">$bc</div>';
   return '''
     <div class="lcell">
-      <div class="lname">${_esc(it.productName)}</div>
+      <div class="lname">${wrapLongProductName(it.productName).map(_esc).join('<br>')}</div>
       <div class="lright">
         $bcHtml
         <div class="lbcno">${_esc(it.barcode)}</div>
@@ -1189,7 +1189,9 @@ String _buildLongProductHtml({
     align-items: center;
     gap: 2mm;
   }
-  /* Sol — ürün adı, 2 satır, büyük harf, kalın. */
+  /* Sol — ürün adı, büyük harf, kalın. Satırlar Dart tarafında kırılır
+     (wrapLongProductName: ≤20 karakter, kelime bölünmez, <br> ile); tarayıcı
+     ek kırılım yapmasın diye nowrap. En fazla 3 satır. */
   .lname {
     flex: 55 1 0;
     min-width: 0;
@@ -1197,8 +1199,9 @@ String _buildLongProductHtml({
     font-weight: 700;
     line-height: 1.15;
     text-transform: uppercase;
+    white-space: nowrap;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

@@ -1449,12 +1449,13 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
     child: pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        // Sol — ürün adı, 2 satır, büyük harf, kalın, sola dayalı.
+        // Sol — ürün adı, büyük harf, kalın, sola dayalı; satır başına en
+        // fazla 20 karakter, kelime bölünmez (wrapLongProductName), ≤3 satır.
         pw.Expanded(
           flex: 55,
           child: pw.Text(
-            it.productName.toUpperCase(),
-            maxLines: 2,
+            wrapLongProductName(it.productName).join('\n'),
+            maxLines: kLongProductNameMaxLines,
             overflow: pw.TextOverflow.clip,
             style: pw.TextStyle(
               fontSize: 9,

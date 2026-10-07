@@ -6854,14 +6854,15 @@ class _LongProductLabelCell extends StatelessWidget {
           : Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Sol — ürün adı, 2 satır, büyük harf, kalın. ClipRect: font
-                // taşarsa çizim kırpılır (overflow hatası yok).
+                // Sol — ürün adı, büyük harf, kalın; satır başına en fazla 20
+                // karakter, kelime bölünmez (wrapLongProductName), en fazla 3
+                // satır. ClipRect: font taşarsa çizim kırpılır (overflow yok).
                 Expanded(
                   flex: 55,
                   child: ClipRect(
                     child: Text(
-                      it.productName.toUpperCase(),
-                      maxLines: 2,
+                      wrapLongProductName(it.productName).join('\n'),
+                      maxLines: kLongProductNameMaxLines,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
