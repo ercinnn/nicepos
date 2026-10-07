@@ -1235,7 +1235,8 @@ String _buildLongProductHtml({
   .lbc svg { width: 100%; height: 100%; display: block; }
   .lbcno {
     width: 100%;
-    font-size: 7pt;
+    font-size: ${kLongLabelBarcodeNoPt}pt;
+    line-height: 1.1;
     letter-spacing: 0.3px;
     text-align: center;
     white-space: nowrap;

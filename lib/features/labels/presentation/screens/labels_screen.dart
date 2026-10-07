@@ -6916,7 +6916,11 @@ class _LongProductLabelCell extends StatelessWidget {
                             it.barcode,
                             maxLines: 1,
                             style: const TextStyle(
-                              fontSize: 9,
+                              // pt → px (@96dpi), PDF/HTML ile aynı punto.
+                              fontSize: kLongLabelBarcodeNoPt * 96 / 72,
+                              // HTML ile aynı satır yüksekliği; varsayılan
+                              // satır yüksekliği 8mm barkodla 12.83mm'yi aşar.
+                              height: 1.1,
                               letterSpacing: 0.3,
                               color: Colors.black,
                               fontFeatures: [FontFeature.tabularFigures()],

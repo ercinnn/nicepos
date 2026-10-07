@@ -1518,7 +1518,7 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
                   maxLines: 1,
                   overflow: pw.TextOverflow.clip,
                   style: pw.TextStyle(
-                    fontSize: 7,
+                    fontSize: kLongLabelBarcodeNoPt,
                     letterSpacing: 0.3,
                     color: PdfColors.black,
                   ),

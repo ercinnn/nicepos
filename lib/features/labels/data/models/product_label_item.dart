@@ -28,6 +28,11 @@ const double kLongLabelSideMarginMm = 5;
 const double kLongLabelNameWidthMm = 48;
 const double kLongLabelGapMm = 14;
 
+/// Uzun Ürün Etiketi barkod numarası punto (pt) — üç çıktı paylaşır (önizleme
+/// px'e çevirir: pt × 96/72). İç yükseklik 12.83mm − barkod 8mm → numaraya
+/// ~4.8mm kalır; 10pt (satır ≈4.2mm) sığan en büyük değere yakın.
+const double kLongLabelBarcodeNoPt = 10;
+
 /// Uzun Ürün Etiketi'nde ürün adının satır başına en fazla karakter sayısı.
 const int kLongProductNameLineChars = 20;
 
