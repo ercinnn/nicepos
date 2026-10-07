@@ -190,7 +190,7 @@ String _esc(String? value) {
 // gösterilmez ama fiyat/ad korunur).
 // [width]/[height] yalnız SVG'nin EN-BOY ORANINI belirler (CSS kutuyu boyutlar,
 // SVG oranını koruyarak sığar) — barkodun kutuyu tam doldurması için oran
-// kutunun oranıyla eşleşmeli (bkz. Uzun Ürün Etiketi ~76.5×8mm).
+// kutunun oranıyla eşleşmeli (bkz. Uzun Ürün Etiketi 60×8mm).
 String _barcodeSvg(String data, {double width = 260, double height = 60}) {
   if (data.trim().isEmpty) return '';
   try {
@@ -1120,9 +1120,9 @@ String _buildProductHtml({
 
 // ─── Uzun Ürün Etiketi — A4 YATAY, 2 sütun × 12 satır = 24 etiket/sayfa ───────
 // Ürün Etiketi'nin yatay/uzun ikizi. Sayfa boşluğu üst/alt 10mm, yatay 0 →
-// hücre 148.5 × 15.83mm; sol/sağ 5mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
-// YANA: ad (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 14mm · Code128 barkod
-// (SABİT 8mm yükseklik, kalan ~76.5mm genişlik) + barkod no. die-cut →
+// hücre 148.5 × 15.83mm; sol/sağ 10mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
+// YANA: ad (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 20.5mm · Code128 barkod
+// (SABİT 8mm yükseklik, kalan 60mm genişlik) + barkod no. die-cut →
 // çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
 
 // Barkod kutusu ≈ (148.5 − 2×10 − 48 − 4) × 8mm → SVG oranı bununla eşlenir ki
@@ -1191,8 +1191,8 @@ String _buildLongProductHtml({
     page-break-after: always;
   }
   .lsheet:last-child { page-break-after: auto; }
-  /* Hücre — sol/sağ 5mm, üst/alt 1.5mm iç pay; die-cut → çerçeve YOK.
-     Yan yana: ad (48mm) · 14mm · barkod (76.5mm). */
+  /* Hücre — sol/sağ 10mm, üst/alt 1.5mm iç pay; die-cut → çerçeve YOK.
+     Yan yana: ad (48mm) · 20.5mm · barkod (60mm). */
   .lcell {
     width: 148.5mm;
     height: 15.83mm;

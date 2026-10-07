@@ -1382,8 +1382,8 @@ pw.Widget _productCell(ProductLabelItem? it) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Uzun Ürün Etiketi PDF üretimi — Ürün Etiketi'nin yatay/uzun ikizi. A4 YATAY,
 // 2 sütun × 12 satır = 24 etiket/sayfa. Sayfa boşluğu üst/alt 10mm, yatay 0 →
-// hücre 148.5 × 15.83mm; sol/sağ 5mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
-// YANA: ürün adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 14mm · Code128
+// hücre 148.5 × 15.83mm; sol/sağ 10mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
+// YANA: ürün adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 20.5mm · Code128
 // barkod (SABİT 8mm yükseklik, kalan genişlik) + barkod no. Fiyat/logo YOK,
 // çıktı SİYAH/BEYAZ, die-cut → kesim çizgisi YOK. Önizleme = HTML = PDF birebir
 // (ölçüler product_label_item.dart sabitlerinden).
@@ -1439,7 +1439,7 @@ Future<Uint8List> buildLongProductLabelsPdf({
 // Tek Uzun Ürün Etiketi hücresi. Boş hane → tamamen boş (die-cut). Barkod
 // `_productCell` ile AYNI kanıtlanmış desen: SABİT 8mm `SizedBox` + savunma
 // eşikli `LayoutBuilder` (v1.20.1 `height > 0` dersi). Yatay yerleşim:
-// 5mm · ad (48mm) · 14mm · barkod (76.5mm) · 5mm (product_label_item.dart).
+// 10mm · ad (48mm) · 20.5mm · barkod (60mm) · 10mm (product_label_item.dart).
 pw.Widget _longProductCell(ProductLabelItem? it) {
   if (it == null) {
     // Boş hücre — die-cut, çerçeve/kesim çizgisi YOK.
@@ -1447,7 +1447,7 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
   }
 
   return pw.Container(
-    // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay (önizleme/HTML ile aynı).
+    // Sol/sağ 10mm boşluk, üst/alt 1.5mm iç pay (önizleme/HTML ile aynı).
     padding: pw.EdgeInsets.symmetric(
       horizontal: kLongLabelSideMarginMm * PdfPageFormat.mm,
       vertical: 1.5 * PdfPageFormat.mm,
@@ -1474,7 +1474,7 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
         ),
         pw.SizedBox(width: kLongLabelGapMm * PdfPageFormat.mm),
         // Sağ — Code128 barkod (SABİT 8mm yükseklik, kalan genişliğin tamamı →
-        // sağdaki 5mm boşluğa kadar) + altında barkod no.
+        // sağdaki 10mm boşluğa kadar) + altında barkod no.
         pw.Expanded(
           child: pw.Column(
             mainAxisAlignment: pw.MainAxisAlignment.center,

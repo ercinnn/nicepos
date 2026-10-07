@@ -6732,8 +6732,8 @@ class _ProductLabelCell extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 // Uzun Ürün Etiketi — canlı çok-sayfalı A4 YATAY önizleme: 2 sütun × 12 satır
 // = 24 etiket/sayfa. Ürün Etiketi'nin sayfa boşluğu (üst/alt 10mm, yatay 0)
-// aynen; hücre 148.5 × 15.83mm, sol/sağ 5mm + üst/alt 1.5mm iç pay. Etiket-içi
-// YAN YANA: ürün adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 14mm · Code128
+// aynen; hücre 148.5 × 15.83mm, sol/sağ 10mm + üst/alt 1.5mm iç pay. Etiket-içi
+// YAN YANA: ürün adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 20.5mm · Code128
 // barkod (SABİT 8mm yükseklik, kalan genişlik, savunma eşikli) + barkod no.
 // Ölçüler product_label_item.dart sabitlerinden → PDF/HTML ile birebir. Canlı
 // önizlemede ince nötr kesim kılavuzu; baskıda çizgi YOK.
@@ -6849,7 +6849,7 @@ class _LongProductLabelCell extends StatelessWidget {
           width: 0.5,
         ),
       ),
-      // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay.
+      // Sol/sağ 10mm boşluk, üst/alt 1.5mm iç pay.
       padding: const EdgeInsets.symmetric(
         horizontal: kLongLabelSideMarginMm * _kProdMmPx,
         vertical: _kProdCellPad,
@@ -6881,7 +6881,7 @@ class _LongProductLabelCell extends StatelessWidget {
                 ),
                 const SizedBox(width: kLongLabelGapMm * _kProdMmPx),
                 // Sağ — Code128 barkod (SABİT 8mm yükseklik, kalan genişliğin
-                // tamamı → sağdaki 5mm boşluğa kadar) + barkod no.
+                // tamamı → sağdaki 10mm boşluğa kadar) + barkod no.
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,

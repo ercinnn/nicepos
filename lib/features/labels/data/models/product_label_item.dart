@@ -20,13 +20,13 @@ const int kLongProductLabelPerPage =
     kLongProductLabelCols * kLongProductLabelRows; // 24
 
 /// Uzun Ürün Etiketi hücre-içi yatay yerleşim (mm) — önizleme · HTML · PDF
-/// BİREBİR paylaşır. Hücre 148.5mm = 5 (sol boşluk) + 48 (ad sütunu, SABİT,
-/// 20 karakterlik satıra göre) + 14 (ara) + 76.5 (barkod, kalan) + 5 (sağ
+/// BİREBİR paylaşır. Hücre 148.5mm = 10 (sol boşluk) + 48 (ad sütunu, SABİT,
+/// 20 karakterlik satıra göre) + 20.5 (ara) + 60 (barkod, kalan) + 10 (sağ
 /// boşluk) — kullanıcı ölçüsü. Ad sütunu sabit olduğu için tüm etiketlerde
 /// barkodlar aynı hizada başlar.
-const double kLongLabelSideMarginMm = 5;
+const double kLongLabelSideMarginMm = 10;
 const double kLongLabelNameWidthMm = 48;
-const double kLongLabelGapMm = 14;
+const double kLongLabelGapMm = 20.5;
 
 /// Uzun Ürün Etiketi barkod numarası punto (pt) — üç çıktı paylaşır (önizleme
 /// px'e çevirir: pt × 96/72). İç yükseklik 12.83mm − barkod 8mm → numaraya

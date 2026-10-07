@@ -78,16 +78,16 @@ void main() {
   });
 
   testWidgets(
-      'yerleşim: 5 + 48 + 14 + 76.5 + 5 mm, barkod tüm etiketlerde aynı '
+      'yerleşim: 10 + 48 + 20.5 + 60 + 10 mm, barkod tüm etiketlerde aynı '
       'hizada başlar', (tester) async {
     await pumpPage(tester);
     const mm = 3.7795;
-    // Kullanıcı ölçüsü: barkod 76.5mm (sabitlerden türetilen değerle aynı).
+    // Kullanıcı ölçüsü: barkod 60mm (sabitlerden türetilen değerle aynı).
     expect(
       148.5 - 2 * kLongLabelSideMarginMm - kLongLabelNameWidthMm - kLongLabelGapMm,
-      76.5,
+      60,
     );
-    const expectedBarcodeW = 76.5 * mm; // ≈289px
+    const expectedBarcodeW = 60 * mm; // ≈227px
     final areas = find.byKey(const Key('longProdBarcodeArea'));
     final rects = [
       for (final el in areas.evaluate()) tester.getRect(find.byWidget(el.widget)),
