@@ -60,6 +60,14 @@ void printProductLabelsA4({
   // No-op
 }
 
+/// Uzun Ürün Etiketi (A4 yatay 2×12 = 24/sayfa) yazdırma — web dışı
+/// platformlarda no-op.
+void printLongProductLabelsA4({
+  required List<ProductLabelItem> items,
+}) {
+  // No-op
+}
+
 /// İndirim Etiketi (2×2 = 4/sayfa) yazdırma — web dışı platformlarda no-op.
 void printDiscountLabelsA4({
   required List<DiscountLabelSlot?> slots,

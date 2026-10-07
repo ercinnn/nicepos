@@ -1378,3 +1378,148 @@ pw.Widget _productCell(ProductLabelItem? it) {
     ),
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Uzun Ürün Etiketi PDF üretimi — Ürün Etiketi'nin yatay/uzun ikizi. A4 YATAY,
+// 2 sütun × 12 satır = 24 etiket/sayfa. Sayfa boşluğu üst/alt 10mm, yatay 0 →
+// hücre 148.5 × 15.83mm, 1.5mm iç pay. Etiket-içi YAN YANA: solda ürün adı
+// (2 satır, büyük harf, kalın) · sağda Code128 barkod (SABİT 8mm) + barkod no.
+// Fiyat/logo YOK, çıktı SİYAH/BEYAZ, die-cut → kesim çizgisi YOK. Önizleme =
+// HTML = PDF birebir (55:45 sol:sağ oranı üçünde aynı).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Kalemleri (adet kadar çoğaltarak) çok-sayfalı A4 yatay 2×12 Uzun Ürün
+/// Etiketi PDF'ine dönüştürür ve ham byte'ları döndürür.
+Future<Uint8List> buildLongProductLabelsPdf({
+  required List<ProductLabelItem> items,
+}) async {
+  pw.ThemeData theme;
+  try {
+    final base = await PdfGoogleFonts.robotoRegular();
+    final bold = await PdfGoogleFonts.robotoBold();
+    theme = pw.ThemeData.withFont(base: base, bold: bold);
+  } catch (_) {
+    theme = pw.ThemeData.base();
+  }
+
+  final pages =
+      paginateProductLabels(items, perPage: kLongProductLabelPerPage);
+  final doc = pw.Document(theme: theme);
+  for (final page in pages) {
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4.landscape,
+        // Sayfa boşluğu: üst/alt 10mm, yatay 0 (etiketler tam genişliği doldurur).
+        margin: pw.EdgeInsets.symmetric(vertical: 10 * PdfPageFormat.mm),
+        build: (context) {
+          return pw.Column(
+            children: List.generate(kLongProductLabelRows, (r) {
+              return pw.Expanded(
+                // stretch: hücre satır yüksekliğini tam doldurur (önizlemeyle aynı).
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: List.generate(kLongProductLabelCols, (c) {
+                    final idx = r * kLongProductLabelCols + c;
+                    final it = idx < page.length ? page[idx] : null;
+                    return pw.Expanded(child: _longProductCell(it));
+                  }),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
+
+  return doc.save();
+}
+
+// Tek Uzun Ürün Etiketi hücresi. Boş hane → tamamen boş (die-cut). Barkod
+// `_productCell` ile AYNI kanıtlanmış desen: SABİT 8mm `SizedBox` + savunma
+// eşikli `LayoutBuilder` (v1.20.1 `height > 0` dersi) + 1:8:1 yatay oran.
+pw.Widget _longProductCell(ProductLabelItem? it) {
+  if (it == null) {
+    // Boş hücre — die-cut, çerçeve/kesim çizgisi YOK.
+    return pw.Container();
+  }
+
+  return pw.Container(
+    padding: pw.EdgeInsets.all(1.5 * PdfPageFormat.mm),
+    child: pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        // Sol — ürün adı, 2 satır, büyük harf, kalın, sola dayalı.
+        pw.Expanded(
+          flex: 55,
+          child: pw.Text(
+            it.productName.toUpperCase(),
+            maxLines: 2,
+            overflow: pw.TextOverflow.clip,
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+              lineSpacing: 0.5,
+              color: PdfColors.black,
+            ),
+          ),
+        ),
+        pw.SizedBox(width: 2 * PdfPageFormat.mm),
+        // Sağ — Code128 barkod (SABİT 8mm) + altında barkod no.
+        pw.Expanded(
+          flex: 45,
+          child: pw.Column(
+            mainAxisAlignment: pw.MainAxisAlignment.center,
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              pw.SizedBox(
+                height: 8 * PdfPageFormat.mm,
+                child: pw.LayoutBuilder(
+                  builder: (context, constraints) {
+                    final maxHeight =
+                        constraints?.maxHeight ?? double.infinity;
+                    if (maxHeight < 2 * PdfPageFormat.mm) {
+                      return pw.SizedBox();
+                    }
+                    return pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
+                      children: [
+                        pw.Spacer(flex: 1),
+                        pw.Expanded(
+                          flex: 8,
+                          child: bc.Barcode.code128().isValid(it.barcode)
+                              ? pw.BarcodeWidget(
+                                  barcode: bc.Barcode.code128(),
+                                  data: it.barcode,
+                                  drawText: false,
+                                  color: PdfColors.black,
+                                )
+                              : pw.SizedBox(),
+                        ),
+                        pw.Spacer(flex: 1),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              pw.SizedBox(
+                width: double.infinity,
+                child: pw.Text(
+                  it.barcode,
+                  textAlign: pw.TextAlign.center,
+                  maxLines: 1,
+                  overflow: pw.TextOverflow.clip,
+                  style: pw.TextStyle(
+                    fontSize: 7,
+                    letterSpacing: 0.3,
+                    color: PdfColors.black,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}

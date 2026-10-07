@@ -84,3 +84,6 @@ quad_label_golden.png
 
 # Ürün Etiketi golden testinin ürettiği görsel artefakt (test/product_label_golden_test.dart).
 product_label_golden.png
+
+# Uzun Ürün Etiketi golden testinin ürettiği görsel artefakt (test/long_product_label_golden_test.dart).
+long_product_label_golden.png

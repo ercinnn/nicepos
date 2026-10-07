@@ -628,6 +628,68 @@ class LabelProductSheet extends _$LabelProductSheet {
   void clearAll() => state = LabelProductSheetState.initial();
 }
 
+// ─── Uzun Ürün Etiketi sayfası (A4 yatay, 2×12 = 24/sayfa) ──────────────────
+
+/// Uzun Ürün Etiketi sayfasının durumu — Ürün Etiketi ile aynı adet-tabanlı
+/// kalem listesi (`ProductLabelItem`), yalnız sayfa başına 24 etiket. Ürün
+/// Etiketi'nin listesinden AYRI tutulur (iki sekme birbirini etkilemez).
+class LabelLongProductSheetState {
+  final List<ProductLabelItem> items;
+
+  const LabelLongProductSheetState({required this.items});
+
+  factory LabelLongProductSheetState.initial() =>
+      const LabelLongProductSheetState(items: []);
+
+  /// Adet kadar çoğaltılınca oluşacak toplam etiket sayısı.
+  int get totalLabels => items.fold(0, (sum, it) => sum + it.quantity);
+
+  /// Baskıda oluşacak A4 sayfa sayısı (en az 1; her sayfa 24 etiket).
+  int get pageCount => totalLabels == 0
+      ? 1
+      : (totalLabels + kLongProductLabelPerPage - 1) ~/
+          kLongProductLabelPerPage;
+
+  LabelLongProductSheetState copyWith({List<ProductLabelItem>? items}) {
+    return LabelLongProductSheetState(items: items ?? this.items);
+  }
+}
+
+/// Uzun Ürün Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde
+/// kalem listesi korunur (`LabelProductSheet` ile birebir aynı desen).
+@Riverpod(keepAlive: true)
+class LabelLongProductSheet extends _$LabelLongProductSheet {
+  @override
+  LabelLongProductSheetState build() => LabelLongProductSheetState.initial();
+
+  /// Listeye yeni bir kalem (ürün adı · barkod · adet) ekler.
+  void addItem(ProductLabelItem item) {
+    state = state.copyWith(items: [...state.items, item]);
+  }
+
+  /// [index] kalemini listeden çıkarır.
+  void removeItem(int index) {
+    if (index < 0 || index >= state.items.length) return;
+    final next = [...state.items]..removeAt(index);
+    state = state.copyWith(items: next);
+  }
+
+  /// [index] kaleminin adedini günceller (0/negatif → kalem silinir).
+  void updateQuantity(int index, int quantity) {
+    if (index < 0 || index >= state.items.length) return;
+    if (quantity <= 0) {
+      removeItem(index);
+      return;
+    }
+    final next = [...state.items];
+    next[index] = next[index].copyWith(quantity: quantity);
+    state = state.copyWith(items: next);
+  }
+
+  /// Tüm kalemleri temizler.
+  void clearAll() => state = LabelLongProductSheetState.initial();
+}
+
 // ─── Kayıtlı PDF'ler — Supabase Storage (KARAR v1.11) ────────────────────────
 
 /// `etiket_pdfleri` bucket'ı için Storage repository (tekil örüntü).

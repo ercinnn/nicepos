@@ -42,8 +42,9 @@ import '../widgets/label_scan_sheet.dart';
 // Etiketi (eski "Yeni Etiket") 24-hane akışı + Tel Etiketi (Raf ile birebir
 // aynı hücre/yükseklik, yalnız 4×8=32 ızgara) + Geniş Logo 10-hane akışı +
 // Poster (barkod okutulan ürünlerin profesyonel A4 listesi) + Ürün Etiketi
-// (adet-tabanlı 6×12) + İndirim Etiketi (4 hane, 2×2 — eski/yeni fiyat +
-// indirim rozeti) + kayıtlı PDF'ler.
+// (adet-tabanlı 6×12) + Uzun Ürün Etiketi (adet-tabanlı, A4 yatay 2×12) +
+// İndirim Etiketi (4 hane, 2×2 — eski/yeni fiyat + indirim rozeti) + kayıtlı
+// PDF'ler.
 enum _LabelTab {
   havuz,
   raf,
@@ -52,6 +53,7 @@ enum _LabelTab {
   genis,
   poster,
   urun,
+  uzunUrun,
   indirim,
   kayitli,
 }
@@ -155,6 +157,16 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   bool _prodError = false; // son barkod çözülemedi (danger uyarı)
   bool _prodBarcodeActive = false; // barkod hanesi odaklı mı (aktif altını)
 
+  // Uzun Ürün Etiketi sekmesi — Ürün Etiketi ile AYNI adet-tabanlı akış, ayrı
+  // giriş durumu (hedef: labelLongProductSheetProvider).
+  late final TextEditingController _longBarcodeController;
+  late final TextEditingController _longQtyController;
+  late final FocusNode _longBarcodeFocus;
+  late final FocusNode _longQtyFocus;
+  Product? _longPending; // barkodu çözülmüş, adet bekleyen ürün
+  bool _longError = false; // son barkod çözülemedi (danger uyarı)
+  bool _longBarcodeActive = false; // barkod hanesi odaklı mı (aktif altını)
+
   _LabelTab _tab = _LabelTab.raf; // aktif sekme
 
   @override
@@ -249,6 +261,16 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       }
     });
     _prodQtyFocus = FocusNode();
+    // Uzun Ürün Etiketi sekmesi — barkod + adet giriş kontrolleri.
+    _longBarcodeController = TextEditingController();
+    _longQtyController = TextEditingController(text: '1');
+    _longBarcodeFocus = FocusNode();
+    _longBarcodeFocus.addListener(() {
+      if (mounted) {
+        setState(() => _longBarcodeActive = _longBarcodeFocus.hasFocus);
+      }
+    });
+    _longQtyFocus = FocusNode();
     // Barkod → Product bellek indeksini bir kez prefetch et (satış ekranıyla
     // paylaşılan keepAlive cache) → okutmada ağ turu beklemeden çözüm.
     ref.read(barcodeCacheProvider).ensureLoaded();
@@ -337,6 +359,10 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     _prodQtyController.dispose();
     _prodBarcodeFocus.dispose();
     _prodQtyFocus.dispose();
+    _longBarcodeController.dispose();
+    _longQtyController.dispose();
+    _longBarcodeFocus.dispose();
+    _longQtyFocus.dispose();
     super.dispose();
   }
 
@@ -1845,6 +1871,136 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     }
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // Uzun Ürün Etiketi sekmesi — Ürün Etiketi ile BİREBİR aynı adet-tabanlı
+  // akış (aynı _resolveBarcode, aynı _ProductInputColumn), yalnız hedef state
+  // labelLongProductSheetProvider ve çıktı A4 yatay 2×12 = 24 etiket.
+  // ═════════════════════════════════════════════════════════════════════════
+
+  Future<void> _onLongBarcodeSubmitted(String raw) async {
+    final query = raw.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _longPending = null;
+        _longError = false;
+      });
+      return;
+    }
+    final product = await _resolveBarcode(query);
+    if (!mounted) return;
+    if (product == null) {
+      setState(() {
+        _longPending = null;
+        _longError = true;
+      });
+      playScanBeep(success: false);
+      return;
+    }
+    setState(() {
+      _longPending = product;
+      _longError = false;
+    });
+    HapticFeedback.lightImpact();
+    playScanBeep(success: true);
+    // Adet hanesine geç, mevcut değeri seç (hızlı üzerine yazma).
+    _longQtyFocus.requestFocus();
+    _longQtyController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _longQtyController.text.length,
+    );
+  }
+
+  void _addLongItem() {
+    final product = _longPending;
+    if (product == null) {
+      _longBarcodeFocus.requestFocus();
+      return;
+    }
+    final qty = int.tryParse(_longQtyController.text.trim()) ?? 0;
+    if (qty <= 0) return;
+    final code = (product.barcode != null && product.barcode!.isNotEmpty)
+        ? product.barcode!
+        : _longBarcodeController.text.trim();
+    ref.read(labelLongProductSheetProvider.notifier).addItem(
+          ProductLabelItem(
+            barcode: code,
+            productName: product.name,
+            quantity: qty,
+          ),
+        );
+    setState(() {
+      _longPending = null;
+      _longError = false;
+    });
+    _longBarcodeController.clear();
+    _longQtyController.text = '1';
+    _longBarcodeFocus.requestFocus();
+  }
+
+  void _removeLongItem(int index) {
+    ref.read(labelLongProductSheetProvider.notifier).removeItem(index);
+  }
+
+  void _updateLongQty(int index, int qty) {
+    ref.read(labelLongProductSheetProvider.notifier).updateQuantity(index, qty);
+  }
+
+  void _clearLongAll() {
+    ref.read(labelLongProductSheetProvider.notifier).clearAll();
+    setState(() {
+      _longPending = null;
+      _longError = false;
+    });
+    _longBarcodeController.clear();
+    _longQtyController.text = '1';
+  }
+
+  void _printLongProduct() {
+    final state = ref.read(labelLongProductSheetProvider);
+    if (state.items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir ürün ekleyin.')),
+      );
+      return;
+    }
+    printLongProductLabelsA4(items: state.items);
+  }
+
+  Future<void> _saveLongProductPdf() async {
+    final state = ref.read(labelLongProductSheetProvider);
+    if (state.items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Önce en az bir ürün ekleyin.')),
+      );
+      return;
+    }
+    final name = await _askFileName(prefix: 'uzun-urun-etiket');
+    if (name == null || !mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final bytes = await buildLongProductLabelsPdf(items: state.items);
+      final saved =
+          await ref.read(labelsStorageRepositoryProvider).upload(name, bytes);
+      ref.invalidate(savedLabelFilesProvider);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kaydedildi: $saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF kaydedilemedi: $e')),
+      );
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // Havuz (Etiket Havuzu, bkz. 0032_label_pool.sql) — kullanıcılar/cihazlar
   // arası PAYLAŞILAN bekleyen etiket kuyruğu. `_savePdf`/`_saveProductPdf`
@@ -2044,6 +2200,13 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return mobile
           ? _buildProductMobile(selector)
           : _buildProductDesktop(selector);
+    }
+
+    // ── Sekme: Uzun Ürün Etiketi (A4 yatay, 2×12) ──────────────────────────
+    if (_tab == _LabelTab.uzunUrun) {
+      return mobile
+          ? _buildLongProductMobile(selector)
+          : _buildLongProductDesktop(selector);
     }
 
     // ── Sekme 5: İndirim Etiketi (4 hane, 2×2) ─────────────────────────────
@@ -2829,6 +2992,110 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           const SizedBox(height: AppSizes.space8),
           // Çok-sayfalı önizleme dış sayfa scroll'una gömülü (kendi scroll'u yok).
           _ProductPreviewPane(scrollable: false),
+          const SizedBox(height: AppSizes.space20),
+        ],
+      ),
+    );
+  }
+
+  // ─── Uzun Ürün Etiketi — masaüstü (Ürün Etiketi iskeleti; sağda yatay A4
+  //     önizleme) ──────────────────────────────────────────────────────────
+  static const String _kLongSubtitle =
+      'Barkod okutun + adet girin; her ürün adet kadar çoğaltılıp A4 yatay '
+      'sayfada 2×12 = 24 uzun barkod etiketine dizilir.';
+
+  Widget _buildLongProductDesktop(Widget selector) {
+    final state = ref.watch(labelLongProductSheetProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        selector,
+        const SizedBox(height: AppSizes.space16),
+        _Header(
+          filledCount: state.totalLabels,
+          showLogoActions: false,
+          badgeOverride:
+              '${state.totalLabels} etiket · ${state.pageCount} sayfa',
+          onClearAll: _clearLongAll,
+          onPrint: _printLongProduct,
+          onSavePdf: _saveLongProductPdf,
+          subtitle: _kLongSubtitle,
+        ),
+        const SizedBox(height: AppSizes.space16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: _ProductInputColumn(
+                  barcodeController: _longBarcodeController,
+                  qtyController: _longQtyController,
+                  barcodeFocus: _longBarcodeFocus,
+                  qtyFocus: _longQtyFocus,
+                  barcodeActive: _longBarcodeActive,
+                  pending: _longPending,
+                  isError: _longError,
+                  items: state.items,
+                  onBarcodeSubmitted: _onLongBarcodeSubmitted,
+                  onAdd: _addLongItem,
+                  onRemoveItem: _removeLongItem,
+                  onUpdateQty: _updateLongQty,
+                ),
+              ),
+              const SizedBox(width: AppSizes.space16),
+              const Expanded(
+                flex: 6,
+                child: _LongProductPreviewPane(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Uzun Ürün Etiketi — mobil (tek kolon) ─────────────────────────────────
+  Widget _buildLongProductMobile(Widget selector) {
+    final state = ref.watch(labelLongProductSheetProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          selector,
+          const SizedBox(height: AppSizes.space16),
+          _Header(
+            filledCount: state.totalLabels,
+            showLogoActions: false,
+            badgeOverride:
+                '${state.totalLabels} etiket · ${state.pageCount} sayfa',
+            onClearAll: _clearLongAll,
+            onPrint: _printLongProduct,
+            onSavePdf: _saveLongProductPdf,
+            subtitle: _kLongSubtitle,
+            compact: true,
+          ),
+          const SizedBox(height: AppSizes.space16),
+          _ProductInputColumn(
+            barcodeController: _longBarcodeController,
+            qtyController: _longQtyController,
+            barcodeFocus: _longBarcodeFocus,
+            qtyFocus: _longQtyFocus,
+            barcodeActive: _longBarcodeActive,
+            pending: _longPending,
+            isError: _longError,
+            items: state.items,
+            shrinkWrap: true,
+            onBarcodeSubmitted: _onLongBarcodeSubmitted,
+            onAdd: _addLongItem,
+            onRemoveItem: _removeLongItem,
+            onUpdateQty: _updateLongQty,
+          ),
+          const SizedBox(height: AppSizes.space20),
+          const _SectionLabel('A4 Önizleme'),
+          const SizedBox(height: AppSizes.space8),
+          // Çok-sayfalı önizleme dış sayfa scroll'una gömülü (kendi scroll'u yok).
+          const _LongProductPreviewPane(scrollable: false),
           const SizedBox(height: AppSizes.space20),
         ],
       ),
@@ -6463,9 +6730,211 @@ class _ProductLabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Uzun Ürün Etiketi — canlı çok-sayfalı A4 YATAY önizleme: 2 sütun × 12 satır
+// = 24 etiket/sayfa. Ürün Etiketi'nin sayfa boşluğu (üst/alt 10mm, yatay 0) ve
+// hücre iç payı (1.5mm) aynen; hücre 148.5 × 15.83mm. Etiket-içi YAN YANA
+// (55:45): solda ürün adı (2 satır, büyük harf, kalın) · sağda Code128 barkod
+// (SABİT 8mm, savunma eşikli) + barkod no. PDF/HTML ile birebir oran. Canlı
+// önizlemede ince nötr kesim kılavuzu; baskıda çizgi YOK.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _LongProductPreviewPane extends ConsumerWidget {
+  // Masaüstü: kendi dikey scroll'u. Mobil: false → dış sayfa scroll'u taşır.
+  final bool scrollable;
+
+  const _LongProductPreviewPane({this.scrollable = true});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = ref.watch(labelLongProductSheetProvider).items;
+    final pages =
+        paginateProductLabels(items, perPage: kLongProductLabelPerPage);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageBg,
+        borderRadius: BorderRadius.circular(AppSizes.radiusLg),
+        border: Border.all(color: AppColors.divider),
+      ),
+      padding: const EdgeInsets.all(AppSizes.space12),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final pageW = c.maxWidth;
+          // Yatay A4: yükseklik/genişlik = 210/297.
+          final pageH = pageW * (_kA4Width / _kA4Height);
+          final content = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < pages.length; i++) ...[
+                if (pages.length > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSizes.space6),
+                    child: _SectionLabel('Sayfa ${i + 1} / ${pages.length}'),
+                  ),
+                SizedBox(
+                  width: pageW,
+                  height: pageH,
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: _LongProductA4Canvas(slots: pages[i]),
+                  ),
+                ),
+                if (i < pages.length - 1)
+                  const SizedBox(height: AppSizes.space16),
+              ],
+            ],
+          );
+          return scrollable
+              ? SingleChildScrollView(child: content)
+              : content;
+        },
+      ),
+    );
+  }
+}
+
+class _LongProductA4Canvas extends StatelessWidget {
+  final List<ProductLabelItem?> slots;
+
+  const _LongProductA4Canvas({required this.slots});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      // Yatay A4 tuvali (96dpi): 297×210mm ≈ 1123×794px.
+      width: _kA4Height,
+      height: _kA4Width,
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: _kProdMarginV),
+      child: Column(
+        children: List.generate(kLongProductLabelRows, (r) {
+          return Expanded(
+            // stretch: yan yana (Row) hücre satır yüksekliğini tam doldursun.
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: List.generate(kLongProductLabelCols, (c) {
+                final idx = r * kLongProductLabelCols + c;
+                final it = idx < slots.length ? slots[idx] : null;
+                return Expanded(child: _LongProductLabelCell(item: it));
+              }),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Uzun Ürün Etiketi A4 yatay önizleme tuvalini (2×12) golden/görsel doğrulama
+// için üretir.
+@visibleForTesting
+Widget buildLongProductLabelPageForGolden(List<ProductLabelItem?> slots) =>
+    _LongProductA4Canvas(slots: slots);
+
+class _LongProductLabelCell extends StatelessWidget {
+  final ProductLabelItem? item;
+
+  const _LongProductLabelCell({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final it = item;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          // İnce nötr baskı-grisi kesim kılavuzu (altın DEĞİL); baskıda YOK.
+          color: it == null
+              ? const Color(0xFFE0E0E0)
+              : const Color(0xFFC9CDD6),
+          width: 0.5,
+        ),
+      ),
+      padding: const EdgeInsets.all(_kProdCellPad),
+      child: it == null
+          ? const SizedBox.expand()
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Sol — ürün adı, 2 satır, büyük harf, kalın. ClipRect: font
+                // taşarsa çizim kırpılır (overflow hatası yok).
+                Expanded(
+                  flex: 55,
+                  child: ClipRect(
+                    child: Text(
+                      it.productName.toUpperCase(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        height: 1.15,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 2 * _kProdMmPx),
+                // Sağ — Code128 barkod (SABİT 8mm) + barkod no.
+                Expanded(
+                  flex: 45,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        key: const Key('longProdBarcodeArea'),
+                        height: _kProdBarcodeHeight,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            if (constraints.maxHeight <
+                                _kProdBarcodeMinHeight) {
+                              return const SizedBox.shrink();
+                            }
+                            return Center(
+                              child: FractionallySizedBox(
+                                widthFactor: 0.8,
+                                child: BarcodeWidget(
+                                  barcode: bc.Barcode.code128(),
+                                  data: it.barcode,
+                                  drawText: false,
+                                  color: Colors.black,
+                                  errorBuilder: (context, error) =>
+                                      const SizedBox.shrink(),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                          child: Text(
+                            it.barcode,
+                            maxLines: 1,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              letterSpacing: 0.3,
+                              color: Colors.black,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Üst sekme seçici (KARAR v1.14 / v1.21 / v1.23 / Etiket Havuzu): Havuz ·
-// Raf Etiketi · Tel Etiketi · Geniş Logo · Poster · Ürün Etiketi · Kayıtlı
-// Dosyalar. Kasa sekme dili (SegmentedButton, aktif sekme token dili).
+// Raf Etiketi · Tel Etiketi · Geniş Logo · Poster · Ürün Etiketi · Uzun Ürün
+// Etiketi · İndirim Etiketi · Kayıtlı Dosyalar. Kasa sekme dili (SegmentedButton, aktif sekme token dili).
 // Responsive: mobilde kısa etiketler ("Havuz"·"Raf"·"Tel"·"Geniş"·"Poster"·
 // "Ürün"·"Dosyalar") + ikonsuz, yatay-kaydırılabilir (SingleChildScrollView)
 // → 7 segment dar ekranda taşmaz (kasa KARAR v1.9.5 emsali).
@@ -6560,6 +7029,17 @@ class _TabSelector extends StatelessWidget {
             icon: mobile
                 ? null
                 : const Icon(Icons.qr_code_2_outlined, size: 18),
+          ),
+          ButtonSegment(
+            value: _LabelTab.uzunUrun,
+            label: Text(
+              mobile ? 'Uzun Ürün' : 'Uzun Ürün Etiketi',
+              maxLines: 1,
+              softWrap: false,
+            ),
+            icon: mobile
+                ? null
+                : const Icon(Icons.view_agenda_outlined, size: 18),
           ),
           ButtonSegment(
             value: _LabelTab.indirim,

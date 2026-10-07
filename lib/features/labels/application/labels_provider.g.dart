@@ -383,5 +383,28 @@ final labelProductSheetProvider =
     );
 
 typedef _$LabelProductSheet = Notifier<LabelProductSheetState>;
+String _$labelLongProductSheetHash() =>
+    r'cdedfa10d22dad3edcea5c449744ea62c0584551';
+
+/// Uzun Ürün Etiketi sayfası durumunu tutar. `keepAlive` — sekme değişiminde
+/// kalem listesi korunur (`LabelProductSheet` ile birebir aynı desen).
+///
+/// Copied from [LabelLongProductSheet].
+@ProviderFor(LabelLongProductSheet)
+final labelLongProductSheetProvider =
+    NotifierProvider<
+      LabelLongProductSheet,
+      LabelLongProductSheetState
+    >.internal(
+      LabelLongProductSheet.new,
+      name: r'labelLongProductSheetProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$labelLongProductSheetHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$LabelLongProductSheet = Notifier<LabelLongProductSheetState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

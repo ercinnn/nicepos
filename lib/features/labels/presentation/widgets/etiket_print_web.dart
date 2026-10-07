@@ -132,6 +132,23 @@ void printProductLabelsA4({
   web.window.open(url, '_blank');
 }
 
+/// Uzun Ürün Etiketlerini (adet kadar çoğaltarak) çok-sayfalı A4 YATAY (2 sütun
+/// × 12 satır = 24/sayfa) olarak yeni bir tarayıcı penceresinde açar ve
+/// otomatik yazdırır. FİYAT/LOGO YOK; çıktı SİYAH/BEYAZ; die-cut → kesim çizgisi
+/// YOK. Toplam > 24 ise 2., 3. sayfaya taşar. Barkod = Code128 SVG.
+void printLongProductLabelsA4({
+  required List<ProductLabelItem> items,
+}) {
+  final html = _buildLongProductHtml(items: items);
+
+  final blob = web.Blob(
+    [html.toJS].toJS,
+    web.BlobPropertyBag(type: 'text/html'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.window.open(url, '_blank');
+}
+
 /// Dolu İndirim Etiketlerini A4 dikey (2 sütun × 2 satır = 4) olarak yeni bir
 /// tarayıcı penceresinde açar ve otomatik yazdırma diyaloğunu tetikler. Eski
 /// fiyat siyah (üzeri KIRMIZI çizili), yeni fiyat kırmızı hero, tek satır
@@ -1088,6 +1105,124 @@ String _buildProductHtml({
     font-size: 7pt;
     letter-spacing: 0.3px;
     text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body onload="window.focus(); window.print();">
+  $sheets
+</body>
+</html>''';
+}
+
+// ─── Uzun Ürün Etiketi — A4 YATAY, 2 sütun × 12 satır = 24 etiket/sayfa ───────
+// Ürün Etiketi'nin yatay/uzun ikizi. Sayfa boşluğu üst/alt 10mm, yatay 0 →
+// hücre 148.5 × 15.83mm, 1.5mm iç pay. Etiket-içi YAN YANA (55:45): solda ürün
+// adı (2 satır, büyük harf, kalın) · sağda Code128 barkod (SABİT 8mm) + barkod
+// no. die-cut → çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
+
+String _longProductCellHtml(ProductLabelItem? it) {
+  if (it == null) {
+    // Boş hücre — die-cut, çerçeve YOK.
+    return '<div class="lcell"></div>';
+  }
+  final bc = _barcodeSvg(it.barcode);
+  final bcHtml = bc.isEmpty ? '' : '<div class="lbc">$bc</div>';
+  return '''
+    <div class="lcell">
+      <div class="lname">${_esc(it.productName)}</div>
+      <div class="lright">
+        $bcHtml
+        <div class="lbcno">${_esc(it.barcode)}</div>
+      </div>
+    </div>''';
+}
+
+String _buildLongProductHtml({
+  required List<ProductLabelItem> items,
+}) {
+  final pages = paginateProductLabels(items, perPage: kLongProductLabelPerPage);
+  final sheets = StringBuffer();
+  for (final page in pages) {
+    final cells = StringBuffer();
+    for (final it in page) {
+      cells.writeln(_longProductCellHtml(it));
+    }
+    sheets.writeln('<div class="lsheet">$cells</div>');
+  }
+
+  // A4 landscape 297×210mm; sayfa boşluğu üst/alt 10mm, yatay 0. 2 sütun ×
+  // 148.5mm = 297mm, 12 satır × 15.83mm ≈ 190mm. die-cut → hücre kenarlığı YOK.
+  return '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Uzun Ürün Etiketleri</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .lsheet {
+    width: 297mm;
+    display: grid;
+    grid-template-columns: repeat(2, 148.5mm);
+    grid-auto-rows: 15.83mm;
+    gap: 0;
+    page-break-after: always;
+  }
+  .lsheet:last-child { page-break-after: auto; }
+  /* Hücre — 1.5mm iç pay; die-cut → çerçeve YOK. Yan yana 55:45 düzen. */
+  .lcell {
+    width: 148.5mm;
+    height: 15.83mm;
+    padding: 1.5mm;
+    overflow: hidden;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 2mm;
+  }
+  /* Sol — ürün adı, 2 satır, büyük harf, kalın. */
+  .lname {
+    flex: 55 1 0;
+    min-width: 0;
+    font-size: 9pt;
+    font-weight: 700;
+    line-height: 1.15;
+    text-transform: uppercase;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Sağ — barkod (SABİT 8mm, %80'e ortalı) + barkod no. */
+  .lright {
+    flex: 45 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .lbc {
+    height: 8mm;
+    width: 80%;
+  }
+  .lbc svg { width: 100%; height: 100%; display: block; }
+  .lbcno {
+    width: 100%;
+    font-size: 7pt;
+    letter-spacing: 0.3px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
     font-variant-numeric: tabular-nums;
   }
 </style>

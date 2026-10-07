@@ -11,6 +11,14 @@ const int kProductLabelCols = 6;
 const int kProductLabelRows = 12;
 const int kProductLabelPerPage = kProductLabelCols * kProductLabelRows; // 72
 
+/// Uzun Ürün Etiketi ızgara sabitleri — A4 YATAY, 2 sütun × 12 satır = 24/sayfa.
+/// Aynı `ProductLabelItem` modelini kullanır (fiyatsız/logosuz). Sayfa boşluğu
+/// üst/alt 10mm, yatay 0 → hücre 148.5 × 15.83mm (190mm / 12).
+const int kLongProductLabelCols = 2;
+const int kLongProductLabelRows = 12;
+const int kLongProductLabelPerPage =
+    kLongProductLabelCols * kLongProductLabelRows; // 24
+
 /// Ürün Etiketi kalemi: bir ürünün (barkod + ad) belirli ADET etiketi. Fiyat ve
 /// logo tutulmaz (bu sekmede yok). Adet kadar çoğaltılıp 72'lik ızgaraya dizilir.
 class ProductLabelItem {
@@ -41,10 +49,12 @@ class ProductLabelItem {
 /// `null` = boş hücre). Toplam > 72 ise 2., 3. sayfaya taşar (çok-sayfalı
 /// önizleme + çok-sayfalı PDF/HTML). Kalem yoksa tek boş sayfa döner (önizleme
 /// için). Üç çıktı (önizleme = HTML = PDF) bu tek fonksiyonu paylaşır → taşma
-/// mantığı BİREBİR aynıdır.
+/// mantığı BİREBİR aynıdır. [perPage] — Uzun Ürün Etiketi için
+/// `kLongProductLabelPerPage` (24) geçilir; varsayılan Ürün Etiketi'nin 72'si.
 List<List<ProductLabelItem?>> paginateProductLabels(
-  List<ProductLabelItem> items,
-) {
+  List<ProductLabelItem> items, {
+  int perPage = kProductLabelPerPage,
+}) {
   final flat = <ProductLabelItem>[];
   for (final it in items) {
     for (var i = 0; i < it.quantity; i++) {
@@ -52,13 +62,13 @@ List<List<ProductLabelItem?>> paginateProductLabels(
     }
   }
   if (flat.isEmpty) {
-    return [List<ProductLabelItem?>.filled(kProductLabelPerPage, null)];
+    return [List<ProductLabelItem?>.filled(perPage, null)];
   }
   final pages = <List<ProductLabelItem?>>[];
-  for (var start = 0; start < flat.length; start += kProductLabelPerPage) {
-    final page = List<ProductLabelItem?>.filled(kProductLabelPerPage, null);
+  for (var start = 0; start < flat.length; start += perPage) {
+    final page = List<ProductLabelItem?>.filled(perPage, null);
     for (var i = 0;
-        i < kProductLabelPerPage && start + i < flat.length;
+        i < perPage && start + i < flat.length;
         i++) {
       page[i] = flat[start + i];
     }
