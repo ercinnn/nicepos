@@ -188,13 +188,16 @@ String _esc(String? value) {
 // Code128 barkodunu SVG olarak üretir (net siyah, drawText kapalı — no'yu ayrı
 // yazıyoruz). Geçersiz karakter vb. durumda boş döner (etikette barkod çizgisi
 // gösterilmez ama fiyat/ad korunur).
-String _barcodeSvg(String data) {
+// [width]/[height] yalnız SVG'nin EN-BOY ORANINI belirler (CSS kutuyu boyutlar,
+// SVG oranını koruyarak sığar) — barkodun kutuyu tam doldurması için oran
+// kutunun oranıyla eşleşmeli (bkz. Uzun Ürün Etiketi ~76.5×8mm).
+String _barcodeSvg(String data, {double width = 260, double height = 60}) {
   if (data.trim().isEmpty) return '';
   try {
     return Barcode.code128().toSvg(
       data,
-      width: 260,
-      height: 60,
+      width: width,
+      height: height,
       drawText: false,
     );
   } catch (_) {
@@ -1117,16 +1120,26 @@ String _buildProductHtml({
 
 // ─── Uzun Ürün Etiketi — A4 YATAY, 2 sütun × 12 satır = 24 etiket/sayfa ───────
 // Ürün Etiketi'nin yatay/uzun ikizi. Sayfa boşluğu üst/alt 10mm, yatay 0 →
-// hücre 148.5 × 15.83mm, 1.5mm iç pay. Etiket-içi YAN YANA (55:45): solda ürün
-// adı (2 satır, büyük harf, kalın) · sağda Code128 barkod (SABİT 8mm) + barkod
-// no. die-cut → çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
+// hücre 148.5 × 15.83mm; sol/sağ 5mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
+// YANA: ad (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 14mm · Code128 barkod
+// (SABİT 8mm yükseklik, kalan ~76.5mm genişlik) + barkod no. die-cut →
+// çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
+
+// Barkod kutusu ≈ (148.5 − 2×10 − 48 − 4) × 8mm → SVG oranı bununla eşlenir ki
+// barkod kutuyu tam doldursun (varsayılan 260×60 oran kutuda ortada daralırdı).
+const double _kLongBarcodeBoxWidthMm =
+    148.5 - 2 * kLongLabelSideMarginMm - kLongLabelNameWidthMm - kLongLabelGapMm;
 
 String _longProductCellHtml(ProductLabelItem? it) {
   if (it == null) {
     // Boş hücre — die-cut, çerçeve YOK.
     return '<div class="lcell"></div>';
   }
-  final bc = _barcodeSvg(it.barcode);
+  final bc = _barcodeSvg(
+    it.barcode,
+    width: _kLongBarcodeBoxWidthMm * 10,
+    height: 80,
+  );
   final bcHtml = bc.isEmpty ? '' : '<div class="lbc">$bc</div>';
   return '''
     <div class="lcell">
@@ -1178,22 +1191,23 @@ String _buildLongProductHtml({
     page-break-after: always;
   }
   .lsheet:last-child { page-break-after: auto; }
-  /* Hücre — 1.5mm iç pay; die-cut → çerçeve YOK. Yan yana 55:45 düzen. */
+  /* Hücre — sol/sağ 5mm, üst/alt 1.5mm iç pay; die-cut → çerçeve YOK.
+     Yan yana: ad (48mm) · 14mm · barkod (76.5mm). */
   .lcell {
     width: 148.5mm;
     height: 15.83mm;
-    padding: 1.5mm;
+    padding: 1.5mm ${kLongLabelSideMarginMm}mm;
     overflow: hidden;
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 2mm;
+    gap: ${kLongLabelGapMm}mm;
   }
   /* Sol — ürün adı, büyük harf, kalın. Satırlar Dart tarafında kırılır
      (wrapLongProductName: ≤20 karakter, kelime bölünmez, <br> ile); tarayıcı
      ek kırılım yapmasın diye nowrap. En fazla 3 satır. */
   .lname {
-    flex: 55 1 0;
+    flex: 0 0 ${kLongLabelNameWidthMm}mm;
     min-width: 0;
     font-size: 9pt;
     font-weight: 700;
@@ -1205,9 +1219,9 @@ String _buildLongProductHtml({
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  /* Sağ — barkod (SABİT 8mm, %80'e ortalı) + barkod no. */
+  /* Sağ — barkod (SABİT 8mm yükseklik, kalan genişliğin tamamı) + barkod no. */
   .lright {
-    flex: 45 1 0;
+    flex: 1 1 0;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -1216,7 +1230,7 @@ String _buildLongProductHtml({
   }
   .lbc {
     height: 8mm;
-    width: 80%;
+    width: 100%;
   }
   .lbc svg { width: 100%; height: 100%; display: block; }
   .lbcno {

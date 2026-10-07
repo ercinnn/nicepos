@@ -6731,10 +6731,11 @@ class _ProductLabelCell extends StatelessWidget {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Uzun Ürün Etiketi — canlı çok-sayfalı A4 YATAY önizleme: 2 sütun × 12 satır
-// = 24 etiket/sayfa. Ürün Etiketi'nin sayfa boşluğu (üst/alt 10mm, yatay 0) ve
-// hücre iç payı (1.5mm) aynen; hücre 148.5 × 15.83mm. Etiket-içi YAN YANA
-// (55:45): solda ürün adı (2 satır, büyük harf, kalın) · sağda Code128 barkod
-// (SABİT 8mm, savunma eşikli) + barkod no. PDF/HTML ile birebir oran. Canlı
+// = 24 etiket/sayfa. Ürün Etiketi'nin sayfa boşluğu (üst/alt 10mm, yatay 0)
+// aynen; hücre 148.5 × 15.83mm, sol/sağ 5mm + üst/alt 1.5mm iç pay. Etiket-içi
+// YAN YANA: ürün adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 14mm · Code128
+// barkod (SABİT 8mm yükseklik, kalan genişlik, savunma eşikli) + barkod no.
+// Ölçüler product_label_item.dart sabitlerinden → PDF/HTML ile birebir. Canlı
 // önizlemede ince nötr kesim kılavuzu; baskıda çizgi YOK.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -6848,17 +6849,22 @@ class _LongProductLabelCell extends StatelessWidget {
           width: 0.5,
         ),
       ),
-      padding: const EdgeInsets.all(_kProdCellPad),
+      // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay.
+      padding: const EdgeInsets.symmetric(
+        horizontal: kLongLabelSideMarginMm * _kProdMmPx,
+        vertical: _kProdCellPad,
+      ),
       child: it == null
           ? const SizedBox.expand()
           : Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Sol — ürün adı, büyük harf, kalın; satır başına en fazla 20
-                // karakter, kelime bölünmez (wrapLongProductName), en fazla 3
-                // satır. ClipRect: font taşarsa çizim kırpılır (overflow yok).
-                Expanded(
-                  flex: 55,
+                // Sol — ürün adı, SABİT 48mm sütun, büyük harf, kalın; satır
+                // başına en fazla 20 karakter, kelime bölünmez
+                // (wrapLongProductName), en fazla 3 satır. ClipRect: font
+                // taşarsa çizim kırpılır (overflow yok).
+                SizedBox(
+                  width: kLongLabelNameWidthMm * _kProdMmPx,
                   child: ClipRect(
                     child: Text(
                       wrapLongProductName(it.productName).join('\n'),
@@ -6873,10 +6879,10 @@ class _LongProductLabelCell extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 2 * _kProdMmPx),
-                // Sağ — Code128 barkod (SABİT 8mm) + barkod no.
+                const SizedBox(width: kLongLabelGapMm * _kProdMmPx),
+                // Sağ — Code128 barkod (SABİT 8mm yükseklik, kalan genişliğin
+                // tamamı → sağdaki 5mm boşluğa kadar) + barkod no.
                 Expanded(
-                  flex: 45,
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
@@ -6890,18 +6896,13 @@ class _LongProductLabelCell extends StatelessWidget {
                                 _kProdBarcodeMinHeight) {
                               return const SizedBox.shrink();
                             }
-                            return Center(
-                              child: FractionallySizedBox(
-                                widthFactor: 0.8,
-                                child: BarcodeWidget(
-                                  barcode: bc.Barcode.code128(),
-                                  data: it.barcode,
-                                  drawText: false,
-                                  color: Colors.black,
-                                  errorBuilder: (context, error) =>
-                                      const SizedBox.shrink(),
-                                ),
-                              ),
+                            return BarcodeWidget(
+                              barcode: bc.Barcode.code128(),
+                              data: it.barcode,
+                              drawText: false,
+                              color: Colors.black,
+                              errorBuilder: (context, error) =>
+                                  const SizedBox.shrink(),
                             );
                           },
                         ),

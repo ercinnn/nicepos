@@ -77,6 +77,32 @@ void main() {
     }
   });
 
+  testWidgets(
+      'yerleşim: 5 + 48 + 14 + 76.5 + 5 mm, barkod tüm etiketlerde aynı '
+      'hizada başlar', (tester) async {
+    await pumpPage(tester);
+    const mm = 3.7795;
+    // Kullanıcı ölçüsü: barkod 76.5mm (sabitlerden türetilen değerle aynı).
+    expect(
+      148.5 - 2 * kLongLabelSideMarginMm - kLongLabelNameWidthMm - kLongLabelGapMm,
+      76.5,
+    );
+    const expectedBarcodeW = 76.5 * mm; // ≈289px
+    final areas = find.byKey(const Key('longProdBarcodeArea'));
+    final rects = [
+      for (final el in areas.evaluate()) tester.getRect(find.byWidget(el.widget)),
+    ];
+    for (final r in rects) {
+      // Kesim kılavuzu (0.5px kenarlık) payı için tolerans.
+      expect(r.width, closeTo(expectedBarcodeW, 2));
+    }
+    // 3 dolu hücre: 0 (sol sütun, uzun ad), 1 ve 23 (sağ sütun, kısa ve
+    // uzun ad). Ad uzunluğundan bağımsız → yalnız 2 farklı başlangıç x'i
+    // (sütun başına bir) olmalı.
+    final distinctLefts = rects.map((r) => r.left.roundToDouble()).toSet();
+    expect(distinctLefts.length, 2);
+  });
+
   testWidgets('Uzun Ürün Etiketi 2×12 önizleme golden PNG üretir',
       (tester) async {
     await pumpPage(tester, boundaryKey: const Key('golden'));

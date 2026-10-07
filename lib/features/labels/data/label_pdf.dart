@@ -1382,10 +1382,11 @@ pw.Widget _productCell(ProductLabelItem? it) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Uzun Ürün Etiketi PDF üretimi — Ürün Etiketi'nin yatay/uzun ikizi. A4 YATAY,
 // 2 sütun × 12 satır = 24 etiket/sayfa. Sayfa boşluğu üst/alt 10mm, yatay 0 →
-// hücre 148.5 × 15.83mm, 1.5mm iç pay. Etiket-içi YAN YANA: solda ürün adı
-// (2 satır, büyük harf, kalın) · sağda Code128 barkod (SABİT 8mm) + barkod no.
-// Fiyat/logo YOK, çıktı SİYAH/BEYAZ, die-cut → kesim çizgisi YOK. Önizleme =
-// HTML = PDF birebir (55:45 sol:sağ oranı üçünde aynı).
+// hücre 148.5 × 15.83mm; sol/sağ 5mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
+// YANA: ürün adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 14mm · Code128
+// barkod (SABİT 8mm yükseklik, kalan genişlik) + barkod no. Fiyat/logo YOK,
+// çıktı SİYAH/BEYAZ, die-cut → kesim çizgisi YOK. Önizleme = HTML = PDF birebir
+// (ölçüler product_label_item.dart sabitlerinden).
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Kalemleri (adet kadar çoğaltarak) çok-sayfalı A4 yatay 2×12 Uzun Ürün
@@ -1437,7 +1438,8 @@ Future<Uint8List> buildLongProductLabelsPdf({
 
 // Tek Uzun Ürün Etiketi hücresi. Boş hane → tamamen boş (die-cut). Barkod
 // `_productCell` ile AYNI kanıtlanmış desen: SABİT 8mm `SizedBox` + savunma
-// eşikli `LayoutBuilder` (v1.20.1 `height > 0` dersi) + 1:8:1 yatay oran.
+// eşikli `LayoutBuilder` (v1.20.1 `height > 0` dersi). Yatay yerleşim:
+// 5mm · ad (48mm) · 14mm · barkod (76.5mm) · 5mm (product_label_item.dart).
 pw.Widget _longProductCell(ProductLabelItem? it) {
   if (it == null) {
     // Boş hücre — die-cut, çerçeve/kesim çizgisi YOK.
@@ -1445,14 +1447,19 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
   }
 
   return pw.Container(
-    padding: pw.EdgeInsets.all(1.5 * PdfPageFormat.mm),
+    // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay (önizleme/HTML ile aynı).
+    padding: pw.EdgeInsets.symmetric(
+      horizontal: kLongLabelSideMarginMm * PdfPageFormat.mm,
+      vertical: 1.5 * PdfPageFormat.mm,
+    ),
     child: pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        // Sol — ürün adı, büyük harf, kalın, sola dayalı; satır başına en
-        // fazla 20 karakter, kelime bölünmez (wrapLongProductName), ≤3 satır.
-        pw.Expanded(
-          flex: 55,
+        // Sol — ürün adı, SABİT 48mm sütun, büyük harf, kalın, sola dayalı;
+        // satır başına en fazla 20 karakter, kelime bölünmez
+        // (wrapLongProductName), ≤3 satır.
+        pw.SizedBox(
+          width: kLongLabelNameWidthMm * PdfPageFormat.mm,
           child: pw.Text(
             wrapLongProductName(it.productName).join('\n'),
             maxLines: kLongProductNameMaxLines,
@@ -1465,10 +1472,10 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
             ),
           ),
         ),
-        pw.SizedBox(width: 2 * PdfPageFormat.mm),
-        // Sağ — Code128 barkod (SABİT 8mm) + altında barkod no.
+        pw.SizedBox(width: kLongLabelGapMm * PdfPageFormat.mm),
+        // Sağ — Code128 barkod (SABİT 8mm yükseklik, kalan genişliğin tamamı →
+        // sağdaki 5mm boşluğa kadar) + altında barkod no.
         pw.Expanded(
-          flex: 45,
           child: pw.Column(
             mainAxisAlignment: pw.MainAxisAlignment.center,
             mainAxisSize: pw.MainAxisSize.min,
@@ -1482,12 +1489,13 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
                     if (maxHeight < 2 * PdfPageFormat.mm) {
                       return pw.SizedBox();
                     }
+                    // Kanıtlanmış Row+Expanded deseni korunur (barkoda
+                    // gerçek yükseklik verir), yalnız 1:8:1 kenar payları
+                    // kalktı → barkod genişliğin tamamını kullanır.
                     return pw.Row(
                       crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        pw.Spacer(flex: 1),
                         pw.Expanded(
-                          flex: 8,
                           child: bc.Barcode.code128().isValid(it.barcode)
                               ? pw.BarcodeWidget(
                                   barcode: bc.Barcode.code128(),
@@ -1497,7 +1505,6 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
                                 )
                               : pw.SizedBox(),
                         ),
-                        pw.Spacer(flex: 1),
                       ],
                     );
                   },
