@@ -41020,7 +41020,7 @@ return A.q($async$aHr,r)},
 cxx(a){var s,r=null
 if(a==null)return A.k1(r,r,r,r,r,r,r,r)
 s=t.n_
-return A.k1(r,A.m7(A.b([new A.dl(136.06299212598427,r,A.eU(B.f.c8(A.c1h(a.b),"\n"),3,B.fl,A.fx(r,B.ce,r,r,r,r,r,r,r,B.bF,r,r,9,r,B.cv,r,!0,r,0.5,r,r),r,r)),new A.dl(39.68503937007874,r,r),new A.dT(1,B.bq,A.lb(A.b([new A.dl(r,22.67716535433071,new A.Kw(new A.bT1(a))),new A.dl(1/0,r,A.eU(a.a,1,B.fl,A.fx(r,B.ce,r,r,r,r,r,r,r,B.bF,r,r,10,r,r,r,!0,0.3,r,r,r),B.f2,r))],s),B.cj,B.Gk,B.a5K))],s),B.cj,B.bI),r,r,r,r,new A.ik(14.173228346456694,4.251968503937008,14.173228346456694,4.251968503937008),r)},
+return A.k1(r,A.m7(A.b([new A.dl(136.06299212598427,r,A.eU(B.f.c8(A.c1h(a.b),"\n"),3,B.fl,A.fx(r,B.ce,r,r,r,r,r,r,r,B.bF,r,r,9,r,B.cv,r,!0,r,0.5,r,r),r,r)),new A.dl(58.110236220472444,r,r),new A.dT(1,B.bq,A.lb(A.b([new A.dl(r,22.67716535433071,new A.Kw(new A.bT1(a))),new A.dl(1/0,r,A.eU(a.a,1,B.fl,A.fx(r,B.ce,r,r,r,r,r,r,r,B.bF,r,r,10,r,r,r,!0,0.3,r,r,r),B.f2,r))],s),B.cj,B.Gk,B.a5K))],s),B.cj,B.bI),r,r,r,r,new A.ik(28.34645669291339,4.251968503937008,28.34645669291339,4.251968503937008),r)},
 bU8:function bU8(a,b,c,d){var _=this
 _.a=a
 _.b=b
@@ -51295,14 +51295,14 @@ q.a+=o}m.a+='<div class="dsheet">'+q.j(0)+"</div>\n"}return'<!DOCTYPE html>\n<ht
 cxy(a){var s,r,q,p
 if(a==null)return'<div class="lcell"></div>'
 s=a.a
-r=A.a75(s,80,765)
+r=A.a75(s,80,600)
 q=r.length===0?"":'<div class="lbc">'+r+"</div>"
 p=A.c1h(a.b)
 return'    <div class="lcell">\n      <div class="lname">'+new A.a5(p,A.cB6(),A.a7(p).i("a5<1,e>")).c8(0,"<br>")+'</div>\n      <div class="lright">\n        '+q+'\n        <div class="lbcno">'+A.fA(s)+"</div>\n      </div>\n    </div>"},
 cvu(a){var s,r,q,p,o,n=A.a7v(a,24),m=new A.cT("")
 for(s=n.length,r=0;r<n.length;n.length===s||(0,A.D)(n),++r){q=new A.cT("")
 for(p=B.f.gZ(n[r]);p.p();){o=A.cxy(p.gJ(0))+"\n"
-q.a+=o}m.a+='<div class="lsheet">'+q.j(0)+"</div>\n"}return'<!DOCTYPE html>\n<html lang="tr">\n<head>\n<meta charset="utf-8">\n<title>Uzun \xdcr\xfcn Etiketleri</title>\n<style>\n  @page { size: A4 landscape; margin: 10mm 0; }\n  * { box-sizing: border-box; }\n  html, body { margin: 0; padding: 0; }\n  body {\n    font-family: Arial, Helvetica, sans-serif;\n    color: #000;\n    -webkit-print-color-adjust: exact;\n    print-color-adjust: exact;\n  }\n  .lsheet {\n    width: 297mm;\n    display: grid;\n    grid-template-columns: repeat(2, 148.5mm);\n    grid-auto-rows: 15.83mm;\n    gap: 0;\n    page-break-after: always;\n  }\n  .lsheet:last-child { page-break-after: auto; }\n  /* H\xfccre \u2014 sol/sa\u011f 5mm, \xfcst/alt 1.5mm i\xe7 pay; die-cut \u2192 \xe7er\xe7eve YOK.\n     Yan yana: ad (48mm) \xb7 14mm \xb7 barkod (76.5mm). */\n  .lcell {\n    width: 148.5mm;\n    height: 15.83mm;\n    padding: 1.5mm 5mm;\n    overflow: hidden;\n    display: flex;\n    flex-direction: row;\n    align-items: center;\n    gap: 14mm;\n  }\n  /* Sol \u2014 \xfcr\xfcn ad\u0131, b\xfcy\xfck harf, kal\u0131n. Sat\u0131rlar Dart taraf\u0131nda k\u0131r\u0131l\u0131r\n     (wrapLongProductName: \u226420 karakter, kelime b\xf6l\xfcnmez, <br> ile); taray\u0131c\u0131\n     ek k\u0131r\u0131l\u0131m yapmas\u0131n diye nowrap. En fazla 3 sat\u0131r. */\n  .lname {\n    flex: 0 0 48mm;\n    min-width: 0;\n    font-size: 9pt;\n    font-weight: 700;\n    line-height: 1.15;\n    text-transform: uppercase;\n    white-space: nowrap;\n    display: -webkit-box;\n    -webkit-line-clamp: 3;\n    -webkit-box-orient: vertical;\n    overflow: hidden;\n  }\n  /* Sa\u011f \u2014 barkod (SAB\u0130T 8mm y\xfckseklik, kalan geni\u015fli\u011fin tamam\u0131) + barkod no. */\n  .lright {\n    flex: 1 1 0;\n    min-width: 0;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    justify-content: center;\n  }\n  .lbc {\n    height: 8mm;\n    width: 100%;\n  }\n  .lbc svg { width: 100%; height: 100%; display: block; }\n  .lbcno {\n    width: 100%;\n    font-size: 10pt;\n    line-height: 1.1;\n    letter-spacing: 0.3px;\n    text-align: center;\n    white-space: nowrap;\n    overflow: hidden;\n    font-variant-numeric: tabular-nums;\n  }\n</style>\n</head>\n<body onload="window.focus(); window.print();">\n  '+m.j(0)+"\n</body>\n</html>"},
+q.a+=o}m.a+='<div class="lsheet">'+q.j(0)+"</div>\n"}return'<!DOCTYPE html>\n<html lang="tr">\n<head>\n<meta charset="utf-8">\n<title>Uzun \xdcr\xfcn Etiketleri</title>\n<style>\n  @page { size: A4 landscape; margin: 10mm 0; }\n  * { box-sizing: border-box; }\n  html, body { margin: 0; padding: 0; }\n  body {\n    font-family: Arial, Helvetica, sans-serif;\n    color: #000;\n    -webkit-print-color-adjust: exact;\n    print-color-adjust: exact;\n  }\n  .lsheet {\n    width: 297mm;\n    display: grid;\n    grid-template-columns: repeat(2, 148.5mm);\n    grid-auto-rows: 15.83mm;\n    gap: 0;\n    page-break-after: always;\n  }\n  .lsheet:last-child { page-break-after: auto; }\n  /* H\xfccre \u2014 sol/sa\u011f 10mm, \xfcst/alt 1.5mm i\xe7 pay; die-cut \u2192 \xe7er\xe7eve YOK.\n     Yan yana: ad (48mm) \xb7 20.5mm \xb7 barkod (60mm). */\n  .lcell {\n    width: 148.5mm;\n    height: 15.83mm;\n    padding: 1.5mm 10mm;\n    overflow: hidden;\n    display: flex;\n    flex-direction: row;\n    align-items: center;\n    gap: 20.5mm;\n  }\n  /* Sol \u2014 \xfcr\xfcn ad\u0131, b\xfcy\xfck harf, kal\u0131n. Sat\u0131rlar Dart taraf\u0131nda k\u0131r\u0131l\u0131r\n     (wrapLongProductName: \u226420 karakter, kelime b\xf6l\xfcnmez, <br> ile); taray\u0131c\u0131\n     ek k\u0131r\u0131l\u0131m yapmas\u0131n diye nowrap. En fazla 3 sat\u0131r. */\n  .lname {\n    flex: 0 0 48mm;\n    min-width: 0;\n    font-size: 9pt;\n    font-weight: 700;\n    line-height: 1.15;\n    text-transform: uppercase;\n    white-space: nowrap;\n    display: -webkit-box;\n    -webkit-line-clamp: 3;\n    -webkit-box-orient: vertical;\n    overflow: hidden;\n  }\n  /* Sa\u011f \u2014 barkod (SAB\u0130T 8mm y\xfckseklik, kalan geni\u015fli\u011fin tamam\u0131) + barkod no. */\n  .lright {\n    flex: 1 1 0;\n    min-width: 0;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    justify-content: center;\n  }\n  .lbc {\n    height: 8mm;\n    width: 100%;\n  }\n  .lbc svg { width: 100%; height: 100%; display: block; }\n  .lbcno {\n    width: 100%;\n    font-size: 10pt;\n    line-height: 1.1;\n    letter-spacing: 0.3px;\n    text-align: center;\n    white-space: nowrap;\n    overflow: hidden;\n    font-variant-numeric: tabular-nums;\n  }\n</style>\n</head>\n<body onload="window.focus(); window.print();">\n  '+m.j(0)+"\n</body>\n</html>"},
 cwf(a,b,c,d){var s,r,q,p,o,n,m,l,k,j
 if(a==null)return'<div class="dscell empty"></div>'
 s=a.a
@@ -160879,7 +160879,7 @@ A.axA.prototype={
 A(a){var s=null,r=this.c,q=r==null,p=A.bL(q?B.ks:B.KY,0.5)
 if(q)q=B.hS
 else{q=t.p
-q=A.Y(A.b([new A.aa(181.416,s,A.qK(A.k(B.f.c8(A.c1h(r.b),"\n"),s,3,B.a4,s,s,B.bMs,s,s,s),B.B,s),s),B.bIu,A.X(A.a_(A.b([new A.aa(s,30.236,A.fI(new A.bzR(r)),B.bXG),new A.aa(1/0,s,A.lh(B.ac,A.k(r.a,s,1,s,s,s,B.bMg,s,s,s),B.eK),s)],q),B.w,B.d_,B.T),1)],q),B.w,B.q,B.r,0,s,s)}return A.ai(s,q,B.A,s,s,new A.aA(s,s,p,s,s,s,B.V),s,s,s,s,B.apw,s,s,s)}}
+q=A.Y(A.b([new A.aa(181.416,s,A.qK(A.k(B.f.c8(A.c1h(r.b),"\n"),s,3,B.a4,s,s,B.bMs,s,s,s),B.B,s),s),B.bIt,A.X(A.a_(A.b([new A.aa(s,30.236,A.fI(new A.bzR(r)),B.bXG),new A.aa(1/0,s,A.lh(B.ac,A.k(r.a,s,1,s,s,s,B.bMg,s,s,s),B.eK),s)],q),B.w,B.d_,B.T),1)],q),B.w,B.q,B.r,0,s,s)}return A.ai(s,q,B.A,s,s,new A.aA(s,s,p,s,s,s,B.V),s,s,s,s,B.apw,s,s,s)}}
 A.bzR.prototype={
 $2(a,b){if(b.d<8)return B.aW
 return A.Qy(A.kA(),B.Z,this.a.a,!1,new A.bzQ())},
@@ -165204,7 +165204,7 @@ A(a){var s=null,r=B.H.aM(0.05),q=A.ap(8),p=A.bL(B.H.aM(0.15),1)
 return A.ai(s,A.Y(A.b([A.eM(this.c,B.H,s,20),B.aU,A.X(A.k(this.d,s,s,s,s,s,B.iG,s,s,s),1),B.ah,A.k(this.e,s,s,s,s,s,B.bPl,s,s,s)],t.p),B.w,B.q,B.r,0,s,s),B.A,s,s,new A.aA(r,s,p,q,s,s,B.V),s,s,s,B.hp,B.ba,s,s,s)}}
 A.a_s.prototype={
 A(a){var s=null,r=this.c,q=this.d,p=A.ap(999),o=A.bL(B.bR,1),n=A.b([],t.p)
-if(r==null||q==null)n.push(B.bIt)
+if(r==null||q==null)n.push(B.bIu)
 else n.push(A.k(A.cM(r)+" aktif \xfcr\xfcn \xb7 "+A.cM(q)+" toplam",s,s,s,s,s,B.adE,s,s,s))
 n.push(B.dr)
 n.push(A.dQ(!1,A.ap(999),!0,B.byJ,s,!0,s,s,s,s,s,s,s,s,s,s,this.e,s,s,s,s,s,s,s))
@@ -188571,7 +188571,7 @@ B.fb=new A.ar(8,4,8,4)
 B.rv=new A.ar(8,6,8,6)
 B.fu=new A.ar(8,8,8,8)
 B.apv=new A.ik(14.173228346456694,14.173228346456694,14.173228346456694,14.173228346456694)
-B.apw=new A.ar(18.8975,5.66925,18.8975,5.66925)
+B.apw=new A.ar(37.795,5.66925,37.795,5.66925)
 B.apx=new A.ar(60.472,68.031,60.472,68.031)
 B.Mi=new A.ar(0.5,1,0.5,1)
 B.apy=new A.ik(11.338582677165356,0,11.338582677165356,0)
@@ -197338,9 +197338,9 @@ B.Ax=new A.aa(18,18,B.Cq,null)
 B.Ku=new A.dx(B.ac,null,null,B.iy,null)
 B.bIp=new A.aa(80,20,B.Ku,null)
 B.bIq=new A.aa(160,20,B.Ku,null)
+B.bIt=new A.aa(77.47975,null,null,null)
 B.al3=new A.lO(1.6,null,null,null,null,null,null,null,null,null)
-B.bIt=new A.aa(12,12,B.al3,null)
-B.bIu=new A.aa(52.913000000000004,null,null,null)
+B.bIu=new A.aa(12,12,B.al3,null)
 B.alQ=new A.U(0.5411764705882353,1,1,1,B.G)
 B.al1=new A.lO(2,null,null,null,null,B.alQ,null,null,null,null)
 B.bIv=new A.aa(22,22,B.al1,null)
