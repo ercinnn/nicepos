@@ -1874,7 +1874,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   // ═════════════════════════════════════════════════════════════════════════
   // Uzun Ürün Etiketi sekmesi — Ürün Etiketi ile BİREBİR aynı adet-tabanlı
   // akış (aynı _resolveBarcode, aynı _ProductInputColumn), yalnız hedef state
-  // labelLongProductSheetProvider ve çıktı A4 yatay 2×12 = 24 etiket.
+  // labelLongProductSheetProvider ve çıktı A4 dikey 2×17 = 34 etiket.
   // ═════════════════════════════════════════════════════════════════════════
 
   Future<void> _onLongBarcodeSubmitted(String raw) async {
@@ -2998,11 +2998,11 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     );
   }
 
-  // ─── Uzun Ürün Etiketi — masaüstü (Ürün Etiketi iskeleti; sağda yatay A4
+  // ─── Uzun Ürün Etiketi — masaüstü (Ürün Etiketi iskeleti; sağda dikey A4
   //     önizleme) ──────────────────────────────────────────────────────────
   static const String _kLongSubtitle =
-      'Barkod okutun + adet girin; her ürün adet kadar çoğaltılıp A4 yatay '
-      'sayfada 2×12 = 24 uzun barkod etiketine dizilir.';
+      'Barkod okutun + adet girin; her ürün adet kadar çoğaltılıp A4 dikey '
+      'sayfada 2×17 = 34 uzun barkod etiketine dizilir.';
 
   Widget _buildLongProductDesktop(Widget selector) {
     final state = ref.watch(labelLongProductSheetProvider);
@@ -6730,11 +6730,11 @@ class _ProductLabelCell extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Uzun Ürün Etiketi — canlı çok-sayfalı A4 YATAY önizleme: 2 sütun × 12 satır
-// = 24 etiket/sayfa. Ürün Etiketi'nin sayfa boşluğu (üst/alt 10mm, yatay 0)
-// aynen; hücre 148.5 × 15.83mm, sol/sağ 10mm + üst/alt 1.5mm iç pay. Etiket-içi
-// YAN YANA: ürün adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 20.5mm · Code128
-// barkod (SABİT 8mm yükseklik, kalan genişlik, savunma eşikli) + barkod no.
+// Uzun Ürün Etiketi — canlı çok-sayfalı A4 DİKEY önizleme: 2 sütun × 17 satır
+// = 34 etiket/sayfa. Yan boşluk 0, üst/alt ≈13.92mm (ortalanmış); hücre
+// 105 × 15.83mm, sol/sağ 5mm + üst/alt 1.5mm iç pay. Etiket-içi YAN YANA: ürün
+// adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 5mm · Code128 barkod (SABİT
+// 8mm yükseklik, kalan 42mm genişlik, savunma eşikli) + barkod no.
 // Ölçüler product_label_item.dart sabitlerinden → PDF/HTML ile birebir. Canlı
 // önizlemede ince nötr kesim kılavuzu; baskıda çizgi YOK.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6760,8 +6760,8 @@ class _LongProductPreviewPane extends ConsumerWidget {
       child: LayoutBuilder(
         builder: (ctx, c) {
           final pageW = c.maxWidth;
-          // Yatay A4: yükseklik/genişlik = 210/297.
-          final pageH = pageW * (_kA4Width / _kA4Height);
+          // Dikey A4: yükseklik/genişlik = 297/210.
+          final pageH = pageW * (_kA4Height / _kA4Width);
           final content = Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -6801,11 +6801,14 @@ class _LongProductA4Canvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      // Yatay A4 tuvali (96dpi): 297×210mm ≈ 1123×794px.
-      width: _kA4Height,
-      height: _kA4Width,
+      // Dikey A4 tuvali (96dpi): 210×297mm ≈ 794×1123px. Üst/alt boşluk
+      // ortalanmış → Expanded satırlar tam 15.83mm olur.
+      width: _kA4Width,
+      height: _kA4Height,
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(vertical: _kProdMarginV),
+      padding: const EdgeInsets.symmetric(
+        vertical: kLongLabelPageMarginVMm * _kProdMmPx,
+      ),
       child: Column(
         children: List.generate(kLongProductLabelRows, (r) {
           return Expanded(
@@ -6825,7 +6828,7 @@ class _LongProductA4Canvas extends StatelessWidget {
   }
 }
 
-// Uzun Ürün Etiketi A4 yatay önizleme tuvalini (2×12) golden/görsel doğrulama
+// Uzun Ürün Etiketi A4 dikey önizleme tuvalini (2×17) golden/görsel doğrulama
 // için üretir.
 @visibleForTesting
 Widget buildLongProductLabelPageForGolden(List<ProductLabelItem?> slots) =>
@@ -6849,7 +6852,7 @@ class _LongProductLabelCell extends StatelessWidget {
           width: 0.5,
         ),
       ),
-      // Sol/sağ 10mm boşluk, üst/alt 1.5mm iç pay.
+      // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay.
       padding: const EdgeInsets.symmetric(
         horizontal: kLongLabelSideMarginMm * _kProdMmPx,
         vertical: _kProdCellPad,
@@ -6881,7 +6884,7 @@ class _LongProductLabelCell extends StatelessWidget {
                 ),
                 const SizedBox(width: kLongLabelGapMm * _kProdMmPx),
                 // Sağ — Code128 barkod (SABİT 8mm yükseklik, kalan genişliğin
-                // tamamı → sağdaki 10mm boşluğa kadar) + barkod no.
+                // tamamı → sağdaki 5mm boşluğa kadar) + barkod no.
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,

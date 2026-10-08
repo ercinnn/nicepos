@@ -1389,7 +1389,7 @@ pw.Widget _productCell(ProductLabelItem? it) {
 // (ölçüler product_label_item.dart sabitlerinden).
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Kalemleri (adet kadar çoğaltarak) çok-sayfalı A4 yatay 2×12 Uzun Ürün
+/// Kalemleri (adet kadar çoğaltarak) çok-sayfalı A4 dikey 2×17 Uzun Ürün
 /// Etiketi PDF'ine dönüştürür ve ham byte'ları döndürür.
 Future<Uint8List> buildLongProductLabelsPdf({
   required List<ProductLabelItem> items,
@@ -1409,9 +1409,12 @@ Future<Uint8List> buildLongProductLabelsPdf({
   for (final page in pages) {
     doc.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a4.landscape,
-        // Sayfa boşluğu: üst/alt 10mm, yatay 0 (etiketler tam genişliği doldurur).
-        margin: pw.EdgeInsets.symmetric(vertical: 10 * PdfPageFormat.mm),
+        pageFormat: PdfPageFormat.a4,
+        // Sayfa boşluğu: üst/alt ≈13.92mm (17 satır ortalanır → hücre 15.83mm),
+        // yatay 0 (etiketler tam genişliği doldurur).
+        margin: pw.EdgeInsets.symmetric(
+          vertical: kLongLabelPageMarginVMm * PdfPageFormat.mm,
+        ),
         build: (context) {
           return pw.Column(
             children: List.generate(kLongProductLabelRows, (r) {
@@ -1439,7 +1442,7 @@ Future<Uint8List> buildLongProductLabelsPdf({
 // Tek Uzun Ürün Etiketi hücresi. Boş hane → tamamen boş (die-cut). Barkod
 // `_productCell` ile AYNI kanıtlanmış desen: SABİT 8mm `SizedBox` + savunma
 // eşikli `LayoutBuilder` (v1.20.1 `height > 0` dersi). Yatay yerleşim:
-// 10mm · ad (48mm) · 20.5mm · barkod (60mm) · 10mm (product_label_item.dart).
+// 5mm · ad (48mm) · 5mm · barkod (42mm) · 5mm (product_label_item.dart).
 pw.Widget _longProductCell(ProductLabelItem? it) {
   if (it == null) {
     // Boş hücre — die-cut, çerçeve/kesim çizgisi YOK.
@@ -1447,7 +1450,7 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
   }
 
   return pw.Container(
-    // Sol/sağ 10mm boşluk, üst/alt 1.5mm iç pay (önizleme/HTML ile aynı).
+    // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay (önizleme/HTML ile aynı).
     padding: pw.EdgeInsets.symmetric(
       horizontal: kLongLabelSideMarginMm * PdfPageFormat.mm,
       vertical: 1.5 * PdfPageFormat.mm,
@@ -1474,7 +1477,7 @@ pw.Widget _longProductCell(ProductLabelItem? it) {
         ),
         pw.SizedBox(width: kLongLabelGapMm * PdfPageFormat.mm),
         // Sağ — Code128 barkod (SABİT 8mm yükseklik, kalan genişliğin tamamı →
-        // sağdaki 10mm boşluğa kadar) + altında barkod no.
+        // sağdaki 5mm boşluğa kadar) + altında barkod no.
         pw.Expanded(
           child: pw.Column(
             mainAxisAlignment: pw.MainAxisAlignment.center,

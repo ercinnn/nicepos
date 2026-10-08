@@ -1,4 +1,4 @@
-// Regresyon testi — Uzun Ürün Etiketi (A4 yatay, 2×12 = 24/sayfa): 148.5 ×
+// Regresyon testi — Uzun Ürün Etiketi (A4 dikey, 2×17 = 34/sayfa): 105 ×
 // 15.83mm hücrede (1.5mm iç pay → ~12.8mm iç yükseklik) yan yana düzen —
 // solda 2 satıra taşan uzun ürün adı, sağda SABİT 8mm barkod + barkod no —
 // crash/overflow vermeden render edilmeli. v1.20.1 dersi: barkod alanına
@@ -42,7 +42,7 @@ void main() {
   }
 
   Future<void> pumpPage(WidgetTester tester, {Key? boundaryKey}) async {
-    await tester.binding.setSurfaceSize(const Size(1250, 900));
+    await tester.binding.setSurfaceSize(const Size(900, 1250));
     final page = buildLongProductLabelPageForGolden(buildPage());
     await tester.pumpWidget(
       MaterialApp(
@@ -78,16 +78,20 @@ void main() {
   });
 
   testWidgets(
-      'yerleşim: 10 + 48 + 20.5 + 60 + 10 mm, barkod tüm etiketlerde aynı '
+      'yerleşim: 5 + 48 + 5 + 42 + 5 mm, barkod tüm etiketlerde aynı '
       'hizada başlar', (tester) async {
     await pumpPage(tester);
     const mm = 3.7795;
-    // Kullanıcı ölçüsü: barkod 60mm (sabitlerden türetilen değerle aynı).
+    // Kullanıcı ölçüsü: barkod 42mm (sabitlerden türetilen değerle aynı).
+    expect(kLongLabelBarcodeWidthMm, 42);
     expect(
-      148.5 - 2 * kLongLabelSideMarginMm - kLongLabelNameWidthMm - kLongLabelGapMm,
-      60,
+      kLongLabelCellWidthMm -
+          2 * kLongLabelSideMarginMm -
+          kLongLabelNameWidthMm -
+          kLongLabelGapMm,
+      42,
     );
-    const expectedBarcodeW = 60 * mm; // ≈227px
+    const expectedBarcodeW = 42 * mm; // ≈159px
     final areas = find.byKey(const Key('longProdBarcodeArea'));
     final rects = [
       for (final el in areas.evaluate()) tester.getRect(find.byWidget(el.widget)),
@@ -96,14 +100,40 @@ void main() {
       // Kesim kılavuzu (0.5px kenarlık) payı için tolerans.
       expect(r.width, closeTo(expectedBarcodeW, 2));
     }
-    // 3 dolu hücre: 0 (sol sütun, uzun ad), 1 ve 23 (sağ sütun, kısa ve
+    // 3 dolu hücre: 0 (sol sütun, uzun ad), 1 ve 33 (sağ sütun, kısa ve
     // uzun ad). Ad uzunluğundan bağımsız → yalnız 2 farklı başlangıç x'i
     // (sütun başına bir) olmalı.
     final distinctLefts = rects.map((r) => r.left.roundToDouble()).toSet();
     expect(distinctLefts.length, 2);
   });
 
-  testWidgets('Uzun Ürün Etiketi 2×12 önizleme golden PNG üretir',
+  test('dikey A4: 17 satır × 15.83mm + üst/alt boşluk = 297mm', () {
+    expect(kLongProductLabelRows, 17);
+    expect(kLongProductLabelPerPage, 34);
+    expect(kLongLabelCellHeightMm, closeTo(15.83, 0.01));
+    expect(kLongLabelCellWidthMm * kLongProductLabelCols, 210);
+    expect(
+      kLongProductLabelRows * kLongLabelCellHeightMm +
+          2 * kLongLabelPageMarginVMm,
+      closeTo(297, 1e-9),
+    );
+    expect(kLongLabelPageMarginVMm, greaterThan(10));
+  });
+
+  testWidgets('satır yüksekliği 15.83mm (eski yatay düzenle aynı)',
+      (tester) async {
+    await pumpPage(tester);
+    const mm = 3.7795;
+    final areas = find.byKey(const Key('longProdBarcodeArea'));
+    final tops = [
+      for (final el in areas.evaluate())
+        tester.getRect(find.byWidget(el.widget)).top,
+    ]..sort();
+    // Hücre 0/1 aynı satırda, hücre 33 son (17.) satırda → 16 satır farkı.
+    expect(tops.last - tops.first, closeTo(16 * kLongLabelCellHeightMm * mm, 1));
+  });
+
+  testWidgets('Uzun Ürün Etiketi 2×17 önizleme golden PNG üretir',
       (tester) async {
     await pumpPage(tester, boundaryKey: const Key('golden'));
     expect(tester.takeException(), isNull);
@@ -128,7 +158,7 @@ void main() {
   test('buildLongProductLabelsPdf çok-sayfalı PDF üretir', () async {
     final bytes = await buildLongProductLabelsPdf(items: const [
       ProductLabelItem(
-          barcode: '8690000000017', productName: longName, quantity: 29),
+          barcode: '8690000000017', productName: longName, quantity: 39),
       ProductLabelItem(
           barcode: 'C261002001', productName: 'Konsept Set', quantity: 1),
     ]);
@@ -164,24 +194,24 @@ void main() {
     }
   });
 
-  test('paginateProductLabels(perPage: 24): 24 sınırında çok-sayfaya taşar',
+  test('paginateProductLabels(perPage: 34): 34 sınırında çok-sayfaya taşar',
       () {
     final pages = paginateProductLabels(
       const [
         ProductLabelItem(
-            barcode: '8690000000017', productName: 'X', quantity: 30),
+            barcode: '8690000000017', productName: 'X', quantity: 40),
       ],
       perPage: kLongProductLabelPerPage,
     );
     expect(pages.length, 2);
-    expect(pages[0].length, 24);
-    expect(pages[0].where((s) => s != null).length, 24);
+    expect(pages[0].length, 34);
+    expect(pages[0].where((s) => s != null).length, 34);
     expect(pages[1].where((s) => s != null).length, 6);
 
     final empty =
         paginateProductLabels(const [], perPage: kLongProductLabelPerPage);
     expect(empty.length, 1);
-    expect(empty[0].length, 24);
+    expect(empty[0].length, 34);
     expect(empty[0].every((s) => s == null), isTrue);
   });
 }

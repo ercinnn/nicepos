@@ -11,22 +11,37 @@ const int kProductLabelCols = 6;
 const int kProductLabelRows = 12;
 const int kProductLabelPerPage = kProductLabelCols * kProductLabelRows; // 72
 
-/// Uzun Ürün Etiketi ızgara sabitleri — A4 YATAY, 2 sütun × 12 satır = 24/sayfa.
-/// Aynı `ProductLabelItem` modelini kullanır (fiyatsız/logosuz). Sayfa boşluğu
-/// üst/alt 10mm, yatay 0 → hücre 148.5 × 15.83mm (190mm / 12).
+/// Uzun Ürün Etiketi ızgara sabitleri — A4 DİKEY, 2 sütun × 17 satır = 34/sayfa.
+/// Aynı `ProductLabelItem` modelini kullanır (fiyatsız/logosuz). Hücre
+/// 105 × 15.83mm; yan boşluk 0, üst/alt boşluk kalan yükseklikten ortalanır.
 const int kLongProductLabelCols = 2;
-const int kLongProductLabelRows = 12;
+const int kLongProductLabelRows = 17;
 const int kLongProductLabelPerPage =
-    kLongProductLabelCols * kLongProductLabelRows; // 24
+    kLongProductLabelCols * kLongProductLabelRows; // 34
+
+/// Uzun Ürün Etiketi hücre ölçüleri (mm). Yükseklik eski yatay 2×12 düzeniyle
+/// BİREBİR aynı (190mm / 12 ≈ 15.83); genişlik dikey A4'ün yarısı (210 / 2).
+const double kLongLabelCellWidthMm = 105;
+const double kLongLabelCellHeightMm = 190 / 12;
+
+/// Dikey A4 (297mm) üst/alt sayfa boşluğu — 17 satır ortalanır (≈13.92mm).
+const double kLongLabelPageMarginVMm =
+    (297 - kLongProductLabelRows * kLongLabelCellHeightMm) / 2;
 
 /// Uzun Ürün Etiketi hücre-içi yatay yerleşim (mm) — önizleme · HTML · PDF
-/// BİREBİR paylaşır. Hücre 148.5mm = 10 (sol boşluk) + 48 (ad sütunu, SABİT,
-/// 20 karakterlik satıra göre) + 20.5 (ara) + 60 (barkod, kalan) + 10 (sağ
-/// boşluk) — kullanıcı ölçüsü. Ad sütunu sabit olduğu için tüm etiketlerde
-/// barkodlar aynı hizada başlar.
-const double kLongLabelSideMarginMm = 10;
+/// BİREBİR paylaşır. Hücre 105mm = 5 (sol boşluk) + 48 (ad sütunu, SABİT,
+/// 20 karakterlik satıra göre) + 5 (ara) + 42 (barkod, kalan) + 5 (sağ
+/// boşluk) — kullanıcı kararı. Ad sütunu sabit olduğu için tüm etiketlerde
+/// barkodlar aynı hizada başlar. 5mm kenar/ara, Code128 quiet zone'u karşılar.
+const double kLongLabelSideMarginMm = 5;
 const double kLongLabelNameWidthMm = 48;
-const double kLongLabelGapMm = 20.5;
+const double kLongLabelGapMm = 5;
+
+/// Barkod genişliği (mm) — kalan genişlikten türetilir (= 42).
+const double kLongLabelBarcodeWidthMm = kLongLabelCellWidthMm -
+    2 * kLongLabelSideMarginMm -
+    kLongLabelNameWidthMm -
+    kLongLabelGapMm;
 
 /// Uzun Ürün Etiketi barkod numarası punto (pt) — üç çıktı paylaşır (önizleme
 /// px'e çevirir: pt × 96/72). İç yükseklik 12.83mm − barkod 8mm → numaraya
@@ -101,7 +116,7 @@ class ProductLabelItem {
 /// önizleme + çok-sayfalı PDF/HTML). Kalem yoksa tek boş sayfa döner (önizleme
 /// için). Üç çıktı (önizleme = HTML = PDF) bu tek fonksiyonu paylaşır → taşma
 /// mantığı BİREBİR aynıdır. [perPage] — Uzun Ürün Etiketi için
-/// `kLongProductLabelPerPage` (24) geçilir; varsayılan Ürün Etiketi'nin 72'si.
+/// `kLongProductLabelPerPage` (34) geçilir; varsayılan Ürün Etiketi'nin 72'si.
 List<List<ProductLabelItem?>> paginateProductLabels(
   List<ProductLabelItem> items, {
   int perPage = kProductLabelPerPage,

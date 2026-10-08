@@ -1118,17 +1118,15 @@ String _buildProductHtml({
 </html>''';
 }
 
-// ─── Uzun Ürün Etiketi — A4 YATAY, 2 sütun × 12 satır = 24 etiket/sayfa ───────
-// Ürün Etiketi'nin yatay/uzun ikizi. Sayfa boşluğu üst/alt 10mm, yatay 0 →
-// hücre 148.5 × 15.83mm; sol/sağ 10mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
-// YANA: ad (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 20.5mm · Code128 barkod
-// (SABİT 8mm yükseklik, kalan 60mm genişlik) + barkod no. die-cut →
+// ─── Uzun Ürün Etiketi — A4 DİKEY, 2 sütun × 17 satır = 34 etiket/sayfa ───────
+// Ürün Etiketi'nin uzun ikizi. Yan boşluk 0, üst/alt ≈13.92mm (ortalanmış) →
+// hücre 105 × 15.83mm; sol/sağ 5mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
+// YANA: ad (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 5mm · Code128 barkod
+// (SABİT 8mm yükseklik, kalan 42mm genişlik) + barkod no. die-cut →
 // çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
 
-// Barkod kutusu ≈ (148.5 − 2×10 − 48 − 4) × 8mm → SVG oranı bununla eşlenir ki
-// barkod kutuyu tam doldursun (varsayılan 260×60 oran kutuda ortada daralırdı).
-const double _kLongBarcodeBoxWidthMm =
-    148.5 - 2 * kLongLabelSideMarginMm - kLongLabelNameWidthMm - kLongLabelGapMm;
+// CSS'e yazılan mm değerleri (190/12 gibi uzun ondalıklar kısaltılır).
+String _mm(double v) => v.toStringAsFixed(3);
 
 String _longProductCellHtml(ProductLabelItem? it) {
   if (it == null) {
@@ -1137,7 +1135,7 @@ String _longProductCellHtml(ProductLabelItem? it) {
   }
   final bc = _barcodeSvg(
     it.barcode,
-    width: _kLongBarcodeBoxWidthMm * 10,
+    width: kLongLabelBarcodeWidthMm * 10,
     height: 80,
   );
   final bcHtml = bc.isEmpty ? '' : '<div class="lbc">$bc</div>';
@@ -1164,8 +1162,8 @@ String _buildLongProductHtml({
     sheets.writeln('<div class="lsheet">$cells</div>');
   }
 
-  // A4 landscape 297×210mm; sayfa boşluğu üst/alt 10mm, yatay 0. 2 sütun ×
-  // 148.5mm = 297mm, 12 satır × 15.83mm ≈ 190mm. die-cut → hücre kenarlığı YOK.
+  // A4 dikey 210×297mm; yan boşluk 0, üst/alt ≈13.92mm. 2 sütun × 105mm =
+  // 210mm, 17 satır × 15.83mm ≈ 269mm. die-cut → hücre kenarlığı YOK.
   return '''
 <!DOCTYPE html>
 <html lang="tr">
@@ -1173,7 +1171,7 @@ String _buildLongProductHtml({
 <meta charset="utf-8">
 <title>Uzun Ürün Etiketleri</title>
 <style>
-  @page { size: A4 landscape; margin: 10mm 0; }
+  @page { size: A4 portrait; margin: ${_mm(kLongLabelPageMarginVMm)}mm 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -1183,19 +1181,19 @@ String _buildLongProductHtml({
     print-color-adjust: exact;
   }
   .lsheet {
-    width: 297mm;
+    width: 210mm;
     display: grid;
-    grid-template-columns: repeat(2, 148.5mm);
-    grid-auto-rows: 15.83mm;
+    grid-template-columns: repeat(2, ${_mm(kLongLabelCellWidthMm)}mm);
+    grid-auto-rows: ${_mm(kLongLabelCellHeightMm)}mm;
     gap: 0;
     page-break-after: always;
   }
   .lsheet:last-child { page-break-after: auto; }
-  /* Hücre — sol/sağ 10mm, üst/alt 1.5mm iç pay; die-cut → çerçeve YOK.
-     Yan yana: ad (48mm) · 20.5mm · barkod (60mm). */
+  /* Hücre — sol/sağ 5mm, üst/alt 1.5mm iç pay; die-cut → çerçeve YOK.
+     Yan yana: ad (48mm) · 5mm · barkod (42mm). */
   .lcell {
-    width: 148.5mm;
-    height: 15.83mm;
+    width: ${_mm(kLongLabelCellWidthMm)}mm;
+    height: ${_mm(kLongLabelCellHeightMm)}mm;
     padding: 1.5mm ${kLongLabelSideMarginMm}mm;
     overflow: hidden;
     display: flex;
