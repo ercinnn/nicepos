@@ -1425,7 +1425,7 @@ Future<Uint8List> buildLongProductLabelsPdf({
                   children: List.generate(kLongProductLabelCols, (c) {
                     final idx = r * kLongProductLabelCols + c;
                     final it = idx < page.length ? page[idx] : null;
-                    return pw.Expanded(child: _longProductCell(it));
+                    return pw.Expanded(child: _longProductCell(it, idx));
                   }),
                 ),
               );
@@ -1443,13 +1443,25 @@ Future<Uint8List> buildLongProductLabelsPdf({
 // `_productCell` ile AYNI kanıtlanmış desen: SABİT 8mm `SizedBox` + savunma
 // eşikli `LayoutBuilder` (v1.20.1 `height > 0` dersi). Yatay yerleşim:
 // 5mm · ad (48mm) · 5mm · barkod (42mm) · 5mm (product_label_item.dart).
-pw.Widget _longProductCell(ProductLabelItem? it) {
+// Dolu hücre sağ/alt kenarına çok ince gri ayırıcı çizer (longLabelSeparators).
+pw.Widget _longProductCell(ProductLabelItem? it, int index) {
   if (it == null) {
-    // Boş hücre — die-cut, çerçeve/kesim çizgisi YOK.
+    // Boş hücre — çizgi YOK.
     return pw.Container();
   }
 
+  final sep = longLabelSeparators(index, filled: true);
+  const sepSide = pw.BorderSide(
+    color: PdfColor.fromInt(kLongLabelSeparatorColor),
+    width: kLongLabelSeparatorWidthMm * PdfPageFormat.mm,
+  );
   return pw.Container(
+    decoration: pw.BoxDecoration(
+      border: pw.Border(
+        right: sep.right ? sepSide : pw.BorderSide.none,
+        bottom: sep.bottom ? sepSide : pw.BorderSide.none,
+      ),
+    ),
     // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay (önizleme/HTML ile aynı).
     padding: pw.EdgeInsets.symmetric(
       horizontal: kLongLabelSideMarginMm * PdfPageFormat.mm,

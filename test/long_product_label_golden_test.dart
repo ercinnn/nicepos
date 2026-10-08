@@ -120,6 +120,19 @@ void main() {
     expect(kLongLabelPageMarginVMm, greaterThan(10));
   });
 
+  test('ayırıcı çizgi: dolu hücre sağ (son sütun hariç) + alt (son satır '
+      'hariç); boş hücre ve sayfa dış kenarı çizgisiz', () {
+    final last = kLongProductLabelPerPage - 1;
+    expect(longLabelSeparators(0, filled: true), (right: true, bottom: true));
+    expect(longLabelSeparators(1, filled: true), (right: false, bottom: true));
+    expect(longLabelSeparators(last - 1, filled: true),
+        (right: true, bottom: false));
+    expect(longLabelSeparators(last, filled: true),
+        (right: false, bottom: false));
+    expect(longLabelSeparators(0, filled: false),
+        (right: false, bottom: false));
+  });
+
   testWidgets('satır yüksekliği 15.83mm (eski yatay düzenle aynı)',
       (tester) async {
     await pumpPage(tester);

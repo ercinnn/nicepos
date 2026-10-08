@@ -43,6 +43,28 @@ const double kLongLabelBarcodeWidthMm = kLongLabelCellWidthMm -
     kLongLabelNameWidthMm -
     kLongLabelGapMm;
 
+/// Uzun Ürün Etiketi'nde etiketler arası ayırıcı çizgi — çok ince açık gri,
+/// BASKIDA da görünür (kesim kılavuzu). Üç çıktı (önizleme · HTML · PDF) paylaşır.
+const double kLongLabelSeparatorWidthMm = 0.1;
+const int kLongLabelSeparatorColor = 0xFFBDBDBD; // ARGB
+const String kLongLabelSeparatorCss = '#BDBDBD';
+
+/// [index]'teki hücrenin sağına/altına ayırıcı çizgi çizilip çizilmeyeceği.
+/// Yalnız DOLU hücreler çizer ve yalnız sağ (son sütun hariç) + alt (son satır
+/// hariç) kenarını: etiketler satır-öncelikli bir önek olarak dolduğundan
+/// çizgiler çift çizilmez, dolu/boş sınırı da çizilir, sayfanın dış
+/// kenarlarında çizgi olmaz.
+({bool right, bool bottom}) longLabelSeparators(int index,
+    {required bool filled}) {
+  if (!filled) return (right: false, bottom: false);
+  final row = index ~/ kLongProductLabelCols;
+  final col = index % kLongProductLabelCols;
+  return (
+    right: col < kLongProductLabelCols - 1,
+    bottom: row < kLongProductLabelRows - 1,
+  );
+}
+
 /// Uzun Ürün Etiketi barkod numarası punto (pt) — üç çıktı paylaşır (önizleme
 /// px'e çevirir: pt × 96/72). İç yükseklik 12.83mm − barkod 8mm → numaraya
 /// ~4.8mm kalır; 10pt (satır ≈4.2mm) sığan en büyük değere yakın.

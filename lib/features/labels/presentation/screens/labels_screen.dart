@@ -6735,8 +6735,9 @@ class _ProductLabelCell extends StatelessWidget {
 // 105 × 15.83mm, sol/sağ 5mm + üst/alt 1.5mm iç pay. Etiket-içi YAN YANA: ürün
 // adı (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 5mm · Code128 barkod (SABİT
 // 8mm yükseklik, kalan 42mm genişlik, savunma eşikli) + barkod no.
-// Ölçüler product_label_item.dart sabitlerinden → PDF/HTML ile birebir. Canlı
-// önizlemede ince nötr kesim kılavuzu; baskıda çizgi YOK.
+// Ölçüler product_label_item.dart sabitlerinden → PDF/HTML ile birebir.
+// Dolu etiketler arasında çok ince gri ayırıcı çizgi BASKIDA da var
+// (longLabelSeparators); boş hanelerin soluk kılavuzu yalnız ekranda.
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _LongProductPreviewPane extends ConsumerWidget {
@@ -6818,7 +6819,14 @@ class _LongProductA4Canvas extends StatelessWidget {
               children: List.generate(kLongProductLabelCols, (c) {
                 final idx = r * kLongProductLabelCols + c;
                 final it = idx < slots.length ? slots[idx] : null;
-                return Expanded(child: _LongProductLabelCell(item: it));
+                final sep = longLabelSeparators(idx, filled: it != null);
+                return Expanded(
+                  child: _LongProductLabelCell(
+                    item: it,
+                    separatorRight: sep.right,
+                    separatorBottom: sep.bottom,
+                  ),
+                );
               }),
             ),
           );
@@ -6836,21 +6844,31 @@ Widget buildLongProductLabelPageForGolden(List<ProductLabelItem?> slots) =>
 
 class _LongProductLabelCell extends StatelessWidget {
   final ProductLabelItem? item;
+  // Etiketler arası ayırıcı (baskıda da var) — longLabelSeparators() kuralı.
+  final bool separatorRight;
+  final bool separatorBottom;
 
-  const _LongProductLabelCell({required this.item});
+  const _LongProductLabelCell({
+    required this.item,
+    this.separatorRight = false,
+    this.separatorBottom = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final it = item;
+    // Ekranda 0.1mm (~0.4px) neredeyse görünmez → önizlemede 0.5px; renk
+    // baskıyla aynı.
+    const sep = BorderSide(color: Color(kLongLabelSeparatorColor), width: 0.5);
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(
-          // İnce nötr baskı-grisi kesim kılavuzu (altın DEĞİL); baskıda YOK.
-          color: it == null
-              ? const Color(0xFFE0E0E0)
-              : const Color(0xFFC9CDD6),
-          width: 0.5,
-        ),
+        border: it == null
+            // Boş hane: yalnız ekranda soluk yer kılavuzu; baskıda YOK.
+            ? Border.all(color: const Color(0xFFEEEEEE), width: 0.5)
+            : Border(
+                right: separatorRight ? sep : BorderSide.none,
+                bottom: separatorBottom ? sep : BorderSide.none,
+              ),
       ),
       // Sol/sağ 5mm boşluk, üst/alt 1.5mm iç pay.
       padding: const EdgeInsets.symmetric(

@@ -1122,13 +1122,14 @@ String _buildProductHtml({
 // Ürün Etiketi'nin uzun ikizi. Yan boşluk 0, üst/alt ≈13.92mm (ortalanmış) →
 // hücre 105 × 15.83mm; sol/sağ 5mm, üst/alt 1.5mm iç pay. Etiket-içi YAN
 // YANA: ad (SABİT 48mm, ≤20 karakter/satır, ≤3 satır) · 5mm · Code128 barkod
-// (SABİT 8mm yükseklik, kalan 42mm genişlik) + barkod no. die-cut →
-// çerçeve/kesim çizgisi YOK. Önizleme = HTML = PDF birebir.
+// (SABİT 8mm yükseklik, kalan 42mm genişlik) + barkod no. Dolu etiketler
+// arasında çok ince gri ayırıcı çizgi (longLabelSeparators kuralı: dolu hücre
+// sağ + alt kenarını çizer, sayfa dış kenarı YOK). Önizleme = HTML = PDF birebir.
 
 // CSS'e yazılan mm değerleri (190/12 gibi uzun ondalıklar kısaltılır).
 String _mm(double v) => v.toStringAsFixed(3);
 
-String _longProductCellHtml(ProductLabelItem? it) {
+String _longProductCellHtml(ProductLabelItem? it, int index) {
   if (it == null) {
     // Boş hücre — die-cut, çerçeve YOK.
     return '<div class="lcell"></div>';
@@ -1139,8 +1140,10 @@ String _longProductCellHtml(ProductLabelItem? it) {
     height: 80,
   );
   final bcHtml = bc.isEmpty ? '' : '<div class="lbc">$bc</div>';
+  final sep = longLabelSeparators(index, filled: true);
+  final sepClass = '${sep.right ? ' lsr' : ''}${sep.bottom ? ' lsb' : ''}';
   return '''
-    <div class="lcell">
+    <div class="lcell$sepClass">
       <div class="lname">${wrapLongProductName(it.productName).map(_esc).join('<br>')}</div>
       <div class="lright">
         $bcHtml
@@ -1156,14 +1159,15 @@ String _buildLongProductHtml({
   final sheets = StringBuffer();
   for (final page in pages) {
     final cells = StringBuffer();
-    for (final it in page) {
-      cells.writeln(_longProductCellHtml(it));
+    for (var i = 0; i < page.length; i++) {
+      cells.writeln(_longProductCellHtml(page[i], i));
     }
     sheets.writeln('<div class="lsheet">$cells</div>');
   }
 
   // A4 dikey 210×297mm; yan boşluk 0, üst/alt ≈13.92mm. 2 sütun × 105mm =
-  // 210mm, 17 satır × 15.83mm ≈ 269mm. die-cut → hücre kenarlığı YOK.
+  // 210mm, 17 satır × 15.83mm ≈ 269mm. Ayırıcı çizgi border-box içinde →
+  // hücre ölçüsü değişmez.
   return '''
 <!DOCTYPE html>
 <html lang="tr">
@@ -1189,8 +1193,8 @@ String _buildLongProductHtml({
     page-break-after: always;
   }
   .lsheet:last-child { page-break-after: auto; }
-  /* Hücre — sol/sağ 5mm, üst/alt 1.5mm iç pay; die-cut → çerçeve YOK.
-     Yan yana: ad (48mm) · 5mm · barkod (42mm). */
+  /* Hücre — sol/sağ 5mm, üst/alt 1.5mm iç pay. Yan yana: ad (48mm) · 5mm ·
+     barkod (42mm). */
   .lcell {
     width: ${_mm(kLongLabelCellWidthMm)}mm;
     height: ${_mm(kLongLabelCellHeightMm)}mm;
@@ -1201,6 +1205,9 @@ String _buildLongProductHtml({
     align-items: center;
     gap: ${kLongLabelGapMm}mm;
   }
+  /* Etiketler arası çok ince gri ayırıcı (yalnız dolu hücrenin sağ/alt). */
+  .lsr { border-right: ${kLongLabelSeparatorWidthMm}mm solid $kLongLabelSeparatorCss; }
+  .lsb { border-bottom: ${kLongLabelSeparatorWidthMm}mm solid $kLongLabelSeparatorCss; }
   /* Sol — ürün adı, büyük harf, kalın. Satırlar Dart tarafında kırılır
      (wrapLongProductName: ≤20 karakter, kelime bölünmez, <br> ile); tarayıcı
      ek kırılım yapmasın diye nowrap. En fazla 3 satır. */
