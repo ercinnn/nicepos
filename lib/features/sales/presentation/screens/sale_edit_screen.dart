@@ -14,12 +14,14 @@ import '../../../audit/data/repositories/audit_log_repository.dart';
 import '../../../auth/application/auth_provider.dart';
 import '../../../../features/products/application/products_provider.dart';
 import '../../../../features/products/data/models/product.dart';
+import '../../application/sale_whatsapp_text.dart';
 import '../../data/models/cart_item.dart' show DiscountType;
 import '../../data/models/sale.dart';
 import '../../data/models/sale_invoice.dart';
 import '../../data/models/sale_item.dart';
 import '../../data/repositories/sales_repository.dart';
 import '../widgets/sale_print.dart';
+import '../widgets/whatsapp_send_dialog.dart';
 
 /// `SaleEditScreen`'in `Navigator.pop` sonucu — `changed` çağıranın (rapor/müşteri
 /// ekranı) listeyi yenileyip yenilemeyeceğini, `message` ise (yalnız silme için)
@@ -273,6 +275,23 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
       discountAmount: _discountAmount,
       netTotal: _netTotal,
     );
+  }
+
+  /// Satış detayını müşteriye WhatsApp'tan gönderir (wa.me — kişisel numara,
+  /// "Gönder"e kullanıcı basar). Tüm platformlarda.
+  Future<void> _sendWhatsApp() async {
+    final tenantName = ref.read(currentTenantProvider).valueOrNull?.name;
+    final text = buildSaleWhatsAppText(
+      tenantName: tenantName,
+      saleCode: widget.sale.saleCode,
+      saleDate: widget.sale.saleDate,
+      customerName: widget.sale.customerName,
+      lines: _items.map(ReceiptLine.fromSaleItem).toList(),
+      subtotal: _subtotal,
+      discountAmount: _discountAmount,
+      netTotal: _netTotal,
+    );
+    await showWhatsAppSendDialog(context, customerId: widget.sale.customerId, text: text);
   }
 
   /// "Fatura Kes" — yalnız `sale_invoices`'a bir `pending` talep satırı yazar,
@@ -995,6 +1014,15 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
                                       ),
                                       onPressed: _items.isEmpty ? null : _print,
                                     ),
+                                  OutlinedButton.icon(
+                                    icon: const Icon(Icons.chat_outlined, size: 16),
+                                    label: const Text('WhatsApp'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.success,
+                                      side: const BorderSide(color: AppColors.success),
+                                    ),
+                                    onPressed: _items.isEmpty ? null : _sendWhatsApp,
+                                  ),
                                   OutlinedButton.icon(
                                     icon: const Icon(Icons.receipt_long_outlined, size: 16),
                                     label: const Text('Fatura Kes'),

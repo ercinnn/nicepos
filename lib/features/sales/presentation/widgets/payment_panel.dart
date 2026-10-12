@@ -24,6 +24,13 @@ import '../../application/sales_cart_notifier.dart';
 import '../../data/local/pending_sale_dao.dart';
 import '../../data/models/pending_sale.dart';
 import '../../data/models/sale.dart';
+import '../../../auth/application/auth_provider.dart';
+import '../../application/sale_whatsapp_text.dart';
+import 'whatsapp_send_dialog.dart';
+
+/// Satış tamamlandı snackbar'ı — "WhatsApp" aksiyonuna yetişmek için
+/// varsayılan 4 sn'den biraz uzun.
+const _kSaleDoneSnackDuration = Duration(seconds: 6);
 
 /// Ödeme paneli — §6.8(a) "üç bölge" düzeni:
 ///   1. **Üstte sabit:** `InstrumentHero` (kaydırmaz, asla kırpılmaz),
@@ -526,11 +533,40 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
           content: Text(offlineQueued
               ? 'Satış çevrimdışı kaydedildi — $saleCode, bağlantı gelince otomatik gönderilecek.'
               : 'Satış tamamlandı - $saleCode - ${stopwatch.elapsedMilliseconds}ms'),
+          duration: _kSaleDoneSnackDuration,
+          action: _whatsAppAction(saleCode, tab),
         ));
       }
     } finally {
       if (mounted) setState(() => _completing = false);
     }
+  }
+
+  /// Satış tamamlandı snackbar'ındaki "WhatsApp" aksiyonu. `tab`, sepet
+  /// temizlenmeden ÖNCEKİ anlık görüntüdür (immutable `CustomerTabState`) —
+  /// mesaj o anki kalemlerden üretilir. Satış akışına dialog/onay EKLEMEZ
+  /// (§6.7: ekranın önceliği hız); yalnız kullanıcı aksiyona dokunursa açılır.
+  /// Dialog root navigator context'iyle açılır: mobilde ödeme sheet'i
+  /// kapatılınca bu panel dispose olur ama aksiyon hâlâ çalışmalı.
+  SnackBarAction _whatsAppAction(String saleCode, CustomerTabState tab) {
+    final navContext = Navigator.of(context, rootNavigator: true).context;
+    final text = buildSaleWhatsAppText(
+      tenantName: ref.read(currentTenantProvider).valueOrNull?.name,
+      saleCode: saleCode,
+      saleDate: DateTime.now(),
+      customerName: tab.customerName,
+      lines: tab.items.map(ReceiptLine.fromCartItem).toList(),
+      subtotal: tab.subtotal,
+      discountAmount: tab.discountAmount,
+      netTotal: tab.total,
+    );
+    return SnackBarAction(
+      label: 'WhatsApp',
+      onPressed: () {
+        if (!navContext.mounted) return;
+        showWhatsAppSendDialog(navContext, customerId: tab.customerId, text: text);
+      },
+    );
   }
 
   /// Ürünü senkron kuyruğuna yazar (v1 yalnız Nakit/POS — açık hesap/parçalı/
@@ -633,7 +669,11 @@ class _PaymentPanelState extends ConsumerState<PaymentPanel> {
       stopwatch.stop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Satış tamamlandı - $saleCode - ${stopwatch.elapsedMilliseconds}ms')),
+          SnackBar(
+            content: Text('Satış tamamlandı - $saleCode - ${stopwatch.elapsedMilliseconds}ms'),
+            duration: _kSaleDoneSnackDuration,
+            action: _whatsAppAction(saleCode, tab),
+          ),
         );
       }
     } on PostgrestException catch (e) {

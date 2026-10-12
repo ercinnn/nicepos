@@ -17,6 +17,9 @@ import '../../../sales/data/models/sale_item.dart';
 import '../../../sales/data/repositories/sales_repository.dart';
 import '../../../sales/presentation/screens/sale_edit_screen.dart';
 import '../../../sales/presentation/widgets/sale_print.dart';
+import '../../../sales/presentation/widgets/whatsapp_send_dialog.dart';
+import '../../../sales/application/sale_whatsapp_text.dart';
+import '../../../auth/application/auth_provider.dart';
 import '../widgets/customer_form_dialog.dart';
 
 /// Tablo para/sayı hücreleri için tabular figür (hizalı rakam) stili.
@@ -269,6 +272,18 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                         icon: const Icon(Icons.print_outlined, size: 18),
                         label: Text('Seçilenleri Yazdır (${_selectedSaleIds.length})'),
                       ),
+                    // Mobilde dar satır: yalnız ikon (tooltip'li).
+                    if (_selectedSaleIds.isNotEmpty)
+                      IconButton(
+                        tooltip:
+                            "Seçilenleri WhatsApp'la Gönder (${_selectedSaleIds.length})",
+                        color: AppColors.success,
+                        onPressed: _busy
+                            ? null
+                            : () => _sendSelectedSalesWhatsApp(
+                                salesAsync.value ?? const []),
+                        icon: const Icon(Icons.chat_outlined),
+                      ),
                     if ((salesAsync.value ?? const []).isNotEmpty)
                       _deleteAllButton(
                           () => _deleteAllSales(salesAsync.value ?? const [])),
@@ -316,6 +331,17 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
                                 _printSelectedSales(salesAsync.value ?? const []),
                         icon: const Icon(Icons.print_outlined, size: 18),
                         label: Text('Seçilenleri Yazdır (${_selectedSaleIds.length})'),
+                      ),
+                    if (_selectedSaleIds.isNotEmpty)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(foregroundColor: AppColors.success),
+                        onPressed: _busy
+                            ? null
+                            : () => _sendSelectedSalesWhatsApp(
+                                salesAsync.value ?? const []),
+                        icon: const Icon(Icons.chat_outlined, size: 18),
+                        label: Text(
+                            "Seçilenleri WhatsApp'la Gönder (${_selectedSaleIds.length})"),
                       ),
                     if ((salesAsync.value ?? const []).isNotEmpty)
                       _deleteAllButton(
@@ -655,6 +681,38 @@ class _CustomerDetailScreenState extends ConsumerState<CustomerDetailScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Seçili satışları TEK WhatsApp mesajında gönderir (her satış kendi
+  /// bölümü + genel toplam) — `_printSelectedSales` ile aynı veri yolu.
+  /// Tüm platformlarda (wa.me; native'de WhatsApp uygulaması açılır).
+  Future<void> _sendSelectedSalesWhatsApp(List<Sale> allSales) async {
+    if (_busy || _selectedSaleIds.isEmpty) return;
+    final selected = allSales.where((s) => _selectedSaleIds.contains(s.id)).toList()
+      ..sort((a, b) => a.saleDate.compareTo(b.saleDate));
+    if (selected.isEmpty) return;
+    setState(() => _busy = true);
+    String text;
+    try {
+      final itemsBySaleId = await SalesRepository()
+          .fetchItemsForSales([for (final s in selected) s.id]);
+      text = buildMultiSaleWhatsAppText(
+        tenantName: ref.read(currentTenantProvider).valueOrNull?.name,
+        customerName: ref.read(customerByIdProvider(widget.customerId)).valueOrNull?.name,
+        sales: selected,
+        itemsBySaleId: itemsBySaleId,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Satış kalemleri alınamadı: $e')));
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    await showWhatsAppSendDialog(context, customerId: widget.customerId, text: text);
   }
 
   Widget _deleteAllButton(VoidCallback onPressed) {

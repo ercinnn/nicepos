@@ -39,6 +39,13 @@ class CustomerRepository {
     await _client.from('customers').update(customer.toInsertMap()).eq('id', id);
   }
 
+  /// Yalnız telefonu günceller — `update()` `toInsertMap()`'in tüm alanlarını
+  /// yazdığından, elde tam `Customer` olmayan çağrı noktaları (WhatsApp
+  /// gönderim dialog'u) diğer alanları ezmesin diye ayrı.
+  Future<void> updatePhone(String id, String phone) async {
+    await _client.from('customers').update({'phone': phone}).eq('id', id);
+  }
+
   Future<void> delete(String id) async {
     await _client.from('customers').delete().eq('id', id);
   }
