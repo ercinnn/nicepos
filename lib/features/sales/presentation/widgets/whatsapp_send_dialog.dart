@@ -46,6 +46,15 @@ Future<void> showWhatsAppSendDialog(
   );
   if (result == null) return;
 
+  // WhatsApp ÖNCE açılır, numara kaydı SONRA: web'de (özellikle telefon
+  // tarayıcısında) `window.open` kullanıcı dokunuşuna yakın çağrılmazsa
+  // açılır-pencere engeline takılır — araya ağ isteği (updatePhone) girmemeli.
+  final opened = await openWhatsApp(whatsAppUri(phone: result.phone, text: result.text));
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        backgroundColor: AppColors.danger, content: Text('WhatsApp açılamadı.')));
+  }
+
   if (result.savePhone && customerId != null) {
     try {
       await container.read(customerRepositoryProvider).updatePhone(customerId, result.rawPhone);
@@ -53,15 +62,9 @@ Future<void> showWhatsAppSendDialog(
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Numara müşteri kaydına yazılamadı — mesaj yine de açılıyor.')));
+            content: Text('Numara müşteri kaydına yazılamadı.')));
       }
     }
-  }
-
-  final opened = await openWhatsApp(whatsAppUri(phone: result.phone, text: result.text));
-  if (!opened && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        backgroundColor: AppColors.danger, content: Text('WhatsApp açılamadı.')));
   }
 }
 
