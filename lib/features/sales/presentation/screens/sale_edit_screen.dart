@@ -1135,6 +1135,12 @@ class _SaleEditScreenState extends ConsumerState<SaleEditScreen> {
             ],
           ),
           actions: [
+            // Mobil düzenin kendi aksiyon satırı yok — WhatsApp AppBar'da.
+            IconButton(
+              tooltip: "WhatsApp'la Gönder",
+              icon: const Icon(Icons.chat_outlined),
+              onPressed: (_saving || _items.isEmpty) ? null : _sendWhatsApp,
+            ),
             if (_saving)
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
